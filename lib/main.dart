@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -5,7 +6,9 @@ import 'package:url_launcher/url_launcher.dart';
 import 'api_client.dart';
 import 'assistant_markdown.dart';
 import 'data.dart';
+import 'ios_style.dart';
 import 'provider_screen.dart';
+import 'topic_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,30 +22,27 @@ class ModelChatApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: '模型之间',
     debugShowCheckedModeBanner: false,
-    theme: ThemeData(
-      useMaterial3: true,
-      scaffoldBackgroundColor: canvas,
-      colorScheme: ColorScheme.fromSeed(seedColor: brand, surface: canvas),
-      appBarTheme: const AppBarTheme(
-        foregroundColor: ink,
-        titleTextStyle: TextStyle(
-          color: ink,
-          fontSize: 19,
-          fontWeight: FontWeight.w700,
-        ),
+    builder: (context, child) => CupertinoTheme(
+      data: const CupertinoThemeData(
+        primaryColor: IosColors.blue,
+        brightness: Brightness.light,
       ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFE4E1E6)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: brand, width: 1.5),
-        ),
+      child: child ?? const SizedBox.shrink(),
+    ),
+    theme: ThemeData(
+      useMaterial3: false,
+      platform: TargetPlatform.iOS,
+      scaffoldBackgroundColor: IosColors.background,
+      primaryColor: IosColors.blue,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: IosColors.blue,
+        surface: IosColors.surface,
+      ),
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+        },
       ),
     ),
     home: const ChatHome(),
@@ -117,9 +117,30 @@ class _ChatHomeState extends State<ChatHome> {
   Future<void> _openProviders() async {
     await Navigator.push<bool>(
       context,
-      MaterialPageRoute(builder: (_) => const ProviderScreen()),
+      CupertinoPageRoute(builder: (_) => const ProviderScreen()),
     );
     await _load();
+  }
+
+  Future<void> _openTopics() async {
+    final choice = await Navigator.push<int>(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => TopicScreen(
+          selectedId: _topic?.id,
+          generatingTopicId: _sendingTopicId,
+        ),
+      ),
+    );
+    await _load();
+    if (!mounted || choice == null) return;
+    if (choice == 0) {
+      await _newTopic();
+    } else if (choice == -1) {
+      await _openProviders();
+    } else {
+      await _selectTopic(choice);
+    }
   }
 
   Future<void> _newTopic() async {
@@ -146,131 +167,61 @@ class _ChatHomeState extends State<ChatHome> {
     _scrollToBottom();
   }
 
-  Future<void> _renameTopic(ChatTopic topic) async {
-    final controller = TextEditingController(text: topic.title);
-    final title = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('重命名话题'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 60,
-          decoration: const InputDecoration(hintText: '话题名称'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (title == null || title.isEmpty) return;
-    await ChatStore.instance.updateTopic(topic.id, title: title);
-    await _load();
-  }
-
-  Future<void> _deleteTopic(ChatTopic topic) async {
-    if (_sending && _sendingTopicId == topic.id) {
-      _notify('请先停止生成，再删除话题');
-      return;
-    }
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('删除这个话题？'),
-        content: const Text('本地聊天记录会一并删除，无法恢复。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    if (_topic?.id == topic.id && _sending) _stopReply();
-    await ChatStore.instance.deleteTopic(topic.id);
-    if (_topic?.id == topic.id) _topic = null;
-    await _load();
-  }
-
   Future<void> _changeModel() async {
     final topic = _topic;
     if (topic == null || _providers.isEmpty) return;
-    var selectedId = topic.providerId ?? _providers.first.id;
-    final controller = TextEditingController(text: topic.model);
-    final choice = await showDialog<({int id, String model})>(
+    final selectedId = await showCupertinoModalPopup<int>(
       context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, update) => AlertDialog(
-          title: const Text('切换服务与模型'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DropdownButtonFormField<int>(
-                initialValue: _providers.any((p) => p.id == selectedId)
-                    ? selectedId
-                    : _providers.first.id,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: '服务'),
-                items: _providers
-                    .map(
-                      (provider) => DropdownMenuItem(
-                        value: provider.id,
-                        child: Text(provider.name),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (id) {
-                  if (id == null) return;
-                  update(() => selectedId = id);
-                  controller.text = _providers
-                      .firstWhere((p) => p.id == id)
-                      .model;
-                },
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: controller,
-                decoration: const InputDecoration(labelText: '模型 ID'),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('取消'),
+      builder: (context) => CupertinoActionSheet(
+        title: const Text('选择模型服务'),
+        actions: [
+          for (final provider in _providers)
+            CupertinoActionSheetAction(
+              onPressed: () => Navigator.pop(context, provider.id),
+              child: Text(provider.name),
             ),
-            FilledButton(
-              onPressed: () {
-                final model = controller.text.trim();
-                if (model.isNotEmpty) {
-                  Navigator.pop(context, (id: selectedId, model: model));
-                }
-              },
-              child: const Text('切换'),
-            ),
-          ],
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
         ),
       ),
     );
+    if (selectedId == null || !mounted) return;
+    final provider = _providers.firstWhere((item) => item.id == selectedId);
+    final controller = TextEditingController(
+      text: selectedId == topic.providerId ? topic.model : provider.model,
+    );
+    final model = await showCupertinoDialog<String>(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: const Text('模型 ID'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 14),
+          child: CupertinoTextField(
+            controller: controller,
+            autofocus: true,
+            placeholder: '输入模型 ID',
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('切换'),
+          ),
+        ],
+      ),
+    );
     controller.dispose();
-    if (choice == null) return;
+    if (model == null || model.isEmpty) return;
     await ChatStore.instance.updateTopic(
       topic.id,
-      providerId: choice.id,
-      model: choice.model,
+      providerId: selectedId,
+      model: model,
     );
     await _load();
   }
@@ -392,9 +343,15 @@ class _ChatHomeState extends State<ChatHome> {
     }
   });
 
-  void _notify(String message) =>
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(message)));
+  void _notify(String message) => ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(message, textAlign: TextAlign.center),
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: IosColors.label,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      duration: const Duration(seconds: 2),
+    ),
+  );
 
   Future<void> _openMarkdownLink(String? href) async {
     final uri = href == null ? null : Uri.tryParse(href);
@@ -417,35 +374,30 @@ class _ChatHomeState extends State<ChatHome> {
   @override
   Widget build(BuildContext context) {
     final provider = _providers
-        .where((p) => p.id == _topic?.providerId)
+        .where((item) => item.id == _topic?.providerId)
         .firstOrNull;
     return Scaffold(
-      drawer: _drawer(),
-      appBar: AppBar(
-        backgroundColor: canvas,
-        leading: Builder(
-          builder: (context) => IconButton(
-            tooltip: '话题列表',
-            icon: const Icon(Icons.menu_rounded),
-            onPressed: () => Scaffold.of(context).openDrawer(),
-          ),
+      backgroundColor: IosColors.background,
+      appBar: iosAppBar(
+        title: '模型之间',
+        leading: IosNavButton(
+          icon: CupertinoIcons.chat_bubble_2,
+          label: '对话',
+          onPressed: _openTopics,
         ),
-        title: const Text('模型之间'),
         actions: [
-          IconButton(
-            tooltip: '新对话',
-            icon: const Icon(Icons.add_comment_outlined),
+          IosNavButton(
+            icon: CupertinoIcons.square_pencil,
             onPressed: _newTopic,
           ),
-          IconButton(
-            tooltip: '模型服务',
-            icon: const Icon(Icons.tune_rounded),
+          IosNavButton(
+            icon: CupertinoIcons.slider_horizontal_3,
             onPressed: _openProviders,
           ),
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CupertinoActivityIndicator(radius: 14))
           : Column(
               children: [
                 if (_topic != null) _modelBar(provider),
@@ -456,12 +408,15 @@ class _ChatHomeState extends State<ChatHome> {
                     margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFFF1EE),
-                      borderRadius: BorderRadius.circular(12),
+                      color: const Color(0xFFFFE9E8),
+                      borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
                       _error!,
-                      style: const TextStyle(color: Color(0xFF9C3D32)),
+                      style: const TextStyle(
+                        color: IosColors.destructive,
+                        fontSize: 13,
+                      ),
                     ),
                   ),
                 _composer(),
@@ -470,43 +425,60 @@ class _ChatHomeState extends State<ChatHome> {
     );
   }
 
-  Widget _modelBar(ProviderConfig? provider) => InkWell(
+  Widget _modelBar(ProviderConfig? provider) => GestureDetector(
+    behavior: HitTestBehavior.opaque,
     onTap: _changeModel,
     child: Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFE9E7E9))),
-      ),
+      color: IosColors.surface,
+      padding: const EdgeInsets.fromLTRB(18, 11, 18, 11),
       child: Row(
         children: [
           Container(
-            width: 7,
-            height: 7,
-            decoration: const BoxDecoration(
-              color: Color(0xFF52B899),
-              shape: BoxShape.circle,
+            width: 33,
+            height: 33,
+            decoration: BoxDecoration(
+              color: IosColors.blue.withValues(alpha: .10),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: const Icon(
+              CupertinoIcons.chat_bubble_2,
+              color: IosColors.blue,
+              size: 19,
             ),
           ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              provider?.name ?? '服务已删除',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  provider?.name ?? '服务已删除',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: IosColors.label,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _topic!.model,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: IosColors.secondary,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              _topic!.model,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.grey, fontSize: 12),
-            ),
+          const Icon(
+            CupertinoIcons.chevron_down,
+            size: 16,
+            color: IosColors.secondary,
           ),
-          const Icon(Icons.expand_more, size: 18, color: Colors.grey),
         ],
       ),
     ),
@@ -514,7 +486,7 @@ class _ChatHomeState extends State<ChatHome> {
 
   Widget _welcome() => Center(
     child: SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 20),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -522,60 +494,37 @@ class _ChatHomeState extends State<ChatHome> {
             width: 76,
             height: 76,
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF887CFA), brand],
-              ),
-              borderRadius: BorderRadius.circular(25),
-              boxShadow: [
-                BoxShadow(
-                  color: brand.withValues(alpha: .22),
-                  blurRadius: 24,
-                  offset: const Offset(0, 10),
-                ),
-              ],
+              color: IosColors.blue.withValues(alpha: .10),
+              borderRadius: BorderRadius.circular(22),
             ),
             child: const Icon(
-              Icons.auto_awesome_rounded,
-              color: Colors.white,
+              CupertinoIcons.chat_bubble_2_fill,
+              color: IosColors.blue,
               size: 36,
             ),
           ),
-          const SizedBox(height: 28),
+          const SizedBox(height: 24),
           const Text(
-            '一个地方，和不同模型对话',
-            textAlign: TextAlign.center,
+            '模型之间',
             style: TextStyle(
-              fontSize: 23,
-              fontWeight: FontWeight.w800,
-              color: ink,
+              color: IosColors.label,
+              fontSize: 28,
+              fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 9),
           const Text(
-            '接入自己的 API，创建话题，随时继续上次的讨论。',
+            '一个地方，和不同模型继续对话。',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Color(0xFF78798A),
-              fontSize: 14,
-              height: 1.5,
-            ),
+            style: TextStyle(color: IosColors.secondary, fontSize: 15),
           ),
           const SizedBox(height: 28),
-          FilledButton.icon(
-            onPressed: _providers.isEmpty ? _openProviders : _newTopic,
-            style: FilledButton.styleFrom(
-              backgroundColor: brand,
-              minimumSize: const Size(190, 52),
+          SizedBox(
+            width: 225,
+            child: IosPrimaryButton(
+              label: _providers.isEmpty ? '接入模型服务' : '开始新对话',
+              onPressed: _providers.isEmpty ? _openProviders : _newTopic,
             ),
-            icon: const Icon(Icons.add),
-            label: Text(_providers.isEmpty ? '接入模型服务' : '开始新对话'),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            _providers.isEmpty
-                ? '支持 OpenAI、Claude、DeepSeek、GLM、千问等'
-                : '已接入 ${_providers.length} 个服务 · 记录保存在本机',
-            style: const TextStyle(color: Color(0xFF9999A6), fontSize: 12),
           ),
         ],
       ),
@@ -586,28 +535,28 @@ class _ChatHomeState extends State<ChatHome> {
     final showReply = _sending && _sendingTopicId == _topic?.id;
     final count = _messages.length + (showReply ? 1 : 0);
     if (count == 0) {
-      return Center(
+      return const Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              Icons.chat_bubble_outline_rounded,
-              size: 42,
-              color: brand.withValues(alpha: .6),
+              CupertinoIcons.chat_bubble_text,
+              size: 40,
+              color: IosColors.secondary,
             ),
-            const SizedBox(height: 14),
-            const Text(
-              '新话题已经准备好',
+            SizedBox(height: 13),
+            Text(
+              '开始新的对话',
               style: TextStyle(
-                color: ink,
-                fontWeight: FontWeight.w700,
-                fontSize: 16,
+                color: IosColors.label,
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(height: 6),
-            const Text(
-              '输入第一条消息，开始讨论。',
-              style: TextStyle(color: Colors.grey, fontSize: 13),
+            SizedBox(height: 5),
+            Text(
+              '输入消息，开始讨论。',
+              style: TextStyle(color: IosColors.secondary, fontSize: 14),
             ),
           ],
         ),
@@ -615,7 +564,7 @@ class _ChatHomeState extends State<ChatHome> {
     }
     return ListView.builder(
       controller: _scroll,
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
       itemCount: count,
       itemBuilder: (context, index) {
         if (index == _messages.length) {
@@ -630,77 +579,69 @@ class _ChatHomeState extends State<ChatHome> {
   Widget _bubble(String role, String content, {bool loading = false}) {
     final user = role == 'user';
     return Padding(
-      padding: const EdgeInsets.only(bottom: 18),
+      padding: const EdgeInsets.only(bottom: 15),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: user
             ? MainAxisAlignment.end
             : MainAxisAlignment.start,
         children: [
-          if (!user) ...[
-            const CircleAvatar(
-              radius: 15,
-              backgroundColor: brand,
-              child: Icon(Icons.auto_awesome, color: Colors.white, size: 16),
-            ),
-            const SizedBox(width: 9),
-          ],
           Flexible(
             child: Container(
               constraints: BoxConstraints(
-                maxWidth: MediaQuery.sizeOf(context).width * .8,
+                maxWidth: MediaQuery.sizeOf(context).width * .86,
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+              padding: const EdgeInsets.fromLTRB(14, 11, 14, 9),
               decoration: BoxDecoration(
-                color: user ? const Color(0xFF34344F) : Colors.white,
-                borderRadius: BorderRadius.circular(17),
-                border: user
-                    ? null
-                    : Border.all(color: const Color(0xFFEAE8E7)),
+                color: user ? IosColors.blue : IosColors.assistant,
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(18),
+                  topRight: const Radius.circular(18),
+                  bottomLeft: Radius.circular(user ? 18 : 5),
+                  bottomRight: Radius.circular(user ? 5 : 18),
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (content.isEmpty && loading)
-                    const SizedBox(
-                      height: 18,
-                      width: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 3),
+                      child: CupertinoActivityIndicator(radius: 10),
+                    )
+                  else if (user)
+                    SelectableText(
+                      content,
+                      style: const TextStyle(
+                        color: IosColors.surface,
+                        fontSize: 15,
+                        height: 1.45,
+                      ),
                     )
                   else
-                    user
-                        ? SelectableText(
-                            content,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 15,
-                              height: 1.5,
-                            ),
-                          )
-                        : AssistantMarkdown(
-                            data: content,
-                            onTapLink: _openMarkdownLink,
-                          ),
+                    AssistantMarkdown(
+                      data: content,
+                      onTapLink: _openMarkdownLink,
+                    ),
                   if (loading && content.isNotEmpty)
                     const Padding(
                       padding: EdgeInsets.only(top: 8),
-                      child: SizedBox(
-                        height: 12,
-                        width: 12,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
+                      child: CupertinoActivityIndicator(radius: 7),
                     ),
                   if (!loading && !user)
                     Align(
                       alignment: Alignment.centerRight,
-                      child: IconButton(
-                        icon: const Icon(Icons.copy, size: 16),
-                        tooltip: '复制',
-                        visualDensity: VisualDensity.compact,
+                      child: CupertinoButton(
+                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(44, 30),
                         onPressed: () async {
                           await Clipboard.setData(ClipboardData(text: content));
                           if (mounted) _notify('已复制');
                         },
+                        child: const Icon(
+                          CupertinoIcons.doc_on_doc,
+                          size: 17,
+                          color: IosColors.secondary,
+                        ),
                       ),
                     ),
                 ],
@@ -714,186 +655,47 @@ class _ChatHomeState extends State<ChatHome> {
 
   Widget _composer() => Container(
     decoration: const BoxDecoration(
-      color: Colors.white,
-      border: Border(top: BorderSide(color: Color(0xFFE9E7E9))),
+      color: IosColors.surface,
+      border: Border(top: BorderSide(color: IosColors.separator, width: .5)),
     ),
-    padding: const EdgeInsets.fromLTRB(16, 11, 16, 10),
+    padding: const EdgeInsets.fromLTRB(12, 9, 12, 4),
     child: SafeArea(
       top: false,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Expanded(
-            child: TextField(
+            child: CupertinoTextField(
               controller: _input,
               minLines: 1,
               maxLines: 5,
               textCapitalization: TextCapitalization.sentences,
-              decoration: InputDecoration(
-                hintText: _providers.isEmpty ? '先接入模型服务…' : '输入消息…',
-                filled: true,
-                fillColor: canvas,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 15,
-                  vertical: 13,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  borderSide: BorderSide.none,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
-                  borderSide: BorderSide.none,
-                ),
+              placeholder: _providers.isEmpty ? '先接入模型服务' : '发送消息',
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+              decoration: BoxDecoration(
+                color: IosColors.surface,
+                borderRadius: BorderRadius.circular(21),
+                border: Border.all(color: const Color(0xFFD1D1D6)),
               ),
             ),
           ),
-          const SizedBox(width: 9),
-          IconButton.filled(
-            tooltip: _sending ? '停止生成' : '发送',
-            icon: Icon(
-              _sending ? Icons.stop_rounded : Icons.arrow_upward_rounded,
-            ),
+          const SizedBox(width: 8),
+          CupertinoButton(
+            padding: EdgeInsets.zero,
+            minimumSize: const Size(40, 40),
             onPressed: _sending ? _stopReply : (_starting ? null : _send),
-            style: IconButton.styleFrom(
-              backgroundColor: brand,
-              foregroundColor: Colors.white,
-              minimumSize: const Size(46, 46),
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-
-  Widget _drawer() => Drawer(
-    backgroundColor: canvas,
-    child: SafeArea(
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 16, 16),
-            child: Row(
-              children: [
-                const CircleAvatar(
-                  backgroundColor: brand,
-                  child: Icon(
-                    Icons.auto_awesome_rounded,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                const Expanded(
-                  child: Text(
-                    '模型之间',
-                    style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: FilledButton.icon(
-              onPressed: () {
-                Navigator.pop(context);
-                _newTopic();
-              },
-              style: FilledButton.styleFrom(
-                backgroundColor: brand,
-                minimumSize: const Size.fromHeight(48),
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: _starting ? IosColors.secondary : IosColors.blue,
+                shape: BoxShape.circle,
               ),
-              icon: const Icon(Icons.add),
-              label: const Text('新对话'),
-            ),
-          ),
-          const SizedBox(height: 22),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 22),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                '话题',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF8E8D99),
-                ),
+              child: Icon(
+                _sending ? CupertinoIcons.stop_fill : CupertinoIcons.arrow_up,
+                color: IosColors.surface,
+                size: 21,
               ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Expanded(
-            child: _topics.isEmpty
-                ? const Center(
-                    child: Text('暂无话题', style: TextStyle(color: Colors.grey)),
-                  )
-                : ListView.builder(
-                    itemCount: _topics.length,
-                    itemBuilder: (context, index) {
-                      final topic = _topics[index];
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 2,
-                        ),
-                        child: ListTile(
-                          selected: topic.id == _topic?.id,
-                          selectedTileColor: brand.withValues(alpha: .1),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(13),
-                          ),
-                          leading: const Icon(
-                            Icons.chat_bubble_outline_rounded,
-                            size: 20,
-                          ),
-                          title: Text(
-                            topic.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                          onTap: () {
-                            Navigator.pop(context);
-                            _selectTopic(topic.id);
-                          },
-                          trailing: PopupMenuButton<String>(
-                            tooltip: '话题操作',
-                            onSelected: (value) => value == 'rename'
-                                ? _renameTopic(topic)
-                                : _deleteTopic(topic),
-                            itemBuilder: (_) => const [
-                              PopupMenuItem(
-                                value: 'rename',
-                                child: Text('重命名'),
-                              ),
-                              PopupMenuItem(value: 'delete', child: Text('删除')),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.hub_outlined),
-            title: const Text('模型服务'),
-            onTap: () {
-              Navigator.pop(context);
-              _openProviders();
-            },
-          ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(18, 0, 18, 14),
-            child: Text(
-              '聊天记录保存在本机 · 发送时会传给所选服务',
-              style: TextStyle(fontSize: 11, color: Colors.grey),
             ),
           ),
         ],
