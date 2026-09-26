@@ -2,10 +2,12 @@ import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import 'api_client.dart';
 import 'data.dart';
 import 'ios_style.dart';
+import 'prompt_screen.dart';
 
 class ProviderScreen extends StatefulWidget {
   const ProviderScreen({super.key});
@@ -129,7 +131,7 @@ class _ProviderScreenState extends State<ProviderScreen> {
                         title: provider.name,
                         subtitle:
                             '${provider.model} · ${provider.protocol.label}',
-                        leading: _providerBadge(provider.name),
+                        leading: _providerBadge(provider),
                         trailing: CupertinoButton(
                           padding: const EdgeInsets.symmetric(horizontal: 4),
                           minimumSize: const Size(38, 38),
@@ -146,16 +148,69 @@ class _ProviderScreenState extends State<ProviderScreen> {
                   ],
           ),
           IosSection(
-            title: '快捷接入',
-            footer: '已填好常用 API 地址和默认模型。点选平台后输入自己的 API Key。',
+            title: '对话设置',
             children: [
-              for (final preset in providerPresets)
-                IosRow(
-                  title: preset.name,
-                  subtitle: preset.protocol.label,
-                  leading: _presetBadge(preset),
-                  onTap: () => _edit(preset: preset),
+              IosRow(
+                title: '提示词',
+                subtitle: '全局和单模型提示词',
+                leading: const Icon(
+                  CupertinoIcons.text_quote,
+                  color: IosColors.blue,
+                  size: 22,
                 ),
+                onTap: () => Navigator.push<void>(
+                  context,
+                  CupertinoPageRoute(
+                    builder: (_) => const PromptSettingsScreen(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          IosSection(
+            title: '国内服务',
+            footer: '已填入 API 地址和示例模型；账号可用模型以服务端为准。',
+            children: [
+              for (final preset in providerPresets.where(
+                (p) => {
+                  'deepseek',
+                  'glm',
+                  'qwen',
+                  'doubao',
+                  'baidu',
+                  'hunyuan',
+                  'moonshot',
+                  'minimax',
+                  'siliconflow',
+                }.contains(p.id),
+              ))
+                _presetRow(preset),
+            ],
+          ),
+          IosSection(
+            title: '国际服务',
+            children: [
+              for (final preset in providerPresets.where(
+                (p) => {
+                  'openai',
+                  'claude',
+                  'gemini',
+                  'grok',
+                  'groq',
+                  'mistral',
+                  'perplexity',
+                }.contains(p.id),
+              ))
+                _presetRow(preset),
+            ],
+          ),
+          IosSection(
+            title: '聚合与推理平台',
+            children: [
+              for (final preset in providerPresets.where(
+                (p) => {'openrouter', 'together', 'fireworks'}.contains(p.id),
+              ))
+                _presetRow(preset),
             ],
           ),
           IosSection(
@@ -178,33 +233,49 @@ class _ProviderScreenState extends State<ProviderScreen> {
       ),
     ),
   );
+
+  Widget _presetRow(ProviderPreset preset) => IosRow(
+    title: preset.name,
+    subtitle: preset.protocol.label,
+    leading: _presetBadge(preset),
+    onTap: () => _edit(preset: preset),
+  );
 }
 
-Widget _providerBadge(String name) => Container(
-  width: 30,
-  height: 30,
-  alignment: Alignment.center,
-  decoration: BoxDecoration(
-    color: IosColors.blue,
-    borderRadius: BorderRadius.circular(7),
-  ),
-  child: Text(
-    name.isEmpty ? '?' : name.characters.first.toUpperCase(),
-    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-  ),
-);
+Widget _providerBadge(ProviderConfig provider) {
+  final preset = presetForProvider(provider);
+  if (preset != null) return _presetBadge(preset);
+  return Container(
+    width: 30,
+    height: 30,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      color: IosColors.blue,
+      borderRadius: BorderRadius.circular(7),
+    ),
+    child: Text(
+      provider.name.isEmpty
+          ? '?'
+          : provider.name.characters.first.toUpperCase(),
+      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+    ),
+  );
+}
 
 Widget _presetBadge(ProviderPreset preset) => Container(
   width: 30,
   height: 30,
   alignment: Alignment.center,
   decoration: BoxDecoration(
-    color: Color(preset.color),
+    color: preset.id == 'moonshot'
+        ? const Color(0xFF161B2B)
+        : IosColors.surface,
+    border: Border.all(color: IosColors.separator),
     borderRadius: BorderRadius.circular(7),
   ),
-  child: Text(
-    preset.initial,
-    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+  child: Padding(
+    padding: const EdgeInsets.all(4),
+    child: SvgPicture.asset(preset.iconAsset, width: 22, height: 22),
   ),
 );
 
@@ -224,6 +295,7 @@ class _ProviderEditorState extends State<ProviderEditor> {
   late final TextEditingController _key;
   late final TextEditingController _json;
   late ApiProtocol _protocol;
+  String? _presetId;
   bool _jsonMode = false;
   bool _busy = false;
   bool _obscure = true;
@@ -240,6 +312,9 @@ class _ProviderEditorState extends State<ProviderEditor> {
     _model = TextEditingController(text: config?.model ?? preset?.model ?? '');
     _key = TextEditingController();
     _protocol = config?.protocol ?? preset?.protocol ?? ApiProtocol.openAi;
+    _presetId =
+        config?.presetId ??
+        (config == null ? preset?.id : presetForProvider(config)?.id);
     _json = TextEditingController();
   }
 
@@ -264,8 +339,22 @@ class _ProviderEditorState extends State<ProviderEditor> {
         baseUrl: validateBaseUrl(_baseUrl.text),
         model: model,
         protocol: _protocol,
+        presetId: _presetId,
       ),
       key: _key.text.trim(),
+    );
+  }
+
+  ({ProviderConfig config, String key}) _jsonValue() {
+    final value = ProviderConfig.fromImportJson(
+      _json.text,
+      id: widget.config?.id ?? 0,
+    );
+    return (
+      config: value.config.copyWith(
+        presetId: value.config.presetId ?? _presetId,
+      ),
+      key: value.key,
     );
   }
 
@@ -278,17 +367,16 @@ class _ProviderEditorState extends State<ProviderEditor> {
           'baseUrl': _baseUrl.text.trim(),
           'model': _model.text.trim(),
           'apiKey': _key.text.trim(),
+          if (_presetId != null) 'presetId': _presetId,
         });
       } else {
-        final value = ProviderConfig.fromImportJson(
-          _json.text,
-          id: widget.config?.id ?? 0,
-        );
+        final value = _jsonValue();
         _name.text = value.config.name;
         _baseUrl.text = value.config.baseUrl;
         _model.text = value.config.model;
         _key.text = value.key;
         _protocol = value.config.protocol;
+        _presetId = value.config.presetId;
       }
       setState(() => _jsonMode = toJson);
     } catch (error) {
@@ -299,12 +387,7 @@ class _ProviderEditorState extends State<ProviderEditor> {
   Future<void> _save() async {
     if (_busy) return;
     try {
-      final value = _jsonMode
-          ? ProviderConfig.fromImportJson(
-              _json.text,
-              id: widget.config?.id ?? 0,
-            )
-          : _formValue();
+      final value = _jsonMode ? _jsonValue() : _formValue();
       if (widget.config == null && value.key.isEmpty) {
         throw const FormatException('请填写 API Key');
       }
@@ -322,12 +405,7 @@ class _ProviderEditorState extends State<ProviderEditor> {
 
   Future<void> _fetchModels() async {
     try {
-      final value = _jsonMode
-          ? ProviderConfig.fromImportJson(
-              _json.text,
-              id: widget.config?.id ?? 0,
-            )
-          : _formValue();
+      final value = _jsonMode ? _jsonValue() : _formValue();
       final key = value.key.isNotEmpty
           ? value.key
           : (widget.config == null

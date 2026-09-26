@@ -20,61 +20,153 @@ enum ApiProtocol {
 
 class ProviderPreset {
   const ProviderPreset(
+    this.id,
     this.name,
     this.baseUrl,
     this.model,
     this.protocol,
-    this.color,
-    this.initial,
   );
+  final String id;
   final String name;
   final String baseUrl;
   final String model;
   final ApiProtocol protocol;
-  final int color;
-  final String initial;
+  String get iconAsset => 'assets/provider_icons/$id.svg';
 }
 
 const providerPresets = <ProviderPreset>[
   ProviderPreset(
+    'openai',
     'OpenAI',
     'https://api.openai.com/v1',
     'gpt-4.1-mini',
     ApiProtocol.openAi,
-    0xFF121826,
-    'O',
   ),
   ProviderPreset(
+    'claude',
     'Claude',
     'https://api.anthropic.com/v1',
     'claude-sonnet-5',
     ApiProtocol.anthropic,
-    0xFFC57B55,
-    'C',
   ),
   ProviderPreset(
+    'gemini',
+    'Gemini',
+    'https://generativelanguage.googleapis.com/v1beta/openai',
+    'gemini-3.8-flash',
+    ApiProtocol.openAi,
+  ),
+  ProviderPreset(
+    'deepseek',
     'DeepSeek',
     'https://api.deepseek.com',
     'deepseek-flash',
     ApiProtocol.openAi,
-    0xFF4A73CE,
-    'D',
   ),
   ProviderPreset(
+    'glm',
     'GLM 智谱',
     'https://open.bigmodel.cn/api/paas/v4',
     'glm-4.5',
     ApiProtocol.openAi,
-    0xFF7958CB,
-    'G',
   ),
   ProviderPreset(
+    'qwen',
     '千问 Qwen',
     'https://dashscope.aliyuncs.com/compatible-mode/v1',
     'qwen-plus',
     ApiProtocol.openAi,
-    0xFF8A66D7,
-    'Q',
+  ),
+  ProviderPreset(
+    'doubao',
+    '豆包 / 火山方舟',
+    'https://ark.cn-beijing.volces.com/api/v3',
+    'doubao-seed-2-1-pro-260628',
+    ApiProtocol.openAi,
+  ),
+  ProviderPreset(
+    'baidu',
+    '百度千帆 / 文心',
+    'https://qianfan.baidubce.com/v2',
+    'ernie-5.0',
+    ApiProtocol.openAi,
+  ),
+  ProviderPreset(
+    'hunyuan',
+    '腾讯混元 TokenHub',
+    'https://tokenhub.tencentmaas.com/v1',
+    'hy3',
+    ApiProtocol.openAi,
+  ),
+  ProviderPreset(
+    'moonshot',
+    'Kimi / Moonshot',
+    'https://api.moonshot.cn/v1',
+    'kimi-k2.5',
+    ApiProtocol.openAi,
+  ),
+  ProviderPreset(
+    'minimax',
+    'MiniMax',
+    'https://api.minimaxi.com/v1',
+    'MiniMax-M3',
+    ApiProtocol.openAi,
+  ),
+  ProviderPreset(
+    'siliconflow',
+    '硅基流动',
+    'https://api.siliconflow.cn/v1',
+    'deepseek-ai/DeepSeek-V4-Flash',
+    ApiProtocol.openAi,
+  ),
+  ProviderPreset(
+    'openrouter',
+    'OpenRouter',
+    'https://openrouter.ai/api/v1',
+    '~openai/gpt-latest',
+    ApiProtocol.openAi,
+  ),
+  ProviderPreset(
+    'grok',
+    'xAI / Grok',
+    'https://api.x.ai/v1',
+    'latest',
+    ApiProtocol.openAi,
+  ),
+  ProviderPreset(
+    'groq',
+    'Groq',
+    'https://api.groq.com/openai/v1',
+    'llama-3.3-70b-versatile',
+    ApiProtocol.openAi,
+  ),
+  ProviderPreset(
+    'mistral',
+    'Mistral AI',
+    'https://api.mistral.ai/v1',
+    'mistral-small-latest',
+    ApiProtocol.openAi,
+  ),
+  ProviderPreset(
+    'perplexity',
+    'Perplexity',
+    'https://api.perplexity.ai',
+    'sonar',
+    ApiProtocol.openAi,
+  ),
+  ProviderPreset(
+    'together',
+    'Together AI',
+    'https://api.together.ai/v1',
+    'MiniMaxAI/MiniMax-M3',
+    ApiProtocol.openAi,
+  ),
+  ProviderPreset(
+    'fireworks',
+    'Fireworks AI',
+    'https://api.fireworks.ai/inference/v1',
+    'accounts/fireworks/models/glm-5p3-flash',
+    ApiProtocol.openAi,
   ),
 ];
 
@@ -101,12 +193,14 @@ class ProviderConfig {
     required this.baseUrl,
     required this.model,
     required this.protocol,
+    this.presetId,
   });
   final int id;
   final String name;
   final String baseUrl;
   final String model;
   final ApiProtocol protocol;
+  final String? presetId;
 
   ProviderConfig copyWith({
     int? id,
@@ -114,12 +208,14 @@ class ProviderConfig {
     String? baseUrl,
     String? model,
     ApiProtocol? protocol,
+    String? presetId,
   }) => ProviderConfig(
     id: id ?? this.id,
     name: name ?? this.name,
     baseUrl: baseUrl ?? this.baseUrl,
     model: model ?? this.model,
     protocol: protocol ?? this.protocol,
+    presetId: presetId ?? this.presetId,
   );
 
   Map<String, Object?> toMap() => {
@@ -127,6 +223,7 @@ class ProviderConfig {
     'base_url': baseUrl,
     'model': model,
     'protocol': protocol.value,
+    'preset_id': presetId,
   };
 
   Map<String, Object?> toImportJson() => {
@@ -135,6 +232,7 @@ class ProviderConfig {
     'baseUrl': baseUrl,
     'model': model,
     'apiKey': '',
+    if (presetId != null) 'presetId': presetId,
   };
 
   factory ProviderConfig.fromMap(Map<String, Object?> map) => ProviderConfig(
@@ -143,6 +241,7 @@ class ProviderConfig {
     baseUrl: map['base_url'] as String,
     model: map['model'] as String,
     protocol: ApiProtocol.parse(map['protocol'] as String),
+    presetId: map['preset_id'] as String?,
   );
 
   static ({ProviderConfig config, String key}) fromImportJson(
@@ -168,10 +267,47 @@ class ProviderConfig {
         baseUrl: baseUrl,
         model: model,
         protocol: protocol,
+        presetId: providerPresets.any((p) => p.id == decoded['presetId'])
+            ? decoded['presetId'] as String
+            : null,
       ),
       key: key,
     );
   }
+}
+
+ProviderPreset? presetForProvider(ProviderConfig config) {
+  for (final preset in providerPresets) {
+    if (preset.id == config.presetId ||
+        (config.presetId == null &&
+            preset.baseUrl == config.baseUrl &&
+            preset.name == config.name)) {
+      return preset;
+    }
+  }
+  return null;
+}
+
+String composeSystemPrompt(String globalPrompt, String modelPrompt) => [
+  globalPrompt.trim(),
+  modelPrompt.trim(),
+].where((part) => part.isNotEmpty).join('\n\n');
+
+class ModelPrompt {
+  const ModelPrompt({
+    required this.providerId,
+    required this.model,
+    required this.prompt,
+  });
+  final int providerId;
+  final String model;
+  final String prompt;
+
+  factory ModelPrompt.fromMap(Map<String, Object?> map) => ModelPrompt(
+    providerId: map['provider_id'] as int,
+    model: map['model'] as String,
+    prompt: map['prompt'] as String,
+  );
 }
 
 class ChatTopic {
@@ -231,7 +367,7 @@ class ChatStore {
     final path = p.join(await getDatabasesPath(), 'model_chat.db');
     _database = await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: (db, _) async {
         await db.execute('''CREATE TABLE providers (
@@ -239,7 +375,8 @@ class ChatStore {
           name TEXT NOT NULL,
           protocol TEXT NOT NULL,
           base_url TEXT NOT NULL,
-          model TEXT NOT NULL
+          model TEXT NOT NULL,
+          preset_id TEXT
         )''');
         await db.execute('''CREATE TABLE topics (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -258,9 +395,29 @@ class ChatStore {
         await db.execute(
           'CREATE INDEX messages_topic ON messages(topic_id, id)',
         );
+        await _createPromptTables(db);
+      },
+      onUpgrade: (db, oldVersion, _) async {
+        if (oldVersion < 2) {
+          await db.execute('ALTER TABLE providers ADD COLUMN preset_id TEXT');
+          await _createPromptTables(db);
+        }
       },
     );
     return _database!;
+  }
+
+  static Future<void> _createPromptTables(Database db) async {
+    await db.execute('''CREATE TABLE settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    )''');
+    await db.execute('''CREATE TABLE model_prompts (
+      provider_id INTEGER NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
+      model TEXT NOT NULL,
+      prompt TEXT NOT NULL,
+      PRIMARY KEY(provider_id, model)
+    )''');
   }
 
   Future<List<ProviderConfig>> providers() async => (await (await db).query(
@@ -293,6 +450,70 @@ class ChatStore {
   Future<void> deleteProvider(int id) async {
     await (await db).delete('providers', where: 'id = ?', whereArgs: [id]);
     await _secrets.delete(key: 'provider_$id');
+  }
+
+  Future<String> globalPrompt() async {
+    final rows = await (await db).query(
+      'settings',
+      columns: ['value'],
+      where: 'key = ?',
+      whereArgs: ['global_prompt'],
+      limit: 1,
+    );
+    return rows.isEmpty ? '' : rows.first['value'] as String;
+  }
+
+  Future<void> saveGlobalPrompt(String prompt) async {
+    await (await db).insert('settings', {
+      'key': 'global_prompt',
+      'value': prompt.trim(),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<List<ModelPrompt>> modelPrompts() async => (await (await db).query(
+    'model_prompts',
+    orderBy: 'provider_id, model',
+  )).map(ModelPrompt.fromMap).toList();
+
+  Future<void> saveModelPrompt(
+    int providerId,
+    String model,
+    String prompt,
+  ) async {
+    final database = await db;
+    final normalizedModel = model.trim();
+    if (normalizedModel.isEmpty) throw const FormatException('请输入模型 ID');
+    if (prompt.trim().isEmpty) {
+      await deleteModelPrompt(providerId, normalizedModel);
+      return;
+    }
+    await database.insert('model_prompts', {
+      'provider_id': providerId,
+      'model': normalizedModel,
+      'prompt': prompt.trim(),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> deleteModelPrompt(int providerId, String model) async =>
+      (await db).delete(
+        'model_prompts',
+        where: 'provider_id = ? AND model = ?',
+        whereArgs: [providerId, model],
+      );
+
+  Future<String> systemPrompt(int providerId, String model) async {
+    final global = await globalPrompt();
+    final rows = await (await db).query(
+      'model_prompts',
+      columns: ['prompt'],
+      where: 'provider_id = ? AND model = ?',
+      whereArgs: [providerId, model],
+      limit: 1,
+    );
+    return composeSystemPrompt(
+      global,
+      rows.isEmpty ? '' : rows.first['prompt'] as String,
+    );
   }
 
   Future<List<ChatTopic>> topics() async => (await (await db).query(

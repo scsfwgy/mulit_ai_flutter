@@ -61,7 +61,11 @@ class ModelApiClient {
     '${provider.protocol == ApiProtocol.anthropic ? 'messages' : 'chat/completions'}',
   );
 
-  Map<String, Object?> _body(List<ChatMessage> history, String model) {
+  Map<String, Object?> _body(
+    List<ChatMessage> history,
+    String model,
+    String systemPrompt,
+  ) {
     final messages = history
         .map((message) => {'role': message.role, 'content': message.content})
         .toList();
@@ -70,20 +74,35 @@ class ModelApiClient {
         'model': model,
         'max_tokens': 4096,
         'stream': true,
+        if (systemPrompt.isNotEmpty) 'system': systemPrompt,
         'messages': messages,
       };
     }
-    return {'model': model, 'stream': true, 'messages': messages};
+    return {
+      'model': model,
+      'stream': true,
+      'messages': [
+        if (systemPrompt.isNotEmpty)
+          {'role': 'system', 'content': systemPrompt},
+        ...messages,
+      ],
+    };
   }
 
-  Stream<String> streamReply(List<ChatMessage> history, String model) async* {
+  Stream<String> streamReply(
+    List<ChatMessage> history,
+    String model, {
+    String systemPrompt = '',
+  }) async* {
     try {
       final request = await _client
           .postUrl(_chatUri)
           .timeout(const Duration(seconds: 25));
       request.followRedirects = false;
       _headers.forEach(request.headers.set);
-      final bytes = utf8.encode(jsonEncode(_body(history, model)));
+      final bytes = utf8.encode(
+        jsonEncode(_body(history, model, systemPrompt)),
+      );
       request.contentLength = bytes.length;
       request.add(bytes);
       final response = await request.close().timeout(

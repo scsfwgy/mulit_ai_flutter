@@ -39,6 +39,24 @@ void main() {
     );
   });
 
+  test('presets have distinct IDs, valid API roots and local icons', () {
+    expect(providerPresets.length, greaterThanOrEqualTo(15));
+    expect(
+      providerPresets.map((p) => p.id).toSet().length,
+      providerPresets.length,
+    );
+    for (final preset in providerPresets) {
+      expect(validateBaseUrl(preset.baseUrl), preset.baseUrl);
+      expect(preset.iconAsset, startsWith('assets/provider_icons/'));
+    }
+  });
+
+  test('global and model prompts are joined without empty sections', () {
+    expect(composeSystemPrompt('全局', '模型'), '全局\n\n模型');
+    expect(composeSystemPrompt(' 全局 ', ''), '全局');
+    expect(composeSystemPrompt('', ' 模型 '), '模型');
+  });
+
   test(
     'OpenAI-compatible adapter sends history and reads streamed text',
     () async {
@@ -86,12 +104,13 @@ void main() {
         final pieces = await ModelApiClient(
           provider,
           'test-key',
-        ).streamReply(history, 'demo').toList();
+        ).streamReply(history, 'demo', systemPrompt: '全局\n\n模型').toList();
         expect(pieces.join(), '你好！');
         final request = await seen.future;
         expect(request['path'], '/v1/chat/completions');
         expect(request['auth'], 'Bearer test-key');
         expect((request['body'] as Map)['messages'], [
+          {'role': 'system', 'content': '全局\n\n模型'},
           {'role': 'user', 'content': '你好'},
         ]);
       } finally {
@@ -110,6 +129,8 @@ void main() {
         'key': request.headers.value('x-api-key'),
         'version': request.headers.value('anthropic-version'),
         'max_tokens': body['max_tokens'].toString(),
+        'system': body['system'] as String?,
+        'messages': jsonEncode(body['messages']),
       });
       request.response.headers.contentType = ContentType(
         'text',
@@ -134,21 +155,29 @@ void main() {
         model: 'claude-sonnet-5',
         protocol: ApiProtocol.anthropic,
       );
-      final pieces = await ModelApiClient(provider, 'test-key').streamReply([
-        ChatMessage(
-          id: 1,
-          topicId: 1,
-          role: 'user',
-          content: '你好',
-          createdAt: 1,
-        ),
-      ], 'claude-sonnet-5').toList();
+      final pieces = await ModelApiClient(provider, 'test-key')
+          .streamReply(
+            [
+              ChatMessage(
+                id: 1,
+                topicId: 1,
+                role: 'user',
+                content: '你好',
+                createdAt: 1,
+              ),
+            ],
+            'claude-sonnet-5',
+            systemPrompt: '全局\n\n模型',
+          )
+          .toList();
       expect(pieces.join(), 'Claude 回复');
       final request = await seen.future;
       expect(request['path'], '/v1/messages');
       expect(request['key'], 'test-key');
       expect(request['version'], '2023-06-01');
       expect(request['max_tokens'], '4096');
+      expect(request['system'], '全局\n\n模型');
+      expect(request['messages'], '[{"role":"user","content":"你好"}]');
     } finally {
       await server.close(force: true);
     }

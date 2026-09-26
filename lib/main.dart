@@ -264,6 +264,10 @@ class _ChatHomeState extends State<ChatHome> {
       _notify('找不到密钥，请重新编辑服务配置');
       return;
     }
+    final systemPrompt = await ChatStore.instance.systemPrompt(
+      provider.id,
+      topic.model,
+    );
     _input.clear();
     final first = _messages.isEmpty;
     await ChatStore.instance.addMessage(topic.id, 'user', content);
@@ -290,7 +294,11 @@ class _ChatHomeState extends State<ChatHome> {
     _activeClient = client;
     var answer = '';
     try {
-      await for (final chunk in client.streamReply(history, topic.model)) {
+      await for (final chunk in client.streamReply(
+        history,
+        topic.model,
+        systemPrompt: systemPrompt,
+      )) {
         answer += chunk;
         if (mounted && _topic?.id == topic.id) {
           setState(() => _reply = answer);
