@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'api_client.dart';
+import 'assistant_markdown.dart';
 import 'data.dart';
 import 'provider_screen.dart';
 
@@ -394,6 +396,24 @@ class _ChatHomeState extends State<ChatHome> {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(message)));
 
+  Future<void> _openMarkdownLink(String? href) async {
+    final uri = href == null ? null : Uri.tryParse(href);
+    if (uri == null ||
+        !{'http', 'https'}.contains(uri.scheme) ||
+        uri.host.isEmpty) {
+      _notify('无法打开这个链接');
+      return;
+    }
+    try {
+      if (!await launchUrl(uri, mode: LaunchMode.externalApplication) &&
+          mounted) {
+        _notify('无法打开这个链接');
+      }
+    } catch (_) {
+      if (mounted) _notify('无法打开这个链接');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = _providers
@@ -648,14 +668,19 @@ class _ChatHomeState extends State<ChatHome> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   else
-                    SelectableText(
-                      content,
-                      style: TextStyle(
-                        color: user ? Colors.white : ink,
-                        fontSize: 15,
-                        height: 1.5,
-                      ),
-                    ),
+                    user
+                        ? SelectableText(
+                            content,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              height: 1.5,
+                            ),
+                          )
+                        : AssistantMarkdown(
+                            data: content,
+                            onTapLink: _openMarkdownLink,
+                          ),
                   if (loading && content.isNotEmpty)
                     const Padding(
                       padding: EdgeInsets.only(top: 8),
