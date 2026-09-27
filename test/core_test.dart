@@ -28,6 +28,46 @@ void main() {
     expect(value.config.toMap().containsKey('apiKey'), isFalse);
   });
 
+  test('QR import accepts complete JSON and rejects missing key or HTTP', () {
+    final value = ProviderConfig.fromQrCode('''{
+      "name":"扫码服务", "protocol":"openai_chat",
+      "baseUrl":"https://api.example.com/v1", "model":"demo",
+      "apiKey":" qr-test-key "
+    }''');
+    expect(value.config.name, '扫码服务');
+    expect(value.key, 'qr-test-key');
+    expect(value.config.toMap().containsKey('apiKey'), isFalse);
+    expect(
+      () => ProviderConfig.fromQrCode('''{
+        "name":"扫码服务", "protocol":"openai_chat",
+        "baseUrl":"https://api.example.com/v1", "model":"demo",
+        "apiKey":""
+      }'''),
+      throwsFormatException,
+    );
+    expect(
+      () => ProviderConfig.fromQrCode('''{
+        "name":"扫码服务", "protocol":"openai_chat",
+        "baseUrl":"http://api.example.com/v1", "model":"demo",
+        "apiKey":"qr-test-key"
+      }'''),
+      throwsFormatException,
+    );
+  });
+
+  test(
+    'key-only QR accepts a string and rejects JSON or control characters',
+    () {
+      expect(validateScannedApiKey('  test-key  '), 'test-key');
+      expect(() => validateScannedApiKey('  '), throwsFormatException);
+      expect(() => validateScannedApiKey('line\nbreak'), throwsFormatException);
+      expect(
+        () => validateScannedApiKey('{"apiKey":"test-key"}'),
+        throwsFormatException,
+      );
+    },
+  );
+
   test('API key cannot be sent to an arbitrary cleartext endpoint', () {
     expect(
       () => validateBaseUrl('http://api.example.com/v1'),

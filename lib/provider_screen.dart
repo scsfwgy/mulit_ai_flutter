@@ -7,6 +7,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'api_client.dart';
 import 'data.dart';
 import 'ios_style.dart';
+import 'provider_qr_scanner.dart';
 import 'prompt_screen.dart';
 
 class ProviderScreen extends StatefulWidget {
@@ -39,6 +40,17 @@ class _ProviderScreenState extends State<ProviderScreen> {
       ),
     );
     if (changed == true) {
+      _changed = true;
+      await _load();
+    }
+  }
+
+  Future<void> _scanImport() async {
+    final imported = await Navigator.push<bool>(
+      context,
+      CupertinoPageRoute(builder: (_) => const ProviderQrScanner()),
+    );
+    if (imported == true) {
       _changed = true;
       await _load();
     }
@@ -111,7 +123,7 @@ class _ProviderScreenState extends State<ProviderScreen> {
         children: [
           IosSection(
             title: '我的服务',
-            footer: '密钥保存在设备安全存储中，聊天记录保存在本机。',
+            footer: '密钥仅保存在本机安全存储，我们不会收集到自己的服务器。调用模型时，设备会将密钥直接发送给你配置的 API 服务商。',
             children: _providers.isEmpty
                 ? [
                     const Padding(
@@ -217,6 +229,16 @@ class _ProviderScreenState extends State<ProviderScreen> {
             title: '其他',
             footer: '支持 OpenAI 兼容 Chat Completions 与 Claude Messages 协议。',
             children: [
+              IosRow(
+                title: '扫码导入配置',
+                subtitle: '扫描完整配置 JSON 二维码',
+                leading: const Icon(
+                  CupertinoIcons.qrcode_viewfinder,
+                  color: IosColors.blue,
+                  size: 22,
+                ),
+                onTap: _scanImport,
+              ),
               IosRow(
                 title: '自定义 API / JSON 导入',
                 leading: const Icon(
@@ -403,6 +425,31 @@ class _ProviderEditorState extends State<ProviderEditor> {
     }
   }
 
+  Future<void> _scanApiKey() async {
+    final key = await Navigator.push<String>(
+      context,
+      CupertinoPageRoute(
+        builder: (_) =>
+            const ProviderQrScanner(mode: ProviderQrScanMode.apiKey),
+      ),
+    );
+    if (key == null || !mounted) return;
+    if (_jsonMode) {
+      try {
+        final decoded = jsonDecode(_json.text);
+        if (decoded is! Map<String, dynamic>) {
+          throw const FormatException('请先填写有效的配置 JSON');
+        }
+        decoded['apiKey'] = key;
+        _json.text = const JsonEncoder.withIndent('  ').convert(decoded);
+      } catch (_) {
+        _showError(const FormatException('请先修正配置 JSON，再扫码填写密钥'));
+      }
+    } else {
+      _key.text = key;
+    }
+  }
+
   Future<void> _fetchModels() async {
     try {
       final value = _jsonMode ? _jsonValue() : _formValue();
@@ -515,7 +562,7 @@ class _ProviderEditorState extends State<ProviderEditor> {
                 if (_jsonMode)
                   IosSection(
                     title: '完整配置 JSON',
-                    footer: '字段：name、protocol、baseUrl、model、apiKey。编辑已有配置时，apiKey 留空表示保留原密钥。',
+                    footer: '字段：name、protocol、baseUrl、model、apiKey。编辑时 apiKey 留空表示保留原密钥；JSON 编辑框会明文显示新填入的密钥。',
                     children: [
                       Padding(
                         padding: const EdgeInsets.all(14),
@@ -535,6 +582,15 @@ class _ProviderEditorState extends State<ProviderEditor> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
+                      ),
+                      IosRow(
+                        title: '扫码填写 API Key',
+                        leading: const Icon(
+                          CupertinoIcons.qrcode_viewfinder,
+                          color: IosColors.blue,
+                          size: 22,
+                        ),
+                        onTap: _scanApiKey,
                       ),
                     ],
                   )
@@ -621,15 +677,32 @@ class _ProviderEditorState extends State<ProviderEditor> {
             borderRadius: BorderRadius.circular(8),
           ),
           suffix: secret
-              ? CupertinoButton(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  minimumSize: const Size(36, 36),
-                  onPressed: () => setState(() => _obscure = !_obscure),
-                  child: Icon(
-                    _obscure ? CupertinoIcons.eye_slash : CupertinoIcons.eye,
-                    size: 19,
-                    color: IosColors.secondary,
-                  ),
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CupertinoButton(
+                      padding: const EdgeInsets.symmetric(horizontal: 7),
+                      minimumSize: const Size(36, 36),
+                      onPressed: _scanApiKey,
+                      child: const Icon(
+                        CupertinoIcons.qrcode_viewfinder,
+                        size: 20,
+                        color: IosColors.blue,
+                      ),
+                    ),
+                    CupertinoButton(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: const Size(36, 36),
+                      onPressed: () => setState(() => _obscure = !_obscure),
+                      child: Icon(
+                        _obscure
+                            ? CupertinoIcons.eye_slash
+                            : CupertinoIcons.eye,
+                        size: 19,
+                        color: IosColors.secondary,
+                      ),
+                    ),
+                  ],
                 )
               : null,
         ),

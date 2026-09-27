@@ -7,6 +7,8 @@
 - 19 个服务预设，覆盖 OpenAI、Claude、Gemini、DeepSeek、GLM、千问、豆包、Kimi、MiniMax、百度千帆、腾讯混元、OpenRouter 等；按国内、国际、聚合与推理平台分组。选平台、粘贴密钥即可接入；地址和模型均可修改。
 - 自定义 API：支持 OpenAI 兼容 Chat Completions 和 Claude Messages 两种协议。
 - 服务配置同时支持表单与完整 JSON 导入，支持按服务端模型列表选择模型，也能手填模型 ID。
+- 服务配置支持扫码一键导入：在「模型服务」→「扫码导入配置」扫描完整配置 JSON 二维码；字段校验通过后自动保存，API Key 仍写入系统安全存储。扫码只读取二维码内容，不上传到中间服务器。
+- 使用平台预设时，也可以点 API Key 输入框旁的扫码图标，扫描仅包含密钥字符串的二维码；密钥会填入表单，检查后点「保存并接入」。JSON 编辑模式也提供「扫码填写 API Key」。
 - 多话题聊天：新建、切换、重命名、删除；每个话题可选择服务与模型。
 - 流式回复、停止生成、Markdown 回复渲染（标题、列表、表格、代码块等）、链接打开与原文复制。聊天记录保存在设备 SQLite 数据库；API Key 保存在系统安全存储中，不写入聊天数据库。
 - iOS 风格的聊天页、话题页和服务配置页，Android 与 iOS 复用相同页面组件。
@@ -35,11 +37,17 @@ flutter run
 }
 ```
 
+扫码导入时，将上面这份 JSON（换成自己的配置和密钥）作为二维码内容即可；新服务的 `apiKey` 不可留空。二维码包含密钥，请仅在可信场景中展示和扫描。
+
+如果使用已有的平台预设，二维码也可以只包含 API Key 字符串，无需包装成 JSON；在该服务的 API Key 输入框旁扫码填写即可。
+
 `protocol` 也可以填 `anthropic_messages`。`baseUrl` 是根地址，应用会追加 `/chat/completions` 或 `/messages`。默认要求 HTTPS；Android 模拟器访问宿主机时可用 `http://10.0.2.2:端口`。编辑现有服务时，`apiKey` 留空表示保留原密钥。
 
 ## 数据与当前边界
 
-话题与正文以明文存于本机 SQLite；卸载应用会删除本地记录。Android 备份已关闭。密钥通过 `flutter_secure_storage` 写入系统安全存储。配置的服务地址能收到你发送的上下文与密钥，因此只应接入可信的服务。
+**密钥只保存在设备的安全存储中，我们不会把密钥收集到自己的服务器。**应用没有 API 中转服务；获取模型列表或发送对话时，设备会将密钥放入请求头，直接发送给你配置的 API 服务商进行认证。因此请只接入可信的服务地址。
+
+表单、JSON 和扫码导入使用同一套保存方式：配置中的名称、协议、API 根地址、默认模型和预设 ID 拆成字段，写入设备本机的 SQLite `providers` 表；`apiKey` 单独由 `flutter_secure_storage` 按服务 ID 保存，不进入 SQLite。完整 JSON 文本和二维码原文不会另存为文件或数据库记录。话题、消息正文和提示词也保存在本机 SQLite，其中消息正文与提示词未加密。Android 备份已关闭；卸载应用会删除本地记录。
 
 服务图标来自 [Lobe Icons](https://github.com/lobehub/lobe-icons)，随应用本地打包；许可见 [assets/provider_icons/LICENSE](assets/provider_icons/LICENSE)。预设地址和模型随第三方服务变化，实际可用性以服务商及账户为准；没有真实 API Key 的平台不视为已实测。
 

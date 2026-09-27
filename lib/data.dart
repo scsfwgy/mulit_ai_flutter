@@ -186,6 +186,17 @@ String validateBaseUrl(String input) {
   return input.trim().replaceAll(RegExp(r'/+$'), '');
 }
 
+String validateScannedApiKey(String input) {
+  final key = input.trim();
+  if (key.isEmpty || key.contains(RegExp(r'[\x00-\x1F]'))) {
+    throw const FormatException('二维码中没有有效的 API Key');
+  }
+  if (key.startsWith('{') && key.endsWith('}')) {
+    throw const FormatException('请扫描仅包含 API Key 字符串的二维码');
+  }
+  return key;
+}
+
 class ProviderConfig {
   const ProviderConfig({
     required this.id,
@@ -273,6 +284,21 @@ class ProviderConfig {
       ),
       key: key,
     );
+  }
+
+  static ({ProviderConfig config, String key}) fromQrCode(String source) {
+    late final ({ProviderConfig config, String key}) value;
+    try {
+      value = fromImportJson(source);
+    } on FormatException catch (error) {
+      throw FormatException(error.message);
+    } catch (_) {
+      throw const FormatException('二维码配置字段格式不正确');
+    }
+    if (value.key.isEmpty) {
+      throw const FormatException('二维码缺少 API Key');
+    }
+    return value;
   }
 }
 
