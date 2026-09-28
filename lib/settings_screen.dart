@@ -7,6 +7,7 @@ import 'ios_style.dart';
 import 'privacy_screen.dart';
 import 'prompt_screen.dart';
 import 'provider_screen.dart';
+import 'voice_settings_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key, this.canClearData});
@@ -88,6 +89,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       canClearData: widget.canClearData,
                       onPrivacy: _openPrivacy,
                     ),
+                  ),
+                ),
+              ),
+              IosRow(
+                title: tr('语音服务'),
+                leading: Icon(CupertinoIcons.waveform, color: IosColors.blue),
+                onTap: () => Navigator.push<void>(
+                  context,
+                  CupertinoPageRoute(
+                    builder: (_) => const VoiceSettingsScreen(),
                   ),
                 ),
               ),

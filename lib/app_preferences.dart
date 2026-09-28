@@ -146,6 +146,15 @@ String tr(String chinese) {
   if (!AppPreferences.instance.english) return chinese;
   final direct = _english[chinese];
   if (direct != null) return direct;
+  final voiceHttp = RegExp(r'^语音服务请求失败（HTTP (\d+)）').firstMatch(chinese);
+  if (voiceHttp != null) {
+    return 'Voice service failed (HTTP ${voiceHttp.group(1)}). Check the key, model and permissions';
+  }
+  final doubaoCode = RegExp(r'^豆包语音(识别|合成)失败（状态码 ([^）]+)）').firstMatch(chinese);
+  if (doubaoCode != null) {
+    final action = doubaoCode.group(1) == '识别' ? 'transcription' : 'speech';
+    return 'Doubao $action failed (status ${doubaoCode.group(2)}). Check resource permissions';
+  }
   for (final (prefix, translated) in _englishPrefixes) {
     if (chinese.startsWith(prefix)) {
       return '$translated${chinese.substring(prefix.length)}';
@@ -166,6 +175,62 @@ const _englishPrefixes = <(String, String)>[
 ];
 
 const _english = <String, String>{
+  'OpenAI 兼容音频': 'OpenAI-compatible audio',
+  '小米 MiMo': 'Xiaomi MiMo',
+  '豆包语音': 'Doubao Speech',
+  '没有识别到可用文字，请重试': 'No usable speech was detected. Try again',
+  '识别文字过长，请分段录音': 'Transcript too long. Record shorter segments',
+  '语音服务返回内容过大': 'Voice service response is too large',
+  '语音服务返回格式无效': 'Invalid voice service response',
+  '录音为空或超过 12 MB，请缩短录音':
+      'Recording is empty or over 12 MB. Record a shorter clip',
+  '语音服务缺少 API Key': 'Voice service API key is missing',
+  '没有可朗读的文字': 'No text to read aloud',
+  '消息过长，请选择较短的内容朗读': 'Message too long. Choose shorter text to read aloud',
+  '语音服务没有返回音频': 'Voice service returned no audio',
+  '语音服务返回的音频无效': 'Voice service returned invalid audio',
+  '录音文件不存在，请重试': 'Recording file is missing. Try again',
+  '请先选择语音识别服务': 'Choose a transcription service first',
+  '请填写服务名称、模型 ID 与音色': 'Enter a service name, model IDs and voice ID',
+  '小米 MiMo 请使用官方接口地址': 'Use the official Xiaomi MiMo API address',
+  '豆包语音请使用官方接口地址': 'Use the official Doubao Speech API address',
+  '请填写语音服务 API Key': 'Enter the voice service API key',
+  '选中的文字服务缺少 API Key': 'The selected text provider has no API key',
+  '语音服务': 'Voice services',
+  '语音识别服务': 'Transcription service',
+  '语音朗读服务': 'Speech service',
+  '回复完成后自动朗读': 'Read replies aloud automatically',
+  '语音提供商': 'Voice providers',
+  '添加语音提供商': 'Add voice provider',
+  '编辑语音提供商': 'Edit voice provider',
+  '删除语音提供商': 'Delete voice provider',
+  '删除语音提供商？': 'Delete voice provider?',
+  '语音模型': 'Voice models',
+  '识别模型 ID / 资源 ID': 'ASR model / resource ID',
+  '合成模型 ID / 资源 ID': 'TTS model / resource ID',
+  '音色 ID': 'Voice ID',
+  '密钥来源': 'Key source',
+  '独立密钥': 'Separate key',
+  '复用文字服务': 'Reuse text provider',
+  '文字服务已删除': 'Text provider was deleted',
+  '不使用': 'None',
+  '未设置': 'Not set',
+  '朗读回复': 'Read reply aloud',
+  '语音输入': 'Voice input',
+  '结束录音并识别': 'Stop and transcribe',
+  '录音中': 'Recording',
+  '正在识别语音…': 'Transcribing…',
+  '取消录音': 'Cancel recording',
+  '识别完成，请检查文字后发送': 'Review the transcript, then send',
+  '请允许麦克风权限后重试': 'Allow microphone access and try again',
+  '无法开始录音，请检查麦克风权限': 'Could not record. Check microphone access',
+  '语音识别失败，请重试': 'Transcription failed. Try again',
+  '语音朗读失败，请重试': 'Could not read aloud. Try again',
+  '请检查配置后重试': 'Check the configuration and try again',
+  'API Key（留空保留原密钥）': 'API key (blank keeps current key)',
+  '录音只发送给选定的语音识别服务；识别文字先填入输入框供你检查。朗读声音由 AI 生成，应用只播放返回的音频。': 'Recordings go directly to your chosen transcription service. Review the text before sending. Spoken replies are AI-generated; the app only plays the returned audio.',
+  '文字服务密钥仅在接口确实支持语音时可复用。豆包语音须单独填写豆包语音控制台的 API Key。': 'Reuse a text key only when its API supports audio. Doubao Speech needs its own API key.',
+  '模型与音色 ID 需要在对应服务开通。豆包语音的模型栏填写资源 ID。': 'Model and voice IDs must be available on the service. Use resource IDs for Doubao Speech.',
   '模型之间': 'Between Models',
   '更多': 'More',
   '对话列表': 'Chats',

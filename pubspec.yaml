@@ -45,6 +45,11 @@ dependencies:
   package_info_plus: ^10.2.1
   flutter_localizations:
     sdk: flutter
+  record: ^7.1.1
+  audioplayers: ^6.8.1
+  path_provider: ^2.1.5
+  http: ^1.5.0
+  uuid: ^4.6.0
 
 dev_dependencies:
   flutter_test:

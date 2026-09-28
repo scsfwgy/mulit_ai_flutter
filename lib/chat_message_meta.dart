@@ -18,6 +18,7 @@ class ChatMessageMeta extends StatelessWidget {
     this.inputTokens,
     this.outputTokens,
     this.onCopy,
+    this.onSpeak,
   });
 
   final bool assistant;
@@ -30,6 +31,7 @@ class ChatMessageMeta extends StatelessWidget {
   final int? inputTokens;
   final int? outputTokens;
   final VoidCallback? onCopy;
+  final VoidCallback? onSpeak;
 
   String _time(int? milliseconds) {
     if (milliseconds == null) return '—';
@@ -144,6 +146,18 @@ class ChatMessageMeta extends StatelessWidget {
                     ),
                   ),
                 ),
+              ),
+            ),
+          if (assistant && onSpeak != null)
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(40, 32),
+              onPressed: onSpeak,
+              child: Icon(
+                CupertinoIcons.speaker_2,
+                size: 17,
+                color: IosColors.secondary,
+                semanticLabel: tr('朗读回复'),
               ),
             ),
         ],

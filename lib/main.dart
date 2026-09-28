@@ -1,9 +1,14 @@
 import 'dart:async';
+import 'dart:io';
+
+import 'package:audioplayers/audioplayers.dart';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'api_client.dart';
@@ -21,6 +26,8 @@ import 'message_copy.dart';
 import 'provider_screen.dart';
 import 'settings_screen.dart';
 import 'topic_screen.dart';
+import 'voice_client.dart';
+import 'voice_settings_screen.dart';
 
 enum _ChatErrorAction { none, configure, model, request, retry }
 
@@ -118,9 +125,20 @@ class ChatHome extends StatefulWidget {
   State<ChatHome> createState() => _ChatHomeState();
 }
 
-class _ChatHomeState extends State<ChatHome> {
+class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _input = TextEditingController();
+  final _inputFocus = FocusNode();
+  final _recorder = AudioRecorder();
+  final _player = AudioPlayer();
+  String? _recordingPath;
+  String? _playingPath;
+  bool _recording = false;
+  bool _transcribing = false;
+  bool _playing = false;
+  int _speechGeneration = 0;
+  int _recordSeconds = 0;
+  Timer? _recordTimer;
   final _chatScroll = ChatScrollController();
   List<ProviderConfig> _providers = [];
   List<ChatTopic> _topics = [];
@@ -148,11 +166,49 @@ class _ChatHomeState extends State<ChatHome> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_removeStaleVoiceFiles(DateTime.now()));
+    _player.onPlayerComplete.listen((_) {
+      final path = _playingPath;
+      _playingPath = null;
+      if (path != null) File(path).delete().catchError((_) => File(path));
+      if (mounted) setState(() => _playing = false);
+    });
     _load();
+  }
+
+  Future<void> _removeStaleVoiceFiles(DateTime startedAt) async {
+    try {
+      final directory = await getTemporaryDirectory();
+      await for (final entity in directory.list()) {
+        final name = entity.uri.pathSegments.last;
+        if (entity is File &&
+            (name.startsWith('voice_') && name.endsWith('.wav') ||
+                name.startsWith('reply_') &&
+                    (name.endsWith('.wav') || name.endsWith('.mp3'))) &&
+            (await entity.lastModified()).isBefore(startedAt)) {
+          await entity.delete();
+        }
+      }
+    } catch (_) {
+      // Temporary files are also removed after each request and playback.
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _recordTimer?.cancel();
+    if (_recording) _recorder.cancel();
+    _recorder.dispose();
+    _player.dispose();
+    if (_recordingPath case final path?) {
+      File(path).delete().catchError((_) => File(path));
+    }
+    if (_playingPath case final path?) {
+      File(path).delete().catchError((_) => File(path));
+    }
+    _inputFocus.dispose();
     _activeClient?.cancel();
     _replyTimer?.cancel();
     _replyElapsedMs.dispose();
@@ -162,6 +218,13 @@ class _ChatHomeState extends State<ChatHome> {
     _input.dispose();
     _chatScroll.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed && _recording) {
+      unawaited(_cancelRecording());
+    }
   }
 
   Future<void> _load() async {
@@ -222,7 +285,13 @@ class _ChatHomeState extends State<ChatHome> {
 
   void _openTopics() => _scaffoldKey.currentState?.openDrawer();
 
-  bool _canClearData() => !_sending && !_starting && _titleClients.isEmpty;
+  bool _canClearData() =>
+      !_sending &&
+      !_starting &&
+      !_recording &&
+      !_transcribing &&
+      !_playing &&
+      _titleClients.isEmpty;
 
   void _closeTopics() {
     _scaffoldKey.currentState?.closeDrawer();
@@ -369,9 +438,181 @@ class _ChatHomeState extends State<ChatHome> {
     _activeClient?.cancel();
   }
 
+  Future<VoiceProviderConfig?> _selectedVoiceService(
+    String settingKey, {
+    bool openSettings = true,
+  }) async {
+    final store = ChatStore.instance;
+    final id = await store.setting(settingKey);
+    final service = (await store.voiceProviders())
+        .where((item) => item.id == id)
+        .firstOrNull;
+    if (service == null && openSettings && mounted) {
+      await Navigator.push<void>(
+        context,
+        CupertinoPageRoute(builder: (_) => const VoiceSettingsScreen()),
+      );
+    }
+    return service;
+  }
+
+  Future<void> _startRecording() async {
+    if (_recording || _transcribing || _sending || _starting) return;
+    if (await _selectedVoiceService('voice_asr_id') == null) return;
+    try {
+      if (!await _recorder.hasPermission()) {
+        if (mounted) _notify(tr('请允许麦克风权限后重试'));
+        return;
+      }
+      final dir = await getTemporaryDirectory();
+      final path =
+          '${dir.path}/voice_${DateTime.now().microsecondsSinceEpoch}.wav';
+      await _recorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.wav,
+          sampleRate: 16000,
+          numChannels: 1,
+        ),
+        path: path,
+      );
+      if (!mounted) {
+        await _recorder.cancel();
+        return;
+      }
+      setState(() {
+        _recording = true;
+        _recordSeconds = 0;
+        _recordingPath = path;
+      });
+      _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) return;
+        if (_recordSeconds >= 59) {
+          unawaited(_finishRecording());
+          return;
+        }
+        setState(() => _recordSeconds++);
+      });
+    } catch (_) {
+      if (mounted) _notify(tr('无法开始录音，请检查麦克风权限'));
+    }
+  }
+
+  Future<void> _cancelRecording() async {
+    if (!_recording) return;
+    _recordTimer?.cancel();
+    if (mounted) {
+      setState(() {
+        _recording = false;
+        _recordSeconds = 0;
+      });
+    }
+    await _recorder.cancel();
+    final path = _recordingPath;
+    _recordingPath = null;
+    if (path != null) await File(path).delete().catchError((_) => File(path));
+  }
+
+  Future<void> _finishRecording() async {
+    if (!_recording) return;
+    _recordTimer?.cancel();
+    setState(() {
+      _recording = false;
+      _transcribing = true;
+    });
+    final path = _recordingPath;
+    _recordingPath = null;
+    VoiceClient? client;
+    try {
+      final stopped = await _recorder.stop();
+      final file = File(stopped ?? path ?? '');
+      if (!await file.exists()) throw const VoiceException('录音文件不存在，请重试');
+      final data = await file.readAsBytes();
+      final service = await _selectedVoiceService(
+        'voice_asr_id',
+        openSettings: false,
+      );
+      if (service == null) throw const VoiceException('请先选择语音识别服务');
+      final key = await ChatStore.instance.voiceApiKey(service);
+      if (key == null || key.isEmpty) {
+        throw const VoiceException('语音服务缺少 API Key');
+      }
+      client = VoiceClient(service, key);
+      final transcript = await client.transcribe(data);
+      if (!mounted) return;
+      final old = _input.text.trim();
+      _input.text = old.isEmpty ? transcript : '$old\n$transcript';
+      _input.selection = TextSelection.collapsed(offset: _input.text.length);
+      _inputFocus.requestFocus();
+      _notify(tr('识别完成，请检查文字后发送'));
+    } catch (error) {
+      if (mounted) {
+        _notify(error is VoiceException ? tr(error.message) : tr('语音识别失败，请重试'));
+      }
+    } finally {
+      client?.close();
+      if (path != null) await File(path).delete().catchError((_) => File(path));
+      if (mounted) setState(() => _transcribing = false);
+    }
+  }
+
+  Future<void> _playSpeech(String markdown, {bool automatic = false}) async {
+    if (_playing) {
+      _speechGeneration++;
+      await _player.stop();
+      final oldPath = _playingPath;
+      _playingPath = null;
+      if (oldPath != null) {
+        await File(oldPath).delete().catchError((_) => File(oldPath));
+      }
+      if (mounted) setState(() => _playing = false);
+      return;
+    }
+    final generation = ++_speechGeneration;
+    final service = await _selectedVoiceService(
+      'voice_tts_id',
+      openSettings: !automatic,
+    );
+    if (service == null) return;
+    VoiceClient? client;
+    try {
+      final key = await ChatStore.instance.voiceApiKey(service);
+      if (key == null || key.isEmpty) {
+        throw const VoiceException('语音服务缺少 API Key');
+      }
+      client = VoiceClient(service, key);
+      if (mounted) setState(() => _playing = true);
+      final bytes = await client.synthesize(readableMarkdown(markdown));
+      if (!mounted || generation != _speechGeneration) return;
+      final dir = await getTemporaryDirectory();
+      final path =
+          '${dir.path}/reply_${DateTime.now().microsecondsSinceEpoch}.${service.protocol == VoiceProtocol.mimo ? 'wav' : 'mp3'}';
+      await File(path).writeAsBytes(bytes, flush: true);
+      _playingPath = path;
+      await _player.play(DeviceFileSource(path));
+    } catch (error) {
+      final failedPath = _playingPath;
+      _playingPath = null;
+      if (failedPath != null) {
+        await File(failedPath).delete().catchError((_) => File(failedPath));
+      }
+      if (mounted) {
+        _notify(error is VoiceException ? tr(error.message) : tr('语音朗读失败，请重试'));
+      }
+      if (mounted) setState(() => _playing = false);
+    } finally {
+      client?.close();
+    }
+  }
+
   Future<void> _send() async {
     final content = _input.text.trim();
-    if (content.isEmpty || _starting || _sending) return;
+    if (content.isEmpty ||
+        _starting ||
+        _sending ||
+        _recording ||
+        _transcribing) {
+      return;
+    }
     setState(() => _starting = true);
     try {
       await _sendMessage(content);
@@ -612,6 +853,12 @@ class _ChatHomeState extends State<ChatHome> {
         unawaited(
           _generateTitle(topic, provider, key, history.first.content, answer),
         );
+      }
+      if (completed &&
+          answer.isNotEmpty &&
+          mounted &&
+          await ChatStore.instance.setting('voice_auto_read') == '1') {
+        unawaited(_playSpeech(answer, automatic: true));
       }
     }
   }
@@ -1037,6 +1284,7 @@ class _ChatHomeState extends State<ChatHome> {
                       inputTokens: usage?.inputTokens,
                       outputTokens: usage?.outputTokens,
                       onCopy: () => _copyBubble(content, renderMarkdown: !user),
+                      onSpeak: user ? null : () => _playSpeech(content),
                     ),
                 ],
               ),
@@ -1055,48 +1303,111 @@ class _ChatHomeState extends State<ChatHome> {
     padding: const EdgeInsets.fromLTRB(12, 9, 12, 4),
     child: SafeArea(
       top: false,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: CupertinoTextField(
-              controller: _input,
-              minLines: 1,
-              maxLines: 5,
-              textInputAction: TextInputAction.send,
-              onSubmitted: (_) => _send(),
-              textCapitalization: TextCapitalization.sentences,
-              placeholder: _providers.isEmpty ? tr('先接入模型服务') : tr('发送消息'),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-              decoration: BoxDecoration(
-                color: IosColors.surface,
-                borderRadius: BorderRadius.circular(21),
-                border: Border.all(color: IosColors.separator),
+          if (_recording || _transcribing)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 5),
+              child: Row(
+                children: [
+                  Icon(
+                    _recording
+                        ? CupertinoIcons.waveform
+                        : CupertinoIcons.hourglass,
+                    size: 16,
+                    color: _recording ? IosColors.destructive : IosColors.blue,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    _recording
+                        ? '${tr('录音中')} ${_recordSeconds}s'
+                        : tr('正在识别语音…'),
+                    style: TextStyle(color: IosColors.secondary, fontSize: 13),
+                  ),
+                  const Spacer(),
+                  if (_recording)
+                    CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(44, 28),
+                      onPressed: _cancelRecording,
+                      child: Text(
+                        tr('取消录音'),
+                        style: TextStyle(
+                          color: IosColors.destructive,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
-          ),
-          const SizedBox(width: 8),
-          CupertinoButton(
-            padding: EdgeInsets.zero,
-            minimumSize: const Size(40, 40),
-            onPressed: _sending ? _stopReply : (_starting ? null : _send),
-            child: Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: _sending
-                    ? IosColors.destructive
-                    : _starting
-                    ? IosColors.secondary
-                    : IosColors.blue,
-                shape: BoxShape.circle,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              CupertinoButton(
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(38, 40),
+                onPressed: _transcribing
+                    ? null
+                    : (_recording ? _finishRecording : _startRecording),
+                child: Icon(
+                  _recording
+                      ? CupertinoIcons.stop_circle_fill
+                      : CupertinoIcons.mic,
+                  color: _recording ? IosColors.destructive : IosColors.blue,
+                  semanticLabel: tr(_recording ? '结束录音并识别' : '语音输入'),
+                ),
               ),
-              child: Icon(
-                _sending ? CupertinoIcons.stop_fill : CupertinoIcons.arrow_up,
-                color: IosColors.onAccent,
-                size: 21,
+              Expanded(
+                child: CupertinoTextField(
+                  controller: _input,
+                  focusNode: _inputFocus,
+                  minLines: 1,
+                  maxLines: 5,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _send(),
+                  textCapitalization: TextCapitalization.sentences,
+                  placeholder: _providers.isEmpty ? tr('先接入模型服务') : tr('发送消息'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 11,
+                  ),
+                  decoration: BoxDecoration(
+                    color: IosColors.surface,
+                    borderRadius: BorderRadius.circular(21),
+                    border: Border.all(color: IosColors.separator),
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(width: 8),
+              CupertinoButton(
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(40, 40),
+                onPressed: _sending
+                    ? _stopReply
+                    : (_starting || _recording || _transcribing ? null : _send),
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: _sending
+                        ? IosColors.destructive
+                        : _starting
+                        ? IosColors.secondary
+                        : IosColors.blue,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    _sending
+                        ? CupertinoIcons.stop_fill
+                        : CupertinoIcons.arrow_up,
+                    color: IosColors.onAccent,
+                    size: 21,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

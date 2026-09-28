@@ -478,6 +478,53 @@ class CachedModelList {
   }
 }
 
+enum VoiceProtocol { openAi, mimo, doubao }
+
+class VoiceProviderConfig {
+  const VoiceProviderConfig({
+    required this.id,
+    required this.name,
+    required this.protocol,
+    required this.baseUrl,
+    required this.asrModel,
+    required this.ttsModel,
+    required this.voice,
+    this.textProviderId,
+  });
+
+  final String id;
+  final String name;
+  final VoiceProtocol protocol;
+  final String baseUrl;
+  final String asrModel;
+  final String ttsModel;
+  final String voice;
+  final int? textProviderId;
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'name': name,
+    'protocol': protocol.name,
+    'baseUrl': baseUrl,
+    'asrModel': asrModel,
+    'ttsModel': ttsModel,
+    'voice': voice,
+    'textProviderId': textProviderId,
+  };
+
+  factory VoiceProviderConfig.fromJson(Map<String, dynamic> json) =>
+      VoiceProviderConfig(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        protocol: VoiceProtocol.values.byName(json['protocol'] as String),
+        baseUrl: json['baseUrl'] as String,
+        asrModel: json['asrModel'] as String,
+        ttsModel: json['ttsModel'] as String,
+        voice: json['voice'] as String,
+        textProviderId: json['textProviderId'] as int?,
+      );
+}
+
 class ChatStore {
   ChatStore._();
   static final ChatStore instance = ChatStore._();
@@ -605,7 +652,64 @@ class ChatStore {
   Future<String?> apiKey(int providerId) =>
       _secrets.read(key: 'provider_$providerId');
 
+  Future<List<VoiceProviderConfig>> voiceProviders() async {
+    final raw = await setting('voice_providers');
+    if (raw == null) return [];
+    try {
+      return (jsonDecode(raw) as List)
+          .map(
+            (item) =>
+                VoiceProviderConfig.fromJson(item as Map<String, dynamic>),
+          )
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> saveVoiceProvider(
+    VoiceProviderConfig config, {
+    String? apiKey,
+  }) async {
+    final items = await voiceProviders();
+    items.removeWhere((item) => item.id == config.id);
+    items.add(config);
+    if (apiKey != null && apiKey.trim().isNotEmpty) {
+      await _secrets.write(key: 'voice_${config.id}', value: apiKey.trim());
+    } else if (config.textProviderId != null) {
+      await _secrets.delete(key: 'voice_${config.id}');
+    }
+    await saveSetting(
+      'voice_providers',
+      jsonEncode(items.map((item) => item.toJson()).toList()),
+    );
+  }
+
+  Future<String?> voiceApiKey(VoiceProviderConfig config) async {
+    if (config.textProviderId case final id?) return apiKey(id);
+    return _secrets.read(key: 'voice_${config.id}');
+  }
+
+  Future<void> deleteVoiceProvider(String id) async {
+    final items = await voiceProviders();
+    items.removeWhere((item) => item.id == id);
+    await saveSetting(
+      'voice_providers',
+      jsonEncode(items.map((item) => item.toJson()).toList()),
+    );
+    await _secrets.delete(key: 'voice_$id');
+    if (await setting('voice_asr_id') == id) {
+      await saveSetting('voice_asr_id', '');
+    }
+    if (await setting('voice_tts_id') == id) {
+      await saveSetting('voice_tts_id', '');
+    }
+  }
+
   Future<void> deleteProvider(int id) async {
+    for (final voice in await voiceProviders()) {
+      if (voice.textProviderId == id) await deleteVoiceProvider(voice.id);
+    }
     await (await db).delete('providers', where: 'id = ?', whereArgs: [id]);
     await deleteModelCache(id);
     await _secrets.delete(key: 'provider_$id');
