@@ -7,6 +7,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:mulit_ai_flutter/api_client.dart';
 import 'package:mulit_ai_flutter/app_preferences.dart';
 import 'package:mulit_ai_flutter/chat_more_menu.dart';
+import 'package:mulit_ai_flutter/chat_message_meta.dart';
 import 'package:mulit_ai_flutter/chat_model_selector.dart';
 import 'package:mulit_ai_flutter/chat_model_title.dart';
 import 'package:mulit_ai_flutter/data.dart';
@@ -17,6 +18,54 @@ import 'package:mulit_ai_flutter/privacy_screen.dart';
 import 'package:mulit_ai_flutter/settings_screen.dart';
 
 void main() {
+  testWidgets('message details settings exposes each display switch', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: MessageInfoSettingsScreen()),
+    );
+    expect(find.byType(CupertinoSwitch), findsNWidgets(5));
+    expect(find.text('首帧耗时'), findsOneWidget);
+    expect(find.text('总耗时'), findsOneWidget);
+    expect(find.text('Token 用量'), findsOneWidget);
+    expect(find.text('字数'), findsOneWidget);
+  });
+
+  testWidgets('assistant details show request usage; user details do not', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              ChatMessageMeta(
+                assistant: true,
+                content: '**你好**',
+                modelId: 'example/model',
+                firstTokenMs: 530,
+                totalMs: 1800,
+                inputTokens: 40,
+                outputTokens: 12,
+              ),
+              ChatMessageMeta(
+                assistant: false,
+                content: '你好',
+                modelId: 'example/model',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    expect(find.text('首帧 530ms'), findsOneWidget);
+    expect(find.text('总耗时 1.8s'), findsOneWidget);
+    expect(find.text('输入 40'), findsOneWidget);
+    expect(find.text('输出 12'), findsOneWidget);
+    expect(find.text('字数 2'), findsNWidgets(2));
+    expect(find.text('模型 ID example/model'), findsNWidgets(2));
+  });
+
   testWidgets('settings exposes model, language, appearance, and about', (
     tester,
   ) async {

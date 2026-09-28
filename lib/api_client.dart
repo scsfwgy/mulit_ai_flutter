@@ -14,6 +14,18 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
+class ReplyUsage {
+  const ReplyUsage({this.inputTokens, this.outputTokens});
+
+  final int? inputTokens;
+  final int? outputTokens;
+
+  ReplyUsage merge(ReplyUsage newer) => ReplyUsage(
+    inputTokens: newer.inputTokens ?? inputTokens,
+    outputTokens: newer.outputTokens ?? outputTokens,
+  );
+}
+
 /// Extracts complete SSE data payloads, including events with multiple data lines.
 class SseDecoder {
   final _data = <String>[];
@@ -69,6 +81,7 @@ class ModelApiClient {
     String model,
     String systemPrompt,
     int? maxTokens,
+    bool includeUsage,
   ) {
     final messages = history
         .map((message) => {'role': message.role, 'content': message.content})
@@ -85,6 +98,7 @@ class ModelApiClient {
     return {
       'model': model,
       'stream': true,
+      if (includeUsage) 'stream_options': {'include_usage': true},
       'max_tokens': ?maxTokens,
       'messages': [
         if (systemPrompt.isNotEmpty)
@@ -99,21 +113,38 @@ class ModelApiClient {
     String model, {
     String systemPrompt = '',
     int? maxTokens,
+    void Function(ReplyUsage usage)? onUsage,
   }) async* {
     try {
-      final request = await _client
-          .postUrl(_chatUri)
-          .timeout(const Duration(seconds: 25));
-      request.followRedirects = false;
-      _headers.forEach(request.headers.set);
-      final bytes = utf8.encode(
-        jsonEncode(_body(history, model, systemPrompt, maxTokens)),
+      var includeUsage =
+          onUsage != null && provider.protocol == ApiProtocol.openAi;
+      var response = await _sendReplyRequest(
+        history,
+        model,
+        systemPrompt,
+        maxTokens,
+        includeUsage,
       );
-      request.contentLength = bytes.length;
-      request.add(bytes);
-      final response = await request.close().timeout(
-        const Duration(seconds: 40),
-      );
+      if (includeUsage &&
+          (response.statusCode == 400 || response.statusCode == 422)) {
+        final raw = await _readErrorBody(response);
+        final detail = raw.toLowerCase();
+        if (detail.contains('stream_options') ||
+            detail.contains('include_usage')) {
+          includeUsage = false;
+          response = await _sendReplyRequest(
+            history,
+            model,
+            systemPrompt,
+            maxTokens,
+            includeUsage,
+          );
+        } else {
+          throw ApiException(
+            '请求失败 (${response.statusCode})：${_errorMessage(raw)}',
+          );
+        }
+      }
       if (response.statusCode < 200 || response.statusCode >= 300) {
         final raw = await _readErrorBody(response);
         throw ApiException(
@@ -131,7 +162,7 @@ class ModelApiClient {
         final payload = decoder.addLine(line);
         if (payload == null) continue;
         if (payload == '[DONE]') break;
-        final piece = _textFromEvent(payload);
+        final piece = _textFromEvent(payload, onUsage: onUsage);
         if (piece.isNotEmpty) {
           received = true;
           yield piece;
@@ -139,7 +170,7 @@ class ModelApiClient {
       }
       final tail = decoder.finish();
       if (tail != null && tail != '[DONE]') {
-        final piece = _textFromEvent(tail);
+        final piece = _textFromEvent(tail, onUsage: onUsage);
         if (piece.isNotEmpty) {
           received = true;
           yield piece;
@@ -172,6 +203,26 @@ class ModelApiClient {
     }
   }
 
+  Future<HttpClientResponse> _sendReplyRequest(
+    List<ChatMessage> history,
+    String model,
+    String systemPrompt,
+    int? maxTokens,
+    bool includeUsage,
+  ) async {
+    final request = await _client
+        .postUrl(_chatUri)
+        .timeout(const Duration(seconds: 25));
+    request.followRedirects = false;
+    _headers.forEach(request.headers.set);
+    final bytes = utf8.encode(
+      jsonEncode(_body(history, model, systemPrompt, maxTokens, includeUsage)),
+    );
+    request.contentLength = bytes.length;
+    request.add(bytes);
+    return request.close().timeout(const Duration(seconds: 40));
+  }
+
   Future<String?> generateTopicTitle(
     String model,
     String userMessage,
@@ -201,11 +252,48 @@ class ModelApiClient {
     return normalizeGeneratedTopicTitle(result.toString());
   }
 
-  String _textFromEvent(String payload) {
+  String _textFromEvent(
+    String payload, {
+    void Function(ReplyUsage usage)? onUsage,
+  }) {
     final value = jsonDecode(payload);
     if (value is! Map<String, dynamic>) return '';
     if (value['type'] == 'error') {
       throw ApiException('服务错误：${_errorMessage(payload)}');
+    }
+    if (onUsage != null) {
+      final message = value['message'];
+      final rawUsage =
+          provider.protocol == ApiProtocol.anthropic &&
+              value['type'] == 'message_start' &&
+              message is Map
+          ? message['usage']
+          : value['usage'];
+      if (rawUsage is Map) {
+        int? count(String field) {
+          final value = rawUsage[field];
+          return value is int && value >= 0 ? value : null;
+        }
+
+        final input = provider.protocol == ApiProtocol.anthropic
+            ? count('input_tokens')
+            : count('prompt_tokens');
+        final usage = ReplyUsage(
+          inputTokens: input == null
+              ? null
+              : input +
+                    (provider.protocol == ApiProtocol.anthropic
+                        ? (count('cache_creation_input_tokens') ?? 0) +
+                              (count('cache_read_input_tokens') ?? 0)
+                        : 0),
+          outputTokens: provider.protocol == ApiProtocol.anthropic
+              ? count('output_tokens')
+              : count('completion_tokens'),
+        );
+        if (usage.inputTokens != null || usage.outputTokens != null) {
+          onUsage(usage);
+        }
+      }
     }
     if (provider.protocol == ApiProtocol.anthropic) {
       if (value['type'] != 'content_block_delta') return '';

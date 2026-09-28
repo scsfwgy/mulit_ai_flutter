@@ -8,6 +8,17 @@ enum AppLanguage { system, zh, en }
 
 enum AppAppearance { system, light, dark }
 
+enum ChatInfoField {
+  modelId('模型 ID'),
+  firstFrame('首帧耗时'),
+  totalTime('总耗时'),
+  tokens('Token 用量'),
+  characters('字数');
+
+  const ChatInfoField(this.label);
+  final String label;
+}
+
 enum AppSkin {
   blue('blue', '经典蓝', Color(0xFF007AFF)),
   teal('teal', '海蓝绿', Color(0xFF008C83)),
@@ -28,6 +39,11 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
   AppLanguage language = AppLanguage.zh;
   AppSkin skin = AppSkin.blue;
   AppAppearance appearance = AppAppearance.system;
+  final Map<ChatInfoField, bool> _chatInfoVisible = {
+    for (final field in ChatInfoField.values) field: true,
+  };
+
+  bool showChatInfo(ChatInfoField field) => _chatInfoVisible[field] ?? true;
 
   bool get dark => switch (appearance) {
     AppAppearance.light => false,
@@ -89,6 +105,10 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
       (item) => item.name == savedAppearance,
       orElse: () => AppAppearance.system,
     );
+    for (final field in ChatInfoField.values) {
+      _chatInfoVisible[field] =
+          await ChatStore.instance.setting('chat_info_${field.name}') != '0';
+    }
     _syncSystemBars();
     notifyListeners();
   }
@@ -109,6 +129,15 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
     await ChatStore.instance.saveSetting('app_appearance', value.name);
     appearance = value;
     _syncSystemBars();
+    notifyListeners();
+  }
+
+  Future<void> setChatInfoVisible(ChatInfoField field, bool visible) async {
+    await ChatStore.instance.saveSetting(
+      'chat_info_${field.name}',
+      visible ? '1' : '0',
+    );
+    _chatInfoVisible[field] = visible;
     notifyListeners();
   }
 }
@@ -166,6 +195,19 @@ const _english = <String, String>{
   '白天': 'Light',
   '黑夜': 'Dark',
   '模型设置': 'Model settings',
+  '消息信息': 'Message details',
+  '首帧耗时': 'Time to first text',
+  '首帧': 'First text',
+  '总耗时': 'Total time',
+  'Token 用量': 'Token usage',
+  '输入': 'Input',
+  '输出': 'Output',
+  '字数': 'Characters',
+  '用户消息显示模型与字数；耗时和 Token 属于整次回复请求。Token 以服务端返回为准，旧消息或未提供用量的服务显示“—”。': 'Your messages show the model and character count. Timing and tokens cover the whole reply request. Tokens come from the provider; old messages or providers without usage data show “—”.',
+  '复制消息': 'Copy message',
+  '复制 Markdown 原文': 'Copy Markdown source',
+  '复制格式化文本': 'Copy formatted text',
+  '复制失败': 'Could not copy',
   '首轮回复后，会额外请求当前模型生成会话标题，可能产生少量用量。': 'After the first reply, the current model receives one extra short request to name the chat. This may use a few tokens.',
   '语言': 'Language',
   '跟随系统': 'Follow system',

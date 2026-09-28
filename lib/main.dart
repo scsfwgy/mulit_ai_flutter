@@ -12,8 +12,11 @@ import 'assistant_markdown.dart';
 import 'chat_more_menu.dart';
 import 'chat_model_selector.dart';
 import 'chat_model_title.dart';
+import 'chat_message_meta.dart';
+import 'chat_scroll.dart';
 import 'data.dart';
 import 'ios_style.dart';
+import 'message_copy.dart';
 import 'provider_screen.dart';
 import 'settings_screen.dart';
 import 'topic_screen.dart';
@@ -117,7 +120,7 @@ class ChatHome extends StatefulWidget {
 class _ChatHomeState extends State<ChatHome> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _input = TextEditingController();
-  final _scroll = ScrollController();
+  final _chatScroll = ChatScrollController();
   List<ProviderConfig> _providers = [];
   List<ChatTopic> _topics = [];
   List<ChatMessage> _messages = [];
@@ -127,6 +130,9 @@ class _ChatHomeState extends State<ChatHome> {
   ModelApiClient? _activeClient;
   final _titleClients = <ModelApiClient>{};
   String _reply = '';
+  int? _replyFirstTokenMs;
+  int? _replyTotalMs;
+  ReplyUsage? _replyUsage;
   String? _error;
   _ChatErrorAction _errorAction = _ChatErrorAction.none;
   bool _loading = true;
@@ -152,7 +158,7 @@ class _ChatHomeState extends State<ChatHome> {
       client.cancel();
     }
     _input.dispose();
-    _scroll.dispose();
+    _chatScroll.dispose();
     super.dispose();
   }
 
@@ -167,6 +173,7 @@ class _ChatHomeState extends State<ChatHome> {
           ? <ChatMessage>[]
           : await ChatStore.instance.messages(selected.id);
       if (!mounted) return;
+      final initialLoad = _loading;
       setState(() {
         _providers = providers;
         _topics = topics;
@@ -179,7 +186,7 @@ class _ChatHomeState extends State<ChatHome> {
         _messages = messages;
         _loading = false;
       });
-      _scrollToBottom();
+      _chatScroll.scrollToLatest(force: initialLoad);
     } catch (error) {
       if (mounted) {
         setState(() {
@@ -271,7 +278,7 @@ class _ChatHomeState extends State<ChatHome> {
       _errorAction = _ChatErrorAction.none;
       _reply = '';
     });
-    _scrollToBottom();
+    _chatScroll.scrollToLatest(force: true);
   }
 
   Future<void> _changeModel() async {
@@ -432,7 +439,12 @@ class _ChatHomeState extends State<ChatHome> {
     } else {
       topic = _topic!;
       final first = _messages.isEmpty;
-      await ChatStore.instance.addMessage(topic.id, 'user', content);
+      await ChatStore.instance.addMessage(
+        topic.id,
+        'user',
+        content,
+        modelId: model,
+      );
       if (first) {
         await ChatStore.instance.updateTopic(
           topic.id,
@@ -502,26 +514,43 @@ class _ChatHomeState extends State<ChatHome> {
       _sending = true;
       _sendingTopicId = topic.id;
       _reply = '';
+      _replyFirstTokenMs = null;
+      _replyTotalMs = null;
+      _replyUsage = null;
       _error = null;
       _errorAction = _ChatErrorAction.none;
       _cancelRequested = false;
     });
-    _scrollToBottom();
+    _chatScroll.scrollToLatest(force: true);
     await _refreshTopics();
     final client = ModelApiClient(provider, key);
     _activeClient = client;
     var answer = '';
     var completed = false;
+    final watch = Stopwatch()..start();
+    int? firstTokenMs;
+    ReplyUsage? usage;
     try {
       await for (final chunk in client.streamReply(
         history,
         topic.model,
         systemPrompt: systemPrompt,
+        onUsage: (reported) {
+          usage = (usage ?? const ReplyUsage()).merge(reported);
+          if (mounted && _topic?.id == topic.id) {
+            setState(() => _replyUsage = usage);
+          }
+        },
       )) {
         answer += chunk;
+        firstTokenMs ??= watch.elapsedMilliseconds;
         if (mounted && _topic?.id == topic.id) {
-          setState(() => _reply = answer);
-          _scrollToBottom();
+          setState(() {
+            _reply = answer;
+            _replyFirstTokenMs = firstTokenMs;
+            _replyTotalMs = watch.elapsedMilliseconds;
+          });
+          _chatScroll.scrollToLatest();
         }
       }
       completed = !_cancelRequested;
@@ -541,9 +570,19 @@ class _ChatHomeState extends State<ChatHome> {
         });
       }
     } finally {
+      watch.stop();
       _activeClient = null;
       if (answer.isNotEmpty) {
-        await ChatStore.instance.addMessage(topic.id, 'assistant', answer);
+        await ChatStore.instance.addMessage(
+          topic.id,
+          'assistant',
+          answer,
+          modelId: topic.model,
+          firstTokenMs: firstTokenMs,
+          totalMs: watch.elapsedMilliseconds,
+          inputTokens: usage?.inputTokens,
+          outputTokens: usage?.outputTokens,
+        );
       }
       final shouldGenerateTitle =
           completed &&
@@ -555,11 +594,14 @@ class _ChatHomeState extends State<ChatHome> {
           _sending = false;
           _sendingTopicId = null;
           _reply = '';
+          _replyFirstTokenMs = null;
+          _replyTotalMs = null;
+          _replyUsage = null;
         });
         if (_topic?.id == topic.id) {
           final messages = await ChatStore.instance.messages(topic.id);
           if (mounted) setState(() => _messages = messages);
-          _scrollToBottom();
+          _chatScroll.scrollToLatest();
         }
         await _refreshTopics();
       }
@@ -614,16 +656,6 @@ class _ChatHomeState extends State<ChatHome> {
       }
     });
   }
-
-  void _scrollToBottom() => WidgetsBinding.instance.addPostFrameCallback((_) {
-    if (_scroll.hasClients) {
-      _scroll.animateTo(
-        _scroll.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOut,
-      );
-    }
-  });
 
   void _notify(String message) => ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
@@ -849,21 +881,85 @@ class _ChatHomeState extends State<ChatHome> {
         ),
       );
     }
-    return ListView.builder(
-      controller: _scroll,
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
-      itemCount: count,
-      itemBuilder: (context, index) {
-        if (index == _messages.length) {
-          return _bubble('assistant', _reply, loading: true);
-        }
-        final message = _messages[index];
-        return _bubble(message.role, message.content);
-      },
+    return NotificationListener<ScrollNotification>(
+      onNotification: _chatScroll.onScrollNotification,
+      child: ListView.builder(
+        controller: _chatScroll.controller,
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+        itemCount: count,
+        itemBuilder: (context, index) {
+          if (index == _messages.length) {
+            return _bubble(
+              'assistant',
+              _reply,
+              loading: true,
+              modelId: _topic?.model,
+              firstTokenMs: _replyFirstTokenMs,
+              totalMs: _replyTotalMs,
+              usage: _replyUsage,
+            );
+          }
+          final message = _messages[index];
+          return _bubble(
+            message.role,
+            message.content,
+            modelId: message.modelId,
+            firstTokenMs: message.firstTokenMs,
+            totalMs: message.totalMs,
+            usage: ReplyUsage(
+              inputTokens: message.inputTokens,
+              outputTokens: message.outputTokens,
+            ),
+          );
+        },
+      ),
     );
   }
 
-  Widget _bubble(String role, String content, {bool loading = false}) {
+  Future<void> _copyBubble(
+    String content, {
+    required bool renderMarkdown,
+  }) async {
+    final format = await showCupertinoModalPopup<MessageCopyFormat>(
+      context: context,
+      builder: (sheetContext) => CupertinoActionSheet(
+        title: Text(tr('复制消息')),
+        actions: [
+          CupertinoActionSheetAction(
+            onPressed: () =>
+                Navigator.pop(sheetContext, MessageCopyFormat.markdown),
+            child: Text(tr('复制 Markdown 原文')),
+          ),
+          CupertinoActionSheetAction(
+            onPressed: () =>
+                Navigator.pop(sheetContext, MessageCopyFormat.formatted),
+            child: Text(tr('复制格式化文本')),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.pop(sheetContext),
+          child: Text(tr('取消')),
+        ),
+      ),
+    );
+    if (format == null) return;
+    try {
+      await copyMessage(content, format, renderMarkdown: renderMarkdown);
+      if (mounted) _notify(tr('已复制'));
+    } catch (_) {
+      if (mounted) _notify(tr('复制失败'));
+    }
+  }
+
+  Widget _bubble(
+    String role,
+    String content, {
+    bool loading = false,
+    String? modelId,
+    int? firstTokenMs,
+    int? totalMs,
+    ReplyUsage? usage,
+  }) {
     final user = role == 'user';
     return Padding(
       padding: const EdgeInsets.only(bottom: 15),
@@ -873,62 +969,77 @@ class _ChatHomeState extends State<ChatHome> {
             : MainAxisAlignment.start,
         children: [
           Flexible(
-            child: Container(
+            child: ConstrainedBox(
               constraints: BoxConstraints(
                 maxWidth: MediaQuery.sizeOf(context).width * .86,
               ),
-              padding: const EdgeInsets.fromLTRB(14, 11, 14, 9),
-              decoration: BoxDecoration(
-                color: user ? IosColors.blue : IosColors.assistant,
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(18),
-                  topRight: const Radius.circular(18),
-                  bottomLeft: Radius.circular(user ? 18 : 5),
-                  bottomRight: Radius.circular(user ? 5 : 18),
-                ),
-              ),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: user
+                    ? CrossAxisAlignment.end
+                    : CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (content.isEmpty && loading)
-                    Padding(
-                      padding: EdgeInsets.symmetric(vertical: 3),
-                      child: CupertinoActivityIndicator(radius: 10),
-                    )
-                  else if (user)
-                    SelectableText(
-                      content,
-                      style: TextStyle(
-                        color: IosColors.onAccent,
-                        fontSize: 15,
-                        height: 1.45,
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(14, 11, 14, 9),
+                    decoration: BoxDecoration(
+                      color: user ? IosColors.blue : IosColors.assistant,
+                      borderRadius: BorderRadius.only(
+                        topLeft: const Radius.circular(18),
+                        topRight: const Radius.circular(18),
+                        bottomLeft: Radius.circular(user ? 18 : 5),
+                        bottomRight: Radius.circular(user ? 5 : 18),
                       ),
-                    )
-                  else
-                    AssistantMarkdown(
-                      data: content,
-                      onTapLink: _openMarkdownLink,
                     ),
-                  if (loading && content.isNotEmpty)
-                    Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: CupertinoActivityIndicator(radius: 7),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (content.isEmpty && loading)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 3),
+                            child: CupertinoActivityIndicator(radius: 10),
+                          )
+                        else if (user)
+                          SelectableText(
+                            content,
+                            style: TextStyle(
+                              color: IosColors.onAccent,
+                              fontSize: 15,
+                              height: 1.45,
+                            ),
+                          )
+                        else
+                          AssistantMarkdown(
+                            data: content,
+                            onTapLink: _openMarkdownLink,
+                          ),
+                        if (loading && content.isNotEmpty)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 8),
+                            child: CupertinoActivityIndicator(radius: 7),
+                          ),
+                      ],
                     ),
-                  if (!loading && !user)
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: CupertinoButton(
-                        padding: EdgeInsets.zero,
-                        minimumSize: const Size(44, 30),
-                        onPressed: () async {
-                          await Clipboard.setData(ClipboardData(text: content));
-                          if (mounted) _notify(tr('已复制'));
-                        },
-                        child: Icon(
-                          CupertinoIcons.doc_on_doc,
-                          size: 17,
-                          color: IosColors.secondary,
-                        ),
+                  ),
+                  ChatMessageMeta(
+                    assistant: !user,
+                    content: content,
+                    modelId: modelId,
+                    firstTokenMs: firstTokenMs,
+                    totalMs: totalMs,
+                    inputTokens: usage?.inputTokens,
+                    outputTokens: usage?.outputTokens,
+                  ),
+                  if (!loading)
+                    CupertinoButton(
+                      padding: EdgeInsets.zero,
+                      minimumSize: const Size(44, 30),
+                      onPressed: () =>
+                          _copyBubble(content, renderMarkdown: !user),
+                      child: Icon(
+                        CupertinoIcons.doc_on_doc,
+                        semanticLabel: tr('复制消息'),
+                        size: 17,
+                        color: IosColors.secondary,
                       ),
                     ),
                 ],

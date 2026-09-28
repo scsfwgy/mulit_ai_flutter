@@ -387,12 +387,22 @@ class ChatMessage {
     required this.role,
     required this.content,
     required this.createdAt,
+    this.modelId,
+    this.firstTokenMs,
+    this.totalMs,
+    this.inputTokens,
+    this.outputTokens,
   });
   final int id;
   final int topicId;
   final String role;
   final String content;
   final int createdAt;
+  final String? modelId;
+  final int? firstTokenMs;
+  final int? totalMs;
+  final int? inputTokens;
+  final int? outputTokens;
 
   factory ChatMessage.fromMap(Map<String, Object?> map) => ChatMessage(
     id: map['id'] as int,
@@ -400,6 +410,11 @@ class ChatMessage {
     role: map['role'] as String,
     content: map['content'] as String,
     createdAt: map['created_at'] as int,
+    modelId: map['model_id'] as String?,
+    firstTokenMs: map['first_token_ms'] as int?,
+    totalMs: map['total_ms'] as int?,
+    inputTokens: map['input_tokens'] as int?,
+    outputTokens: map['output_tokens'] as int?,
   );
 }
 
@@ -465,7 +480,7 @@ class ChatStore {
     final path = p.join(await getDatabasesPath(), 'model_chat.db');
     _database = await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: (db, _) async {
         await db.execute('''CREATE TABLE providers (
@@ -488,7 +503,12 @@ class ChatStore {
           topic_id INTEGER NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
           role TEXT NOT NULL,
           content TEXT NOT NULL,
-          created_at INTEGER NOT NULL
+          created_at INTEGER NOT NULL,
+          model_id TEXT,
+          first_token_ms INTEGER,
+          total_ms INTEGER,
+          input_tokens INTEGER,
+          output_tokens INTEGER
         )''');
         await db.execute(
           'CREATE INDEX messages_topic ON messages(topic_id, id)',
@@ -499,6 +519,19 @@ class ChatStore {
         if (oldVersion < 2) {
           await db.execute('ALTER TABLE providers ADD COLUMN preset_id TEXT');
           await _createPromptTables(db);
+        }
+        if (oldVersion < 3) {
+          await db.execute('ALTER TABLE messages ADD COLUMN model_id TEXT');
+          await db.execute(
+            'ALTER TABLE messages ADD COLUMN first_token_ms INTEGER',
+          );
+          await db.execute('ALTER TABLE messages ADD COLUMN total_ms INTEGER');
+          await db.execute(
+            'ALTER TABLE messages ADD COLUMN input_tokens INTEGER',
+          );
+          await db.execute(
+            'ALTER TABLE messages ADD COLUMN output_tokens INTEGER',
+          );
         }
       },
     );
@@ -700,6 +733,7 @@ class ChatStore {
         'role': 'user',
         'content': content,
         'created_at': now,
+        'model_id': model,
       });
       return topicId;
     });
@@ -745,13 +779,27 @@ class ChatStore {
         orderBy: 'id',
       )).map(ChatMessage.fromMap).toList();
 
-  Future<int> addMessage(int topicId, String role, String content) async {
+  Future<int> addMessage(
+    int topicId,
+    String role,
+    String content, {
+    String? modelId,
+    int? firstTokenMs,
+    int? totalMs,
+    int? inputTokens,
+    int? outputTokens,
+  }) async {
     final database = await db;
     final id = await database.insert('messages', {
       'topic_id': topicId,
       'role': role,
       'content': content,
       'created_at': DateTime.now().millisecondsSinceEpoch,
+      'model_id': modelId,
+      'first_token_ms': firstTokenMs,
+      'total_ms': totalMs,
+      'input_tokens': inputTokens,
+      'output_tokens': outputTokens,
     });
     await updateTopic(topicId);
     return id;

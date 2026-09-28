@@ -92,6 +92,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               IosRow(
+                title: tr('消息信息'),
+                leading: Icon(CupertinoIcons.info, color: IosColors.blue),
+                onTap: () => Navigator.push<void>(
+                  context,
+                  CupertinoPageRoute(
+                    builder: (_) => const MessageInfoSettingsScreen(),
+                  ),
+                ),
+              ),
+              IosRow(
                 title: tr('语言'),
                 subtitle: _languageName(_preferences.language),
                 leading: Icon(CupertinoIcons.globe, color: IosColors.blue),
@@ -130,6 +140,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 28),
         ],
+      ),
+    ),
+  );
+}
+
+class MessageInfoSettingsScreen extends StatelessWidget {
+  const MessageInfoSettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: AppPreferences.instance,
+    builder: (context, _) => Scaffold(
+      backgroundColor: IosColors.background,
+      appBar: iosAppBar(
+        title: tr('消息信息'),
+        leading: IosNavButton(
+          icon: CupertinoIcons.back,
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: SafeArea(
+        child: ListView(
+          children: [
+            IosSection(
+              footer: tr(
+                '用户消息显示模型与字数；耗时和 Token 属于整次回复请求。Token 以服务端返回为准，旧消息或未提供用量的服务显示“—”。',
+              ),
+              children: [
+                for (final field in ChatInfoField.values)
+                  IosRow(
+                    title: tr(field.label),
+                    chevron: false,
+                    trailing: CupertinoSwitch(
+                      value: AppPreferences.instance.showChatInfo(field),
+                      activeTrackColor: IosColors.blue,
+                      onChanged: (value) => AppPreferences.instance
+                          .setChatInfoVisible(field, value),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
       ),
     ),
   );
