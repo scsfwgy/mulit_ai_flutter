@@ -4,9 +4,12 @@ import 'dart:io';
 
 import 'data.dart';
 
+enum ApiErrorKind { other, network, auth, model }
+
 class ApiException implements Exception {
-  const ApiException(this.message);
+  const ApiException(this.message, {this.kind = ApiErrorKind.other});
   final String message;
+  final ApiErrorKind kind;
   @override
   String toString() => message;
 }
@@ -65,6 +68,7 @@ class ModelApiClient {
     List<ChatMessage> history,
     String model,
     String systemPrompt,
+    int? maxTokens,
   ) {
     final messages = history
         .map((message) => {'role': message.role, 'content': message.content})
@@ -72,7 +76,7 @@ class ModelApiClient {
     if (provider.protocol == ApiProtocol.anthropic) {
       return {
         'model': model,
-        'max_tokens': 4096,
+        'max_tokens': maxTokens ?? 4096,
         'stream': true,
         if (systemPrompt.isNotEmpty) 'system': systemPrompt,
         'messages': messages,
@@ -81,6 +85,7 @@ class ModelApiClient {
     return {
       'model': model,
       'stream': true,
+      'max_tokens': ?maxTokens,
       'messages': [
         if (systemPrompt.isNotEmpty)
           {'role': 'system', 'content': systemPrompt},
@@ -93,6 +98,7 @@ class ModelApiClient {
     List<ChatMessage> history,
     String model, {
     String systemPrompt = '',
+    int? maxTokens,
   }) async* {
     try {
       final request = await _client
@@ -101,7 +107,7 @@ class ModelApiClient {
       request.followRedirects = false;
       _headers.forEach(request.headers.set);
       final bytes = utf8.encode(
-        jsonEncode(_body(history, model, systemPrompt)),
+        jsonEncode(_body(history, model, systemPrompt, maxTokens)),
       );
       request.contentLength = bytes.length;
       request.add(bytes);
@@ -109,9 +115,13 @@ class ModelApiClient {
         const Duration(seconds: 40),
       );
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        final raw = await utf8.decoder.bind(response).join();
+        final raw = await _readErrorBody(response);
         throw ApiException(
           '请求失败 (${response.statusCode})：${_errorMessage(raw)}',
+          kind: switch (response.statusCode) {
+            401 || 403 => ApiErrorKind.auth,
+            _ => ApiErrorKind.other,
+          },
         );
       }
       final decoder = SseDecoder();
@@ -135,18 +145,60 @@ class ModelApiClient {
           yield piece;
         }
       }
-      if (!received) throw const ApiException('服务未返回文本，请检查模型和接口协议');
+      if (!received) {
+        throw const ApiException(
+          '服务未返回文本，请检查模型和接口协议',
+          kind: ApiErrorKind.model,
+        );
+      }
+    } on FormatException {
+      throw const ApiException('服务返回的数据格式不正确，请检查接口协议');
     } on SocketException catch (error) {
-      throw ApiException('网络连接失败：${error.message}');
+      throw ApiException('网络连接失败：${error.message}', kind: ApiErrorKind.network);
     } on HttpException {
-      throw const ApiException('连接中断，请检查 API 地址或稍后重试');
+      throw const ApiException(
+        '连接中断，请检查 API 地址或稍后重试',
+        kind: ApiErrorKind.network,
+      );
     } on HandshakeException {
       throw const ApiException('HTTPS 证书验证失败');
     } on TimeoutException {
-      throw const ApiException('请求超时，请检查网络和 API 地址');
+      throw const ApiException(
+        '请求超时，请检查网络和 API 地址',
+        kind: ApiErrorKind.network,
+      );
     } finally {
       _client.close(force: true);
     }
+  }
+
+  Future<String?> generateTopicTitle(
+    String model,
+    String userMessage,
+    String assistantMessage,
+  ) async {
+    String clip(String text) =>
+        text.length > 700 ? text.substring(0, 700) : text;
+    final summaryInput =
+        '用户：${clip(userMessage)}\n助手：${clip(assistantMessage)}';
+    final prompt = ChatMessage(
+      id: 0,
+      topicId: 0,
+      role: 'user',
+      content: summaryInput,
+      createdAt: 0,
+    );
+    final result = StringBuffer();
+    await for (final chunk in streamReply(
+      [prompt],
+      model,
+      systemPrompt: '根据这段对话拟一个简短标题，使用对话的语言。只输出标题，不加引号、序号或解释。',
+      maxTokens: 64,
+    )) {
+      result.write(chunk);
+      if (result.length >= 120) break;
+    }
+    return normalizeGeneratedTopicTitle(result.toString());
   }
 
   String _textFromEvent(String payload) {
@@ -182,12 +234,13 @@ class ModelApiClient {
       final response = await request.close().timeout(
         const Duration(seconds: 20),
       );
-      final raw = await utf8.decoder.bind(response).join();
       if (response.statusCode < 200 || response.statusCode >= 300) {
+        final raw = await _readErrorBody(response);
         throw ApiException(
           '获取模型失败 (${response.statusCode})：${_errorMessage(raw)}',
         );
       }
+      final raw = await utf8.decoder.bind(response).join();
       final json = jsonDecode(raw);
       final data = json is Map ? json['data'] : null;
       if (data is! List) throw const ApiException('此服务未提供兼容的模型列表');
@@ -199,6 +252,8 @@ class ModelApiClient {
           .toSet()
           .toList()
         ..sort();
+    } on FormatException {
+      throw const ApiException('模型列表格式不正确，请手动输入模型 ID');
     } on TimeoutException {
       throw const ApiException('获取模型超时');
     } finally {
@@ -206,23 +261,37 @@ class ModelApiClient {
     }
   }
 
-  static String _errorMessage(String raw) {
+  Future<String> _readErrorBody(HttpClientResponse response) async {
+    const maxBytes = 16 * 1024;
+    final bytes = <int>[];
+    await for (final chunk in response) {
+      final remaining = maxBytes - bytes.length;
+      if (remaining <= 0) break;
+      bytes.addAll(chunk.take(remaining));
+      if (bytes.length == maxBytes) break;
+    }
+    return utf8.decode(bytes, allowMalformed: true);
+  }
+
+  String _errorMessage(String raw) {
+    String message = raw;
     try {
       final json = jsonDecode(raw);
       if (json is Map) {
         final error = json['error'];
         if (error is Map && error['message'] is String) {
-          return (error['message'] as String).substring(
-            0,
-            (error['message'] as String).length.clamp(0, 240),
-          );
+          message = error['message'] as String;
+        } else if (json['message'] is String) {
+          message = json['message'] as String;
         }
-        if (json['message'] is String) return json['message'] as String;
       }
     } catch (_) {
-      /* Show a short server response below. */
+      // Some compatible APIs return plain text errors.
     }
-    final compact = raw.replaceAll(RegExp(r'\s+'), ' ').trim();
-    return compact.length > 180 ? '${compact.substring(0, 180)}…' : compact;
+    for (final value in {apiKey, Uri.encodeComponent(apiKey)}) {
+      if (value.isNotEmpty) message = message.replaceAll(value, '[已隐藏]');
+    }
+    final compact = message.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return compact.length > 240 ? '${compact.substring(0, 240)}…' : compact;
   }
 }

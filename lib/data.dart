@@ -359,6 +359,27 @@ class ChatTopic {
   );
 }
 
+String initialTopicTitle(String content) {
+  final compact = content.replaceAll(RegExp(r'\s+'), ' ').trim();
+  return compact.length > 28 ? '${compact.substring(0, 28)}…' : compact;
+}
+
+String? normalizeGeneratedTopicTitle(String raw) {
+  final firstLine = raw
+      .split(RegExp(r'[\r\n]+'))
+      .map((line) => line.trim())
+      .where((line) => line.isNotEmpty)
+      .firstOrNull;
+  if (firstLine == null) return null;
+  final compact = firstLine
+      .replaceFirst(RegExp(r'^(标题|Title)\s*[:：]\s*', caseSensitive: false), '')
+      .replaceAll(RegExp(r'^[#*"“”「」]+|[#*"“”「」]+$'), '')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  if (compact.isEmpty) return null;
+  return compact.length > 28 ? '${compact.substring(0, 28)}…' : compact;
+}
+
 class ChatMessage {
   const ChatMessage({
     required this.id,
@@ -380,6 +401,57 @@ class ChatMessage {
     content: map['content'] as String,
     createdAt: map['created_at'] as int,
   );
+}
+
+class CachedModelList {
+  const CachedModelList({
+    required this.baseUrl,
+    required this.protocol,
+    required this.models,
+    required this.fetchedAt,
+  });
+
+  final String baseUrl;
+  final ApiProtocol protocol;
+  final List<String> models;
+  final DateTime fetchedAt;
+
+  bool matches(ProviderConfig provider) =>
+      baseUrl == provider.baseUrl && protocol == provider.protocol;
+
+  String toJson() => jsonEncode({
+    'baseUrl': baseUrl,
+    'protocol': protocol.value,
+    'models': models,
+    'fetchedAt': fetchedAt.millisecondsSinceEpoch,
+  });
+
+  static CachedModelList? tryParse(String raw) {
+    try {
+      final value = jsonDecode(raw);
+      if (value is! Map<String, dynamic> ||
+          value['baseUrl'] is! String ||
+          value['protocol'] is! String ||
+          value['models'] is! List ||
+          value['fetchedAt'] is! int) {
+        return null;
+      }
+      final models = value['models'] as List;
+      if (models.isEmpty || models.any((model) => model is! String)) {
+        return null;
+      }
+      return CachedModelList(
+        baseUrl: value['baseUrl'] as String,
+        protocol: ApiProtocol.parse(value['protocol'] as String),
+        models: models.cast<String>(),
+        fetchedAt: DateTime.fromMillisecondsSinceEpoch(
+          value['fetchedAt'] as int,
+        ),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 class ChatStore {
@@ -453,6 +525,10 @@ class ChatStore {
 
   Future<int> saveProvider(ProviderConfig config, {String? apiKey}) async {
     final database = await db;
+    if (config.id != 0 &&
+        (apiKey?.isNotEmpty == true || await cachedModels(config) == null)) {
+      await deleteModelCache(config.id);
+    }
     final id = config.id == 0
         ? await database.insert('providers', config.toMap())
         : config.id;
@@ -475,25 +551,83 @@ class ChatStore {
 
   Future<void> deleteProvider(int id) async {
     await (await db).delete('providers', where: 'id = ?', whereArgs: [id]);
+    await deleteModelCache(id);
     await _secrets.delete(key: 'provider_$id');
   }
 
+  /// Clears app-owned local data after explicit confirmation in the UI.
+  Future<void> clearAllData() async {
+    await (await db).transaction((transaction) async {
+      await transaction.delete('messages');
+      await transaction.delete('topics');
+      await transaction.delete('model_prompts');
+      await transaction.delete('settings');
+      await transaction.delete('providers');
+    });
+    await _secrets.deleteAll();
+  }
+
   Future<String> globalPrompt() async {
+    return await setting('global_prompt') ?? '';
+  }
+
+  Future<String?> setting(String key) async {
     final rows = await (await db).query(
       'settings',
       columns: ['value'],
       where: 'key = ?',
-      whereArgs: ['global_prompt'],
+      whereArgs: [key],
       limit: 1,
     );
-    return rows.isEmpty ? '' : rows.first['value'] as String;
+    return rows.isEmpty ? null : rows.first['value'] as String;
+  }
+
+  Future<void> saveSetting(String key, String value) async {
+    await (await db).insert('settings', {
+      'key': key,
+      'value': value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  static String _modelCacheKey(int providerId) => 'model_cache_$providerId';
+
+  Future<CachedModelList?> cachedModels(ProviderConfig provider) async {
+    if (provider.id == 0) return null;
+    final raw = await setting(_modelCacheKey(provider.id));
+    final cached = raw == null ? null : CachedModelList.tryParse(raw);
+    return cached?.matches(provider) == true ? cached : null;
+  }
+
+  Future<void> saveModelCache(
+    ProviderConfig provider,
+    List<String> models,
+  ) async {
+    if (provider.id == 0) return;
+    final normalized =
+        models.where((model) => model.trim().isNotEmpty).toSet().toList()
+          ..sort();
+    if (normalized.isEmpty) return;
+    await saveSetting(
+      _modelCacheKey(provider.id),
+      CachedModelList(
+        baseUrl: provider.baseUrl,
+        protocol: provider.protocol,
+        models: normalized,
+        fetchedAt: DateTime.now(),
+      ).toJson(),
+    );
+  }
+
+  Future<void> deleteModelCache(int providerId) async {
+    await (await db).delete(
+      'settings',
+      where: 'key = ?',
+      whereArgs: [_modelCacheKey(providerId)],
+    );
   }
 
   Future<void> saveGlobalPrompt(String prompt) async {
-    await (await db).insert('settings', {
-      'key': 'global_prompt',
-      'value': prompt.trim(),
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    await saveSetting('global_prompt', prompt.trim());
   }
 
   Future<List<ModelPrompt>> modelPrompts() async => (await (await db).query(
@@ -547,13 +681,29 @@ class ChatStore {
     orderBy: 'updated_at DESC, id DESC',
   )).map(ChatTopic.fromMap).toList();
 
-  Future<int> createTopic(ProviderConfig provider) async =>
-      (await db).insert('topics', {
-        'title': '新对话',
+  Future<int> createTopicWithMessage(
+    ProviderConfig provider,
+    String model,
+    String content,
+  ) async {
+    final title = initialTopicTitle(content);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return (await db).transaction((transaction) async {
+      final topicId = await transaction.insert('topics', {
+        'title': title,
         'provider_id': provider.id,
-        'model': provider.model,
-        'updated_at': DateTime.now().millisecondsSinceEpoch,
+        'model': model,
+        'updated_at': now,
       });
+      await transaction.insert('messages', {
+        'topic_id': topicId,
+        'role': 'user',
+        'content': content,
+        'created_at': now,
+      });
+      return topicId;
+    });
+  }
 
   Future<void> updateTopic(
     int id, {
@@ -568,6 +718,20 @@ class ChatStore {
       'model': ?model,
     };
     await (await db).update('topics', values, where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<bool> updateTopicTitleIfUnchanged(
+    int id,
+    String expectedTitle,
+    String title,
+  ) async {
+    final count = await (await db).update(
+      'topics',
+      {'title': title},
+      where: 'id = ? AND title = ?',
+      whereArgs: [id, expectedTitle],
+    );
+    return count == 1;
   }
 
   Future<void> deleteTopic(int id) async =>

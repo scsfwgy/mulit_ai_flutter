@@ -2,16 +2,23 @@ import 'dart:convert';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+
+import 'app_preferences.dart';
+
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'api_client.dart';
 import 'data.dart';
 import 'ios_style.dart';
+import 'model_picker.dart';
+import 'privacy_screen.dart';
 import 'provider_qr_scanner.dart';
 import 'prompt_screen.dart';
 
 class ProviderScreen extends StatefulWidget {
-  const ProviderScreen({super.key});
+  const ProviderScreen({super.key, this.canClearData});
+
+  final bool Function()? canClearData;
 
   @override
   State<ProviderScreen> createState() => _ProviderScreenState();
@@ -56,21 +63,39 @@ class _ProviderScreenState extends State<ProviderScreen> {
     }
   }
 
+  Future<void> _openPrivacy() async {
+    final cleared = await Navigator.push<bool>(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => PrivacyScreen(canClearData: widget.canClearData),
+      ),
+    );
+    if (cleared == true) {
+      _changed = true;
+      await AppPreferences.instance.load();
+      await _load();
+    }
+  }
+
   Future<void> _delete(ProviderConfig provider) async {
     final confirmed = await showCupertinoDialog<bool>(
       context: context,
       builder: (context) => CupertinoAlertDialog(
-        title: const Text('删除服务配置？'),
-        content: Text('删除「${provider.name}」及其密钥。已有话题和记录会保留。'),
+        title: Text(tr('删除服务配置？')),
+        content: Text(
+          AppPreferences.instance.english
+              ? 'Delete ${provider.name} and its key? Existing chats are kept.'
+              : '删除「${provider.name}」及其密钥。已有话题和记录会保留。',
+        ),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
+            child: Text(tr('取消')),
           ),
           CupertinoDialogAction(
             isDestructiveAction: true,
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('删除'),
+            child: Text(tr('删除')),
           ),
         ],
       ),
@@ -89,17 +114,17 @@ class _ProviderScreenState extends State<ProviderScreen> {
         actions: [
           CupertinoActionSheetAction(
             onPressed: () => Navigator.pop(context, 'edit'),
-            child: const Text('编辑配置'),
+            child: Text(tr('编辑配置')),
           ),
           CupertinoActionSheetAction(
             isDestructiveAction: true,
             onPressed: () => Navigator.pop(context, 'delete'),
-            child: const Text('删除服务'),
+            child: Text(tr('删除服务')),
           ),
         ],
         cancelButton: CupertinoActionSheetAction(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(tr('取消')),
         ),
       ),
     );
@@ -126,10 +151,10 @@ class _ProviderScreenState extends State<ProviderScreen> {
             footer: '密钥仅保存在本机安全存储，我们不会收集到自己的服务器。调用模型时，设备会将密钥直接发送给你配置的 API 服务商。',
             children: _providers.isEmpty
                 ? [
-                    const Padding(
-                      padding: EdgeInsets.all(18),
+                    Padding(
+                      padding: const EdgeInsets.all(18),
                       child: Text(
-                        '还没有接入服务。选择下方平台，填写密钥即可开始。',
+                        tr('还没有接入服务。选择下方平台，填写密钥即可开始。'),
                         style: TextStyle(
                           color: IosColors.secondary,
                           fontSize: 14,
@@ -142,13 +167,13 @@ class _ProviderScreenState extends State<ProviderScreen> {
                       IosRow(
                         title: provider.name,
                         subtitle:
-                            '${provider.model} · ${provider.protocol.label}',
+                            '${provider.model} · ${tr(provider.protocol.label)}',
                         leading: _providerBadge(provider),
                         trailing: CupertinoButton(
                           padding: const EdgeInsets.symmetric(horizontal: 4),
                           minimumSize: const Size(38, 38),
                           onPressed: () => _providerActions(provider),
-                          child: const Icon(
+                          child: Icon(
                             CupertinoIcons.ellipsis,
                             color: IosColors.secondary,
                             size: 21,
@@ -165,7 +190,7 @@ class _ProviderScreenState extends State<ProviderScreen> {
               IosRow(
                 title: '提示词',
                 subtitle: '全局和单模型提示词',
-                leading: const Icon(
+                leading: Icon(
                   CupertinoIcons.text_quote,
                   color: IosColors.blue,
                   size: 22,
@@ -176,6 +201,21 @@ class _ProviderScreenState extends State<ProviderScreen> {
                     builder: (_) => const PromptSettingsScreen(),
                   ),
                 ),
+              ),
+            ],
+          ),
+          IosSection(
+            title: '隐私与数据',
+            children: [
+              IosRow(
+                title: '数据与隐私',
+                subtitle: '查看存储方式与清空本地数据',
+                leading: Icon(
+                  CupertinoIcons.lock_shield,
+                  color: IosColors.blue,
+                  size: 22,
+                ),
+                onTap: _openPrivacy,
               ),
             ],
           ),
@@ -232,7 +272,7 @@ class _ProviderScreenState extends State<ProviderScreen> {
               IosRow(
                 title: '扫码导入配置',
                 subtitle: '扫描完整配置 JSON 二维码',
-                leading: const Icon(
+                leading: Icon(
                   CupertinoIcons.qrcode_viewfinder,
                   color: IosColors.blue,
                   size: 22,
@@ -241,7 +281,7 @@ class _ProviderScreenState extends State<ProviderScreen> {
               ),
               IosRow(
                 title: '自定义 API / JSON 导入',
-                leading: const Icon(
+                leading: Icon(
                   CupertinoIcons.slider_horizontal_3,
                   color: IosColors.blue,
                   size: 22,
@@ -279,7 +319,7 @@ Widget _providerBadge(ProviderConfig provider) {
       provider.name.isEmpty
           ? '?'
           : provider.name.characters.first.toUpperCase(),
-      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+      style: TextStyle(color: IosColors.onAccent, fontWeight: FontWeight.w600),
     ),
   );
 }
@@ -321,6 +361,13 @@ class _ProviderEditorState extends State<ProviderEditor> {
   bool _jsonMode = false;
   bool _busy = false;
   bool _obscure = true;
+  ({
+    List<String> models,
+    String baseUrl,
+    ApiProtocol protocol,
+    String inputKey,
+  })?
+  _pendingModelCache;
 
   @override
   void initState() {
@@ -414,10 +461,24 @@ class _ProviderEditorState extends State<ProviderEditor> {
         throw const FormatException('请填写 API Key');
       }
       setState(() => _busy = true);
-      await ChatStore.instance.saveProvider(
+      final id = await ChatStore.instance.saveProvider(
         value.config,
         apiKey: value.key.isEmpty ? null : value.key,
       );
+      final pending = _pendingModelCache;
+      if (pending != null &&
+          pending.baseUrl == value.config.baseUrl &&
+          pending.protocol == value.config.protocol &&
+          pending.inputKey == value.key) {
+        try {
+          await ChatStore.instance.saveModelCache(
+            value.config.copyWith(id: id),
+            pending.models,
+          );
+        } catch (_) {
+          // The service is saved even if its optional model cache cannot be.
+        }
+      }
       if (mounted) Navigator.pop(context, true);
     } catch (error) {
       _showError(error);
@@ -462,13 +523,46 @@ class _ProviderEditorState extends State<ProviderEditor> {
         throw const FormatException('请先填写 API Key');
       }
       setState(() => _busy = true);
-      final models = await ModelApiClient(value.config, key).fetchModels();
+      final savedConfig = widget.config;
+      final canUseCache =
+          savedConfig != null &&
+          value.key.isEmpty &&
+          value.config.baseUrl == savedConfig.baseUrl &&
+          value.config.protocol == savedConfig.protocol;
+      final cached = canUseCache
+          ? await ChatStore.instance.cachedModels(value.config)
+          : null;
+      Future<List<String>> fetchFresh() async {
+        final models = await ModelApiClient(value.config, key).fetchModels();
+        if (models.isEmpty) throw const ApiException('服务没有返回可用模型');
+        _pendingModelCache = (
+          models: models,
+          baseUrl: value.config.baseUrl,
+          protocol: value.config.protocol,
+          inputKey: value.key,
+        );
+        if (canUseCache) {
+          try {
+            await ChatStore.instance.saveModelCache(value.config, models);
+          } catch (_) {
+            // The fresh list remains usable when the cache write fails.
+          }
+        }
+        return models;
+      }
+
+      final models = cached?.models ?? await fetchFresh();
       if (!mounted) return;
       setState(() => _busy = false);
-      if (models.isEmpty) throw const ApiException('服务没有返回可用模型');
       final selected = await Navigator.push<String>(
         context,
-        CupertinoPageRoute(builder: (_) => _ModelPicker(models: models)),
+        CupertinoPageRoute(
+          builder: (_) => ModelPicker(
+            models: models,
+            fetchedAt: cached?.fetchedAt ?? DateTime.now(),
+            onRefresh: fetchFresh,
+          ),
+        ),
       );
       if (selected != null && mounted) {
         if (_jsonMode) {
@@ -491,12 +585,12 @@ class _ProviderEditorState extends State<ProviderEditor> {
     showCupertinoDialog<void>(
       context: context,
       builder: (context) => CupertinoAlertDialog(
-        title: const Text('配置有误'),
-        content: Text(message),
+        title: Text(tr('配置有误')),
+        content: Text(tr(message)),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(context),
-            child: const Text('好'),
+            child: Text(tr('好')),
           ),
         ],
       ),
@@ -507,17 +601,17 @@ class _ProviderEditorState extends State<ProviderEditor> {
     final choice = await showCupertinoModalPopup<ApiProtocol>(
       context: context,
       builder: (context) => CupertinoActionSheet(
-        title: const Text('接口协议'),
+        title: Text(tr('接口协议')),
         actions: [
           for (final kind in ApiProtocol.values)
             CupertinoActionSheetAction(
               onPressed: () => Navigator.pop(context, kind),
-              child: Text(kind.label),
+              child: Text(tr(kind.label)),
             ),
         ],
         cancelButton: CupertinoActionSheetAction(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(tr('取消')),
         ),
       ),
     );
@@ -544,10 +638,10 @@ class _ProviderEditorState extends State<ProviderEditor> {
                   padding: const EdgeInsets.fromLTRB(16, 22, 16, 0),
                   child: CupertinoSlidingSegmentedControl<bool>(
                     groupValue: _jsonMode,
-                    children: const {
+                    children: {
                       false: Padding(
-                        padding: EdgeInsets.symmetric(vertical: 8),
-                        child: Text('表单'),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Text(tr('表单')),
                       ),
                       true: Padding(
                         padding: EdgeInsets.symmetric(vertical: 8),
@@ -571,7 +665,7 @@ class _ProviderEditorState extends State<ProviderEditor> {
                           minLines: 14,
                           maxLines: 14,
                           autocorrect: false,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontFamily: 'monospace',
                             fontSize: 13,
                             height: 1.45,
@@ -585,7 +679,7 @@ class _ProviderEditorState extends State<ProviderEditor> {
                       ),
                       IosRow(
                         title: '扫码填写 API Key',
-                        leading: const Icon(
+                        leading: Icon(
                           CupertinoIcons.qrcode_viewfinder,
                           color: IosColors.blue,
                           size: 22,
@@ -602,7 +696,7 @@ class _ProviderEditorState extends State<ProviderEditor> {
                       _editorField(_name, '服务名称', '例如：我的 OpenAI'),
                       IosRow(
                         title: '接口协议',
-                        subtitle: _protocol.label,
+                        subtitle: tr(_protocol.label),
                         onTap: _chooseProtocol,
                       ),
                       _editorField(
@@ -621,11 +715,11 @@ class _ProviderEditorState extends State<ProviderEditor> {
                   ),
                 IosSection(
                   title: '模型',
-                  footer: '获取失败时仍可手动填写模型 ID。密钥不会写入聊天数据库。',
+                  footer: '优先显示本地缓存，可在列表中刷新。获取失败时仍可手动填写模型 ID。',
                   children: [
                     IosRow(
-                      title: '从服务端获取模型列表',
-                      leading: const Icon(
+                      title: '查看模型列表',
+                      leading: Icon(
                         CupertinoIcons.arrow_down_circle,
                         color: IosColors.blue,
                         size: 23,
@@ -661,13 +755,13 @@ class _ProviderEditorState extends State<ProviderEditor> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          label,
-          style: const TextStyle(color: IosColors.secondary, fontSize: 13),
+          tr(label),
+          style: TextStyle(color: IosColors.secondary, fontSize: 13),
         ),
         const SizedBox(height: 7),
         CupertinoTextField(
           controller: controller,
-          placeholder: hint,
+          placeholder: tr(hint),
           obscureText: secret && _obscure,
           autocorrect: false,
           enableSuggestions: !secret,
@@ -684,7 +778,7 @@ class _ProviderEditorState extends State<ProviderEditor> {
                       padding: const EdgeInsets.symmetric(horizontal: 7),
                       minimumSize: const Size(36, 36),
                       onPressed: _scanApiKey,
-                      child: const Icon(
+                      child: Icon(
                         CupertinoIcons.qrcode_viewfinder,
                         size: 20,
                         color: IosColors.blue,
@@ -709,62 +803,4 @@ class _ProviderEditorState extends State<ProviderEditor> {
       ],
     ),
   );
-}
-
-class _ModelPicker extends StatefulWidget {
-  const _ModelPicker({required this.models});
-  final List<String> models;
-  @override
-  State<_ModelPicker> createState() => _ModelPickerState();
-}
-
-class _ModelPickerState extends State<_ModelPicker> {
-  String query = '';
-
-  @override
-  Widget build(BuildContext context) {
-    final shown = widget.models
-        .where((model) => model.toLowerCase().contains(query.toLowerCase()))
-        .toList();
-    return Scaffold(
-      backgroundColor: IosColors.background,
-      appBar: iosAppBar(
-        title: '选择模型',
-        leading: IosNavButton(
-          icon: CupertinoIcons.back,
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
-              child: CupertinoSearchTextField(
-                placeholder: '搜索模型 ID',
-                onChanged: (value) => setState(() => query = value),
-              ),
-            ),
-            Expanded(
-              child: ListView.builder(
-                itemCount: shown.length,
-                itemBuilder: (context, index) => Container(
-                  decoration: const BoxDecoration(
-                    color: IosColors.surface,
-                    border: Border(
-                      bottom: BorderSide(color: IosColors.separator, width: .5),
-                    ),
-                  ),
-                  child: IosRow(
-                    title: shown[index],
-                    onTap: () => Navigator.pop(context, shown[index]),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }

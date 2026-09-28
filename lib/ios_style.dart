@@ -1,23 +1,49 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import 'app_preferences.dart';
+
 abstract final class IosColors {
-  static const background = Color(0xFFF2F2F7);
-  static const surface = Color(0xFFFFFFFF);
-  static const blue = Color(0xFF007AFF);
-  static const label = Color(0xFF1C1C1E);
-  static const secondary = Color(0xFF8E8E93);
-  static const separator = Color(0xFFE5E5EA);
-  static const assistant = Color(0xFFE9E9EB);
-  static const destructive = Color(0xFFFF3B30);
+  static bool get _dark => AppPreferences.instance.dark;
+  static Color get background =>
+      _dark ? const Color(0xFF000000) : const Color(0xFFF2F2F7);
+  static Color get surface =>
+      _dark ? const Color(0xFF1C1C1E) : const Color(0xFFFFFFFF);
+  static Color get blue {
+    final skin = AppPreferences.instance.skin;
+    if (!_dark) return skin.accent;
+    return switch (skin) {
+      AppSkin.blue => const Color(0xFF0A84FF),
+      AppSkin.teal => const Color(0xFF38C8B5),
+      AppSkin.violet => const Color(0xFFAF8DF5),
+    };
+  }
+
+  static Color get label =>
+      _dark ? const Color(0xFFF5F5F7) : const Color(0xFF1C1C1E);
+  static Color get secondary =>
+      _dark ? const Color(0xFFAEAEB2) : const Color(0xFF8E8E93);
+  static Color get separator =>
+      _dark ? const Color(0xFF38383A) : const Color(0xFFE5E5EA);
+  static Color get assistant =>
+      _dark ? const Color(0xFF2C2C2E) : const Color(0xFFE9E9EB);
+  static Color get destructive =>
+      _dark ? const Color(0xFFFF453A) : const Color(0xFFFF3B30);
+  static Color get onAccent =>
+      _dark ? const Color(0xFF000000) : const Color(0xFFFFFFFF);
+  static Color get errorSurface =>
+      _dark ? const Color(0xFF3D2223) : const Color(0xFFFFE9E8);
 }
 
 AppBar iosAppBar({
   required String title,
+  Widget? titleWidget,
   Widget? leading,
   List<Widget>? actions,
 }) => AppBar(
-  title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+  title:
+      titleWidget ??
+      Text(tr(title), maxLines: 1, overflow: TextOverflow.ellipsis),
   centerTitle: true,
   leading: leading,
   leadingWidth: leading == null ? null : 90,
@@ -27,14 +53,12 @@ AppBar iosAppBar({
   elevation: 0,
   scrolledUnderElevation: 0,
   toolbarHeight: 54,
-  titleTextStyle: const TextStyle(
+  titleTextStyle: TextStyle(
     color: IosColors.label,
     fontSize: 17,
     fontWeight: FontWeight.w600,
   ),
-  shape: const Border(
-    bottom: BorderSide(color: IosColors.separator, width: .5),
-  ),
+  shape: Border(bottom: BorderSide(color: IosColors.separator, width: .5)),
 );
 
 class IosNavButton extends StatelessWidget {
@@ -60,10 +84,7 @@ class IosNavButton extends StatelessWidget {
         Icon(icon, size: 23, color: IosColors.blue),
         if (label != null) ...[
           const SizedBox(width: 3),
-          Text(
-            label!,
-            style: const TextStyle(color: IosColors.blue, fontSize: 16),
-          ),
+          Text(label!, style: TextStyle(color: IosColors.blue, fontSize: 16)),
         ],
       ],
     ),
@@ -92,8 +113,8 @@ class IosSection extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 0, 0, 8),
             child: Text(
-              title!.toUpperCase(),
-              style: const TextStyle(
+              tr(title!).toUpperCase(),
+              style: TextStyle(
                 color: IosColors.secondary,
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
@@ -108,7 +129,7 @@ class IosSection extends StatelessWidget {
               children: [
                 for (var i = 0; i < children.length; i++) ...[
                   if (i > 0)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.only(left: 54),
                       child: Divider(
                         height: .5,
@@ -126,8 +147,8 @@ class IosSection extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
             child: Text(
-              footer!,
-              style: const TextStyle(
+              tr(footer!),
+              style: TextStyle(
                 color: IosColors.secondary,
                 fontSize: 12,
                 height: 1.35,
@@ -177,21 +198,18 @@ class IosRow extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    title,
+                    tr(title),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: IosColors.label,
-                      fontSize: 16,
-                    ),
+                    style: TextStyle(color: IosColors.label, fontSize: 16),
                   ),
                   if (subtitle != null) ...[
                     const SizedBox(height: 3),
                     Text(
-                      subtitle!,
+                      tr(subtitle!),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: IosColors.secondary,
                         fontSize: 13,
                       ),
@@ -202,12 +220,12 @@ class IosRow extends StatelessWidget {
             ),
             ?trailing,
             if (chevron)
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(left: 8),
                 child: Icon(
                   CupertinoIcons.chevron_right,
                   size: 15,
-                  color: Color(0xFFC7C7CC),
+                  color: IosColors.secondary,
                 ),
               ),
           ],
@@ -240,10 +258,17 @@ class IosPrimaryButton extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          if (icon != null) ...[Icon(icon, size: 19), const SizedBox(width: 8)],
+          if (icon != null) ...[
+            Icon(icon, size: 19, color: IosColors.onAccent),
+            const SizedBox(width: 8),
+          ],
           Text(
-            label,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            tr(label),
+            style: TextStyle(
+              color: IosColors.onAccent,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),

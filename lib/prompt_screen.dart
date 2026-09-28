@@ -1,6 +1,8 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import 'app_preferences.dart';
+
 import 'data.dart';
 import 'ios_style.dart';
 
@@ -70,10 +72,7 @@ class _PromptSettingsScreenState extends State<PromptSettingsScreen> {
               IosRow(
                 title: '全局提示词',
                 subtitle: _global.isEmpty ? '尚未设置' : _preview(_global),
-                leading: const Icon(
-                  CupertinoIcons.text_quote,
-                  color: IosColors.blue,
-                ),
+                leading: Icon(CupertinoIcons.text_quote, color: IosColors.blue),
                 onTap: () => _edit(global: true),
               ),
             ],
@@ -87,7 +86,7 @@ class _PromptSettingsScreenState extends State<PromptSettingsScreen> {
                   title: item.model,
                   subtitle:
                       '${_providerName(item.providerId)} · ${_preview(item.prompt)}',
-                  leading: const Icon(
+                  leading: Icon(
                     CupertinoIcons.square_list,
                     color: IosColors.blue,
                   ),
@@ -95,7 +94,7 @@ class _PromptSettingsScreenState extends State<PromptSettingsScreen> {
                 ),
               IosRow(
                 title: '新增模型提示词',
-                leading: const Icon(
+                leading: Icon(
                   CupertinoIcons.add_circled,
                   color: IosColors.blue,
                 ),
@@ -104,10 +103,10 @@ class _PromptSettingsScreenState extends State<PromptSettingsScreen> {
             ],
           ),
           if (_providers.isEmpty)
-            const Padding(
-              padding: EdgeInsets.fromLTRB(30, 14, 30, 0),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(30, 14, 30, 0),
               child: Text(
-                '接入模型服务后，即可为指定模型设置提示词。',
+                tr('接入模型服务后，即可为指定模型设置提示词。'),
                 style: TextStyle(color: IosColors.secondary, fontSize: 13),
               ),
             ),
@@ -178,7 +177,7 @@ class _PromptEditorState extends State<PromptEditor> {
     final selected = await showCupertinoModalPopup<int>(
       context: context,
       builder: (context) => CupertinoActionSheet(
-        title: const Text('选择服务'),
+        title: Text(tr('选择服务')),
         actions: [
           for (final provider in widget.providers!)
             CupertinoActionSheetAction(
@@ -188,7 +187,7 @@ class _PromptEditorState extends State<PromptEditor> {
         ],
         cancelButton: CupertinoActionSheetAction(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(tr('取消')),
         ),
       ),
     );
@@ -239,16 +238,16 @@ class _PromptEditorState extends State<PromptEditor> {
     final confirmed = await showCupertinoDialog<bool>(
       context: context,
       builder: (context) => CupertinoAlertDialog(
-        title: const Text('删除模型提示词？'),
+        title: Text(tr('删除模型提示词？')),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
+            child: Text(tr('取消')),
           ),
           CupertinoDialogAction(
             isDestructiveAction: true,
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('删除'),
+            child: Text(tr('删除')),
           ),
         ],
       ),
@@ -265,12 +264,12 @@ class _PromptEditorState extends State<PromptEditor> {
     showCupertinoDialog<void>(
       context: context,
       builder: (context) => CupertinoAlertDialog(
-        title: const Text('无法保存'),
-        content: Text(message),
+        title: Text(tr('无法保存')),
+        content: Text(tr(message)),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(context),
-            child: const Text('好'),
+            child: Text(tr('好')),
           ),
         ],
       ),
@@ -321,7 +320,7 @@ class _PromptEditorState extends State<PromptEditor> {
                           child: CupertinoTextField(
                             controller: _model,
                             readOnly: widget.existing != null,
-                            placeholder: '模型 ID',
+                            placeholder: tr('模型 ID'),
                             padding: const EdgeInsets.all(12),
                           ),
                         ),
@@ -337,7 +336,7 @@ class _PromptEditorState extends State<PromptEditor> {
                         padding: const EdgeInsets.all(14),
                         child: CupertinoTextField(
                           controller: _prompt,
-                          placeholder: '写下模型应遵循的规则、角色或输出格式',
+                          placeholder: tr('写下模型应遵循的规则、角色或输出格式'),
                           minLines: 11,
                           maxLines: 11,
                           textAlignVertical: TextAlignVertical.top,

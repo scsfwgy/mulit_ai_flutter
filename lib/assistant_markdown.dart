@@ -17,17 +17,17 @@ class AssistantMarkdown extends StatelessWidget {
       selectable: true,
       onTapLink: (_, href, _) => onTapLink?.call(href),
       styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
-        p: const TextStyle(color: IosColors.label, fontSize: 15, height: 1.5),
-        code: const TextStyle(
+        p: TextStyle(color: IosColors.label, fontSize: 15, height: 1.5),
+        code: TextStyle(
           color: IosColors.label,
           fontFamily: 'monospace',
-          backgroundColor: Color(0xFFF2F2F7),
+          backgroundColor: IosColors.background,
         ),
         codeblockDecoration: BoxDecoration(
           color: IosColors.background,
           borderRadius: BorderRadius.circular(8),
         ),
-        blockquoteDecoration: const BoxDecoration(
+        blockquoteDecoration: BoxDecoration(
           border: Border(left: BorderSide(color: IosColors.blue, width: 3)),
         ),
       ),

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import 'data.dart';
+import 'app_preferences.dart';
 import 'ios_style.dart';
 
 enum ProviderQrScanMode { config, apiKey }
@@ -98,12 +99,12 @@ class _ProviderQrScannerState extends State<ProviderQrScanner>
     await showCupertinoDialog<void>(
       context: context,
       builder: (context) => CupertinoAlertDialog(
-        title: const Text('无法导入'),
-        content: Text(message),
+        title: Text(tr('无法导入')),
+        content: Text(tr(message)),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(context),
-            child: const Text('继续扫码'),
+            child: Text(tr('继续扫码')),
           ),
         ],
       ),
@@ -131,11 +132,13 @@ class _ProviderQrScannerState extends State<ProviderQrScanner>
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
             child: Text(
-              widget.mode == ProviderQrScanMode.apiKey
-                  ? '扫描仅包含 API Key 字符串的二维码，识别后自动填入。'
-                  : '扫描包含完整服务配置 JSON 的二维码，识别成功后自动导入。',
+              tr(
+                widget.mode == ProviderQrScanMode.apiKey
+                    ? '扫描仅包含 API Key 字符串的二维码，识别后自动填入。'
+                    : '扫描包含完整服务配置 JSON 的二维码，识别成功后自动导入。',
+              ),
               textAlign: TextAlign.center,
-              style: const TextStyle(color: IosColors.secondary, fontSize: 14),
+              style: TextStyle(color: IosColors.secondary, fontSize: 14),
             ),
           ),
           Expanded(
@@ -177,11 +180,13 @@ class _ProviderQrScannerState extends State<ProviderQrScanner>
                           child: Padding(
                             padding: const EdgeInsets.all(28),
                             child: Text(
-                              denied
-                                  ? '请在系统设置中允许相机权限后返回重试'
-                                  : '相机暂不可用，请检查设备相机后重试',
+                              tr(
+                                denied
+                                    ? '请在系统设置中允许相机权限后返回重试'
+                                    : '相机暂不可用，请检查设备相机后重试',
+                              ),
                               textAlign: TextAlign.center,
-                              style: const TextStyle(color: Colors.white),
+                              style: TextStyle(color: Colors.white),
                             ),
                           ),
                         );
@@ -195,11 +200,13 @@ class _ProviderQrScannerState extends State<ProviderQrScanner>
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 22),
             child: Text(
-              widget.mode == ProviderQrScanMode.apiKey
-                  ? '扫码后请检查密钥并保存服务。密钥仅保存在本机，调用模型时直发你配置的服务商。'
-                  : '二维码需包含 name、protocol、baseUrl、model、apiKey。\n密钥仅保存在本机，调用模型时直发你配置的服务商。',
+              tr(
+                widget.mode == ProviderQrScanMode.apiKey
+                    ? '扫码后请检查密钥并保存服务。密钥仅保存在本机，调用模型时直发你配置的服务商。'
+                    : '二维码需包含 name、protocol、baseUrl、model、apiKey。\n密钥仅保存在本机，调用模型时直发你配置的服务商。',
+              ),
               textAlign: TextAlign.center,
-              style: const TextStyle(color: IosColors.secondary, fontSize: 13),
+              style: TextStyle(color: IosColors.secondary, fontSize: 13),
             ),
           ),
         ],
