@@ -17,18 +17,25 @@ void main() {
     };
     final old = ChatMessage.fromMap(original);
     expect(old.modelId, isNull);
+    expect(old.providerName, isNull);
     expect(old.firstTokenMs, isNull);
     expect(old.inputTokens, isNull);
 
     final recent = ChatMessage.fromMap({
       ...original,
       'model_id': 'provider/model',
+      'provider_id': 7,
+      'provider_name': 'OpenAI',
+      'provider_preset_id': 'openai',
       'first_token_ms': 620,
       'total_ms': 1420,
       'input_tokens': 38,
       'output_tokens': 12,
     });
     expect(recent.modelId, 'provider/model');
+    expect(recent.providerId, 7);
+    expect(recent.providerName, 'OpenAI');
+    expect(recent.providerPresetId, 'openai');
     expect(recent.firstTokenMs, 620);
     expect(recent.totalMs, 1420);
     expect(recent.inputTokens, 38);

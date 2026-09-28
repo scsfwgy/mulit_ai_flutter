@@ -27,6 +27,11 @@ abstract final class IosColors {
       _dark ? const Color(0xFF38383A) : const Color(0xFFE5E5EA);
   static Color get assistant =>
       _dark ? const Color(0xFF2C2C2E) : const Color(0xFFE9E9EB);
+  static Color get userBubble => Color.alphaBlend(
+    blue.withValues(alpha: _dark ? .24 : .14),
+    _dark ? assistant : surface,
+  );
+  static Color get userBubbleText => label;
   static Color get destructive =>
       _dark ? const Color(0xFFFF453A) : const Color(0xFFFF3B30);
   static Color get onAccent =>

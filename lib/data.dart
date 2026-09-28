@@ -387,6 +387,9 @@ class ChatMessage {
     required this.role,
     required this.content,
     required this.createdAt,
+    this.providerId,
+    this.providerName,
+    this.providerPresetId,
     this.modelId,
     this.firstTokenMs,
     this.totalMs,
@@ -398,6 +401,9 @@ class ChatMessage {
   final String role;
   final String content;
   final int createdAt;
+  final int? providerId;
+  final String? providerName;
+  final String? providerPresetId;
   final String? modelId;
   final int? firstTokenMs;
   final int? totalMs;
@@ -410,6 +416,9 @@ class ChatMessage {
     role: map['role'] as String,
     content: map['content'] as String,
     createdAt: map['created_at'] as int,
+    providerId: map['provider_id'] as int?,
+    providerName: map['provider_name'] as String?,
+    providerPresetId: map['provider_preset_id'] as String?,
     modelId: map['model_id'] as String?,
     firstTokenMs: map['first_token_ms'] as int?,
     totalMs: map['total_ms'] as int?,
@@ -480,7 +489,7 @@ class ChatStore {
     final path = p.join(await getDatabasesPath(), 'model_chat.db');
     _database = await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: (db, _) async {
         await db.execute('''CREATE TABLE providers (
@@ -504,6 +513,9 @@ class ChatStore {
           role TEXT NOT NULL,
           content TEXT NOT NULL,
           created_at INTEGER NOT NULL,
+          provider_id INTEGER,
+          provider_name TEXT,
+          provider_preset_id TEXT,
           model_id TEXT,
           first_token_ms INTEGER,
           total_ms INTEGER,
@@ -531,6 +543,17 @@ class ChatStore {
           );
           await db.execute(
             'ALTER TABLE messages ADD COLUMN output_tokens INTEGER',
+          );
+        }
+        if (oldVersion < 4) {
+          await db.execute(
+            'ALTER TABLE messages ADD COLUMN provider_id INTEGER',
+          );
+          await db.execute(
+            'ALTER TABLE messages ADD COLUMN provider_name TEXT',
+          );
+          await db.execute(
+            'ALTER TABLE messages ADD COLUMN provider_preset_id TEXT',
           );
         }
       },
@@ -733,6 +756,9 @@ class ChatStore {
         'role': 'user',
         'content': content,
         'created_at': now,
+        'provider_id': provider.id,
+        'provider_name': provider.name,
+        'provider_preset_id': presetForProvider(provider)?.id,
         'model_id': model,
       });
       return topicId;
@@ -784,6 +810,7 @@ class ChatStore {
     String role,
     String content, {
     String? modelId,
+    ProviderConfig? provider,
     int? firstTokenMs,
     int? totalMs,
     int? inputTokens,
@@ -795,6 +822,11 @@ class ChatStore {
       'role': role,
       'content': content,
       'created_at': DateTime.now().millisecondsSinceEpoch,
+      'provider_id': provider?.id,
+      'provider_name': provider?.name,
+      'provider_preset_id': provider == null
+          ? null
+          : presetForProvider(provider)?.id,
       'model_id': modelId,
       'first_token_ms': firstTokenMs,
       'total_ms': totalMs,

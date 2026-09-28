@@ -414,6 +414,26 @@ void main() {
             role: 'user',
             content: '你好',
             createdAt: 1,
+            providerId: 7,
+            providerName: '旧服务',
+          ),
+          const ChatMessage(
+            id: 2,
+            topicId: 1,
+            role: 'assistant',
+            content: '你好，我是旧服务',
+            createdAt: 2,
+            providerId: 7,
+            providerName: '旧服务',
+          ),
+          const ChatMessage(
+            id: 3,
+            topicId: 1,
+            role: 'user',
+            content: '接着说',
+            createdAt: 3,
+            providerId: 1,
+            providerName: '测试',
           ),
         ];
         final pieces = await ModelApiClient(
@@ -427,6 +447,8 @@ void main() {
         expect((request['body'] as Map)['messages'], [
           {'role': 'system', 'content': '全局\n\n模型'},
           {'role': 'user', 'content': '你好'},
+          {'role': 'assistant', 'content': '你好，我是旧服务'},
+          {'role': 'user', 'content': '接着说'},
         ]);
       } finally {
         await server.close(force: true);

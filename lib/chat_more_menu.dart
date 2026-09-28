@@ -63,9 +63,12 @@ class ChatMoreButton extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => IosNavButton(
-    icon: CupertinoIcons.ellipsis,
+  Widget build(BuildContext context) => Semantics(
     label: tr('更多'),
-    onPressed: () => _show(context),
+    button: true,
+    child: IosNavButton(
+      icon: CupertinoIcons.ellipsis,
+      onPressed: () => _show(context),
+    ),
   );
 }

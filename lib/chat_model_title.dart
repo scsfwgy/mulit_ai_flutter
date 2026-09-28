@@ -1,16 +1,21 @@
 import 'package:flutter/cupertino.dart';
 
 import 'ios_style.dart';
+import 'provider_badge.dart';
 
 class ChatModelTitle extends StatelessWidget {
   const ChatModelTitle({
     super.key,
     required this.label,
     required this.onPressed,
+    this.providerName,
+    this.providerPresetId,
   });
 
   final String label;
   final VoidCallback? onPressed;
+  final String? providerName;
+  final String? providerPresetId;
 
   @override
   Widget build(BuildContext context) {
@@ -38,6 +43,14 @@ class ChatModelTitle extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (providerName != null) ...[
+              ProviderBadge(
+                name: providerName!,
+                presetId: providerPresetId,
+                size: 23,
+              ),
+              const SizedBox(width: 7),
+            ],
             Flexible(
               child: Text(
                 label,

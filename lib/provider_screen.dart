@@ -5,8 +5,6 @@ import 'package:flutter/material.dart';
 
 import 'app_preferences.dart';
 
-import 'package:flutter_svg/flutter_svg.dart';
-
 import 'api_client.dart';
 import 'data.dart';
 import 'ios_style.dart';
@@ -14,6 +12,7 @@ import 'model_picker.dart';
 import 'privacy_screen.dart';
 import 'provider_qr_scanner.dart';
 import 'prompt_screen.dart';
+import 'provider_badge.dart';
 
 class ProviderScreen extends StatefulWidget {
   const ProviderScreen({super.key, this.canClearData});
@@ -168,7 +167,11 @@ class _ProviderScreenState extends State<ProviderScreen> {
                         title: provider.name,
                         subtitle:
                             '${provider.model} · ${tr(provider.protocol.label)}',
-                        leading: _providerBadge(provider),
+                        leading: ProviderBadge(
+                          name: provider.name,
+                          presetId: presetForProvider(provider)?.id,
+                          size: 30,
+                        ),
                         trailing: CupertinoButton(
                           padding: const EdgeInsets.symmetric(horizontal: 4),
                           minimumSize: const Size(38, 38),
@@ -299,47 +302,10 @@ class _ProviderScreenState extends State<ProviderScreen> {
   Widget _presetRow(ProviderPreset preset) => IosRow(
     title: preset.name,
     subtitle: preset.protocol.label,
-    leading: _presetBadge(preset),
+    leading: ProviderBadge(name: preset.name, presetId: preset.id, size: 30),
     onTap: () => _edit(preset: preset),
   );
 }
-
-Widget _providerBadge(ProviderConfig provider) {
-  final preset = presetForProvider(provider);
-  if (preset != null) return _presetBadge(preset);
-  return Container(
-    width: 30,
-    height: 30,
-    alignment: Alignment.center,
-    decoration: BoxDecoration(
-      color: IosColors.blue,
-      borderRadius: BorderRadius.circular(7),
-    ),
-    child: Text(
-      provider.name.isEmpty
-          ? '?'
-          : provider.name.characters.first.toUpperCase(),
-      style: TextStyle(color: IosColors.onAccent, fontWeight: FontWeight.w600),
-    ),
-  );
-}
-
-Widget _presetBadge(ProviderPreset preset) => Container(
-  width: 30,
-  height: 30,
-  alignment: Alignment.center,
-  decoration: BoxDecoration(
-    color: preset.id == 'moonshot'
-        ? const Color(0xFF161B2B)
-        : IosColors.surface,
-    border: Border.all(color: IosColors.separator),
-    borderRadius: BorderRadius.circular(7),
-  ),
-  child: Padding(
-    padding: const EdgeInsets.all(4),
-    child: SvgPicture.asset(preset.iconAsset, width: 22, height: 22),
-  ),
-);
 
 class ProviderEditor extends StatefulWidget {
   const ProviderEditor({super.key, this.preset, this.config});

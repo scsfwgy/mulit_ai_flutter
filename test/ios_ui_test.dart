@@ -7,6 +7,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:mulit_ai_flutter/api_client.dart';
 import 'package:mulit_ai_flutter/app_preferences.dart';
 import 'package:mulit_ai_flutter/chat_more_menu.dart';
+import 'package:mulit_ai_flutter/chat_loading_status.dart';
 import 'package:mulit_ai_flutter/chat_message_meta.dart';
 import 'package:mulit_ai_flutter/chat_model_selector.dart';
 import 'package:mulit_ai_flutter/chat_model_title.dart';
@@ -42,6 +43,8 @@ void main() {
               ChatMessageMeta(
                 assistant: true,
                 content: '**你好**',
+                providerName: 'OpenAI',
+                providerPresetId: 'openai',
                 modelId: 'example/model',
                 firstTokenMs: 530,
                 totalMs: 1800,
@@ -51,19 +54,27 @@ void main() {
               ChatMessageMeta(
                 assistant: false,
                 content: '你好',
+                providerName: 'DeepSeek',
+                providerPresetId: 'deepseek',
                 modelId: 'example/model',
               ),
+              ChatMessageMeta(assistant: true, content: '旧消息'),
             ],
           ),
         ),
       ),
     );
     expect(find.text('首帧 530ms'), findsOneWidget);
-    expect(find.text('总耗时 1.8s'), findsOneWidget);
+    expect(find.text('耗时 1.8s'), findsOneWidget);
     expect(find.text('输入 40'), findsOneWidget);
     expect(find.text('输出 12'), findsOneWidget);
-    expect(find.text('字数 2'), findsNWidgets(2));
-    expect(find.text('模型 ID example/model'), findsNWidgets(2));
+    expect(find.text('2 字'), findsNWidgets(2));
+    expect(find.text('example/model'), findsNWidgets(2));
+    expect(find.text('OpenAI'), findsOneWidget);
+    expect(find.text('DeepSeek'), findsOneWidget);
+    expect(find.byType(SvgPicture), findsNWidgets(2));
+    expect(find.text('3 字'), findsOneWidget);
+    expect(find.textContaining('—'), findsNothing);
   });
 
   testWidgets('settings exposes model, language, appearance, and about', (
@@ -131,6 +142,8 @@ void main() {
       expect(scaffold.backgroundColor, const Color(0xFF000000));
       expect(IosColors.surface, const Color(0xFF1C1C1E));
       expect(IosColors.label, const Color(0xFFF5F5F7));
+      expect(IosColors.userBubble, isNot(IosColors.blue));
+      expect(IosColors.userBubbleText, IosColors.label);
       expect(find.text('换肤'), findsOneWidget);
     } finally {
       preferences.appearance = previous;
@@ -153,6 +166,8 @@ void main() {
                 title: label,
                 titleWidget: ChatModelTitle(
                   label: label,
+                  providerName: 'OpenAI',
+                  providerPresetId: 'openai',
                   onPressed: () => taps++,
                 ),
                 actions: [
@@ -165,6 +180,7 @@ void main() {
       ),
     );
     expect(find.byIcon(CupertinoIcons.chevron_down), findsOneWidget);
+    expect(find.byType(SvgPicture), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.tap(find.text(label));
     await tester.pump();
@@ -203,18 +219,19 @@ void main() {
     );
     expect(find.text('对话列表'), findsNothing);
     expect(find.text('新对话'), findsNothing);
+    expect(find.byIcon(CupertinoIcons.ellipsis), findsOneWidget);
     for (final (label, expected) in [
       ('新对话', 'new'),
       ('切换模型', 'model'),
       ('模型服务', 'providers'),
     ]) {
-      await tester.tap(find.text('更多').first);
+      await tester.tap(find.byIcon(CupertinoIcons.ellipsis));
       await tester.pumpAndSettle();
       await tester.tap(find.text(label));
       await tester.pumpAndSettle();
       expect(selected.last, expected);
     }
-    await tester.tap(find.text('更多').first);
+    await tester.tap(find.byIcon(CupertinoIcons.ellipsis));
     await tester.pumpAndSettle();
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
@@ -236,11 +253,36 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.text('更多'));
+    await tester.tap(find.byIcon(CupertinoIcons.ellipsis));
     await tester.pumpAndSettle();
     expect(find.text('切换模型'), findsNothing);
     expect(find.text('模型服务'), findsOneWidget);
   });
+
+  test('loading duration shows milliseconds and seconds plus milliseconds', () {
+    expect(formatLoadingDuration(56), '56ms');
+    expect(formatLoadingDuration(999), '999ms');
+    expect(formatLoadingDuration(1000), '1s 000ms');
+    expect(formatLoadingDuration(12345), '12s 345ms');
+  });
+
+  testWidgets(
+    'loading indicator updates elapsed time without rebuilding chat',
+    (tester) async {
+      final elapsed = ValueNotifier<int>(42);
+      addTearDown(elapsed.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: ChatLoadingStatus(elapsedMilliseconds: elapsed)),
+        ),
+      );
+      expect(find.byType(CupertinoActivityIndicator), findsOneWidget);
+      expect(find.text('加载中 · 42ms'), findsOneWidget);
+      elapsed.value = 1234;
+      await tester.pump();
+      expect(find.text('加载中 · 1s 234ms'), findsOneWidget);
+    },
+  );
 
   test('large prefixed model lists group; short lists stay flat', () {
     final models = [

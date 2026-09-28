@@ -165,7 +165,7 @@ class MessageInfoSettingsScreen extends StatelessWidget {
           children: [
             IosSection(
               footer: tr(
-                '用户消息显示模型与字数；耗时和 Token 属于整次回复请求。Token 以服务端返回为准，旧消息或未提供用量的服务显示“—”。',
+                '用户消息显示模型与字数；耗时和 Token 属于整次回复请求。旧消息缺少的统计不显示；服务未提供用量时显示 Token —。',
               ),
               children: [
                 for (final field in ChatInfoField.values)

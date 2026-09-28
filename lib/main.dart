@@ -13,6 +13,7 @@ import 'chat_more_menu.dart';
 import 'chat_model_selector.dart';
 import 'chat_model_title.dart';
 import 'chat_message_meta.dart';
+import 'chat_loading_status.dart';
 import 'chat_scroll.dart';
 import 'data.dart';
 import 'ios_style.dart';
@@ -130,9 +131,8 @@ class _ChatHomeState extends State<ChatHome> {
   ModelApiClient? _activeClient;
   final _titleClients = <ModelApiClient>{};
   String _reply = '';
-  int? _replyFirstTokenMs;
-  int? _replyTotalMs;
-  ReplyUsage? _replyUsage;
+  final _replyElapsedMs = ValueNotifier<int>(0);
+  Timer? _replyTimer;
   String? _error;
   _ChatErrorAction _errorAction = _ChatErrorAction.none;
   bool _loading = true;
@@ -154,6 +154,8 @@ class _ChatHomeState extends State<ChatHome> {
   @override
   void dispose() {
     _activeClient?.cancel();
+    _replyTimer?.cancel();
+    _replyElapsedMs.dispose();
     for (final client in _titleClients) {
       client.cancel();
     }
@@ -444,6 +446,7 @@ class _ChatHomeState extends State<ChatHome> {
         'user',
         content,
         modelId: model,
+        provider: provider,
       );
       if (first) {
         await ChatStore.instance.updateTopic(
@@ -514,32 +517,33 @@ class _ChatHomeState extends State<ChatHome> {
       _sending = true;
       _sendingTopicId = topic.id;
       _reply = '';
-      _replyFirstTokenMs = null;
-      _replyTotalMs = null;
-      _replyUsage = null;
+      _replyElapsedMs.value = 0;
       _error = null;
       _errorAction = _ChatErrorAction.none;
       _cancelRequested = false;
     });
     _chatScroll.scrollToLatest(force: true);
-    await _refreshTopics();
     final client = ModelApiClient(provider, key);
     _activeClient = client;
     var answer = '';
     var completed = false;
     final watch = Stopwatch()..start();
+    _replyTimer?.cancel();
+    _replyTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
+      if (mounted && _sendingTopicId == topic.id) {
+        _replyElapsedMs.value = watch.elapsedMilliseconds;
+      }
+    });
     int? firstTokenMs;
     ReplyUsage? usage;
     try {
+      await _refreshTopics();
       await for (final chunk in client.streamReply(
         history,
         topic.model,
         systemPrompt: systemPrompt,
         onUsage: (reported) {
           usage = (usage ?? const ReplyUsage()).merge(reported);
-          if (mounted && _topic?.id == topic.id) {
-            setState(() => _replyUsage = usage);
-          }
         },
       )) {
         answer += chunk;
@@ -547,8 +551,6 @@ class _ChatHomeState extends State<ChatHome> {
         if (mounted && _topic?.id == topic.id) {
           setState(() {
             _reply = answer;
-            _replyFirstTokenMs = firstTokenMs;
-            _replyTotalMs = watch.elapsedMilliseconds;
           });
           _chatScroll.scrollToLatest();
         }
@@ -571,6 +573,8 @@ class _ChatHomeState extends State<ChatHome> {
       }
     } finally {
       watch.stop();
+      _replyTimer?.cancel();
+      _replyTimer = null;
       _activeClient = null;
       if (answer.isNotEmpty) {
         await ChatStore.instance.addMessage(
@@ -578,6 +582,7 @@ class _ChatHomeState extends State<ChatHome> {
           'assistant',
           answer,
           modelId: topic.model,
+          provider: provider,
           firstTokenMs: firstTokenMs,
           totalMs: watch.elapsedMilliseconds,
           inputTokens: usage?.inputTokens,
@@ -594,9 +599,7 @@ class _ChatHomeState extends State<ChatHome> {
           _sending = false;
           _sendingTopicId = null;
           _reply = '';
-          _replyFirstTokenMs = null;
-          _replyTotalMs = null;
-          _replyUsage = null;
+          _replyElapsedMs.value = 0;
         });
         if (_topic?.id == topic.id) {
           final messages = await ChatStore.instance.messages(topic.id);
@@ -723,6 +726,10 @@ class _ChatHomeState extends State<ChatHome> {
         ),
         titleWidget: ChatModelTitle(
           label: title,
+          providerName: provider?.name,
+          providerPresetId: provider == null
+              ? null
+              : presetForProvider(provider)?.id,
           onPressed: _providers.isEmpty ? null : _changeModel,
         ),
         actions: [
@@ -889,20 +896,14 @@ class _ChatHomeState extends State<ChatHome> {
         itemCount: count,
         itemBuilder: (context, index) {
           if (index == _messages.length) {
-            return _bubble(
-              'assistant',
-              _reply,
-              loading: true,
-              modelId: _topic?.model,
-              firstTokenMs: _replyFirstTokenMs,
-              totalMs: _replyTotalMs,
-              usage: _replyUsage,
-            );
+            return _bubble('assistant', _reply, loading: true);
           }
           final message = _messages[index];
           return _bubble(
             message.role,
             message.content,
+            providerName: message.providerName,
+            providerPresetId: message.providerPresetId,
             modelId: message.modelId,
             firstTokenMs: message.firstTokenMs,
             totalMs: message.totalMs,
@@ -955,6 +956,8 @@ class _ChatHomeState extends State<ChatHome> {
     String role,
     String content, {
     bool loading = false,
+    String? providerName,
+    String? providerPresetId,
     String? modelId,
     int? firstTokenMs,
     int? totalMs,
@@ -962,7 +965,7 @@ class _ChatHomeState extends State<ChatHome> {
   }) {
     final user = role == 'user';
     return Padding(
-      padding: const EdgeInsets.only(bottom: 15),
+      padding: const EdgeInsets.only(bottom: 13),
       child: Row(
         mainAxisAlignment: user
             ? MainAxisAlignment.end
@@ -982,7 +985,7 @@ class _ChatHomeState extends State<ChatHome> {
                   Container(
                     padding: const EdgeInsets.fromLTRB(14, 11, 14, 9),
                     decoration: BoxDecoration(
-                      color: user ? IosColors.blue : IosColors.assistant,
+                      color: user ? IosColors.userBubble : IosColors.assistant,
                       borderRadius: BorderRadius.only(
                         topLeft: const Radius.circular(18),
                         topRight: const Radius.circular(18),
@@ -993,54 +996,47 @@ class _ChatHomeState extends State<ChatHome> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (content.isEmpty && loading)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 3),
-                            child: CupertinoActivityIndicator(radius: 10),
-                          )
+                        if (content.isEmpty)
+                          const SizedBox.shrink()
                         else if (user)
                           SelectableText(
                             content,
                             style: TextStyle(
-                              color: IosColors.onAccent,
+                              color: IosColors.userBubbleText,
                               fontSize: 15,
                               height: 1.45,
                             ),
                           )
-                        else
+                        else if (content.isNotEmpty)
                           AssistantMarkdown(
                             data: content,
                             onTapLink: _openMarkdownLink,
                           ),
-                        if (loading && content.isNotEmpty)
-                          const Padding(
-                            padding: EdgeInsets.only(top: 8),
-                            child: CupertinoActivityIndicator(radius: 7),
+                        if (loading)
+                          Padding(
+                            padding: EdgeInsets.only(
+                              top: content.isEmpty ? 2 : 8,
+                              bottom: content.isEmpty ? 2 : 0,
+                            ),
+                            child: ChatLoadingStatus(
+                              elapsedMilliseconds: _replyElapsedMs,
+                            ),
                           ),
                       ],
                     ),
                   ),
-                  ChatMessageMeta(
-                    assistant: !user,
-                    content: content,
-                    modelId: modelId,
-                    firstTokenMs: firstTokenMs,
-                    totalMs: totalMs,
-                    inputTokens: usage?.inputTokens,
-                    outputTokens: usage?.outputTokens,
-                  ),
                   if (!loading)
-                    CupertinoButton(
-                      padding: EdgeInsets.zero,
-                      minimumSize: const Size(44, 30),
-                      onPressed: () =>
-                          _copyBubble(content, renderMarkdown: !user),
-                      child: Icon(
-                        CupertinoIcons.doc_on_doc,
-                        semanticLabel: tr('复制消息'),
-                        size: 17,
-                        color: IosColors.secondary,
-                      ),
+                    ChatMessageMeta(
+                      assistant: !user,
+                      content: content,
+                      providerName: providerName,
+                      providerPresetId: providerPresetId,
+                      modelId: modelId,
+                      firstTokenMs: firstTokenMs,
+                      totalMs: totalMs,
+                      inputTokens: usage?.inputTokens,
+                      outputTokens: usage?.outputTokens,
+                      onCopy: () => _copyBubble(content, renderMarkdown: !user),
                     ),
                 ],
               ),
@@ -1088,7 +1084,11 @@ class _ChatHomeState extends State<ChatHome> {
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color: _starting ? IosColors.secondary : IosColors.blue,
+                color: _sending
+                    ? IosColors.destructive
+                    : _starting
+                    ? IosColors.secondary
+                    : IosColors.blue,
                 shape: BoxShape.circle,
               ),
               child: Icon(
