@@ -175,7 +175,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
                             companion.visibility = View.VISIBLE
                             companion.text = if (phoneNodeId == null) "重新检查连接" else "在手机安装应用"
                             status.text = if (phoneNodeId == null)
-                                "请先连接安卓手机并同步配置" else "请在手机安装应用并配置模型"
+                                "尚未连接手机数据通道，请完成 Wear OS 配套应用设置" else "请在手机安装应用并配置模型"
                             action.isEnabled = false
                             action.text = "等待手机配置"
                         } else if (!directBusy && !recording) {

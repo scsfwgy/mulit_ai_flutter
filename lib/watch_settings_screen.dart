@@ -72,7 +72,7 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
     } on PlatformException {
       if (mounted) {
         setState(() {
-          _watchCheckError = tr('无法检查手表连接，请确认配对后重试');
+          _watchCheckError = tr('无法检查手表数据连接，请稍后重试');
           _checkingWatches = false;
         });
       }
@@ -120,7 +120,7 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
   String get _watchStatus {
     if (_checkingWatches) return tr('正在检查已连接的手表…');
     if (_watchCheckError != null) return _watchCheckError!;
-    if (_connectedWatches == 0) return tr('尚未连接 Wear OS 手表');
+    if (_connectedWatches == 0) return tr('尚未建立 Wear OS 数据连接');
     if (_missingWatches.isNotEmpty) {
       return tr('有手表尚未安装应用');
     }
@@ -194,7 +194,7 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
         children: [
           IosSection(
             footer: tr(
-              '先将手表与安卓手机配对。连接后可在这里检查手表应用并打开安装页；商店暂无此应用时，请从原安装渠道获取手表版。',
+              '蓝牙配对后，还需完成 Wear OS 配套应用的连接设置。模拟器请使用 Android Studio 的 Pair Wearable；完成后点上方状态重新检查。商店暂无本应用时，请从原安装渠道获取手表版。',
             ),
             children: [
               IosRow(
