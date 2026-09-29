@@ -36,6 +36,7 @@
 - `lib/api_client.dart`：HTTP 请求、SSE 解析和协议适配。
 - `lib/voice_client.dart`：云端语音识别和合成的 OpenAI 兼容、MiMo、豆包语音协议适配；不得使用系统 ASR/TTS 代替。
 - `lib/voice_settings_screen.dart`：独立语音提供商、文字服务密钥复用、识别/朗读选择和自动朗读设置。
+- `lib/voice_catalog.dart` 与 `lib/voice_catalog_picker.dart`：语音模型/音色候选、兼容服务 `/models` 查询和选择界面；候选不表示账号权限。
 - `test/`：协议、配置、Markdown 和界面行为测试。
 - `android/app/src/main/AndroidManifest.xml` 与 `res/xml/network_security_config.xml`：网络权限与明文连接范围。
 

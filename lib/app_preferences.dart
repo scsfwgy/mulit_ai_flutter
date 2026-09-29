@@ -150,6 +150,11 @@ String tr(String chinese) {
   if (voiceHttp != null) {
     return 'Voice service failed (HTTP ${voiceHttp.group(1)}). Check the key, model and permissions';
   }
+  final voiceCatalogHttp = RegExp(r'^获取模型列表失败（HTTP (\d+)）$')
+      .firstMatch(chinese);
+  if (voiceCatalogHttp != null) {
+    return 'Could not fetch models (HTTP ${voiceCatalogHttp.group(1)})';
+  }
   final doubaoCode = RegExp(r'^豆包语音(识别|合成)失败（状态码 ([^）]+)）').firstMatch(chinese);
   if (doubaoCode != null) {
     final action = doubaoCode.group(1) == '识别' ? 'transcription' : 'speech';
@@ -209,6 +214,35 @@ const _english = <String, String>{
   '识别模型 ID / 资源 ID': 'ASR model / resource ID',
   '合成模型 ID / 资源 ID': 'TTS model / resource ID',
   '音色 ID': 'Voice ID',
+  '选择音色': 'Choose voice',
+  '默认': 'Default',
+  '中文女声': 'Chinese female voice',
+  '中文男声': 'Chinese male voice',
+  '英文女声': 'English female voice',
+  '英文男声': 'English male voice',
+  '录音识别极速版': 'Fast transcription',
+  '语音合成 2.0': 'Speech synthesis 2.0',
+  '甜美桃子': 'Sweet Peach',
+  '大壹': 'Da Yi',
+  '黑猫侦探社咪仔': 'Mizai',
+  '鸡汤女': 'Warm Narrator',
+  '魅力女友': 'Charming Girlfriend',
+  '流畅女声': 'Fluent Female Voice',
+  '儒雅逸辰': 'Yichen',
+  '手动输入 ID': 'Enter an ID manually',
+  '输入模型或音色 ID': 'Enter a model or voice ID',
+  '使用此 ID': 'Use this ID',
+  '选择': 'Choose',
+  '搜索 ID 或名称': 'Search ID or name',
+  '服务端返回': 'Returned by server',
+  '官方示例': 'Official examples',
+  '模型列表仅包含服务端返回的 ID，语音接口和账号权限仍需实际验证。': 'The server returned these IDs. Audio endpoints and account access still need testing.',
+  '此服务没有可用的 API Key 列表接口。示例不代表账号已开通；也可返回手动填写。': 'No API-key catalog is available for this service. Examples do not confirm access; you can also enter an ID manually.',
+  '示例来自官方文档，不代表当前账号已开通；也可返回手动填写。': 'Examples come from official docs and do not confirm account access. You can also enter an ID manually.',
+  '模型列表过大': 'Model list is too large',
+  '服务未提供模型列表': 'The service has no model list',
+  '无法获取模型列表，请检查网络或手动填写':
+      'Could not fetch models. Check the network or enter an ID manually',
   '密钥来源': 'Key source',
   '独立密钥': 'Separate key',
   '复用文字服务': 'Reuse text provider',
@@ -430,6 +464,8 @@ const _english = <String, String>{
   '服务没有返回可用模型': 'The service returned no usable models',
   '请先修正配置 JSON，再扫码填写密钥': 'Fix the configuration JSON before scanning a key',
   '请先填写 API Key': 'Enter an API key first',
+  '复用密钥时，API 根地址须与文字服务一致':
+      'When reusing a key, the API base URL must match the text provider',
   '请先填写有效的配置 JSON': 'Enter valid configuration JSON',
   '请填写 API Key': 'Enter an API key',
   '服务配置已删除，请重新选择模型。': 'The service was deleted. Choose a model again.',

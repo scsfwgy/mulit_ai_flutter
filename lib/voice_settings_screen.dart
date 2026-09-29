@@ -5,6 +5,8 @@ import 'app_preferences.dart';
 import 'data.dart';
 import 'ios_style.dart';
 import 'provider_qr_scanner.dart';
+import 'voice_catalog.dart';
+import 'voice_catalog_picker.dart';
 
 class VoiceSettingsScreen extends StatefulWidget {
   const VoiceSettingsScreen({super.key});
@@ -316,10 +318,70 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
     if (value != null && mounted) _key.text = value;
   }
 
+  Future<void> _pickCatalog(
+    VoiceCatalogKind kind,
+    TextEditingController controller,
+  ) async {
+    Future<List<VoiceCatalogOption>> refresh() async {
+      final baseUrl = validateBaseUrl(_url.text);
+      final previous = widget.service;
+      final textProvider = _textProviders
+          .where((item) => item.id == _textProviderId)
+          .firstOrNull;
+      if (_textProviderId != null &&
+          (textProvider == null || textProvider.baseUrl != baseUrl)) {
+        throw const FormatException('复用密钥时，API 根地址须与文字服务一致');
+      }
+      final key = _textProviderId == null
+          ? (_key.text.trim().isNotEmpty
+                ? _key.text.trim()
+                : previous == null ||
+                      previous.textProviderId != null ||
+                      previous.baseUrl != baseUrl ||
+                      previous.protocol != _protocol
+                ? null
+                : await ChatStore.instance.voiceApiKey(previous))
+          : await ChatStore.instance.apiKey(_textProviderId!);
+      final client = VoiceCatalogClient();
+      try {
+        return await client.fetchModels(
+          baseUrl: baseUrl,
+          apiKey: key ?? '',
+          protocol: _protocol,
+          kind: kind,
+        );
+      } finally {
+        client.close();
+      }
+    }
+
+    final result = await Navigator.push<String>(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => VoiceCatalogPicker(
+          title: kind == VoiceCatalogKind.voice ? '选择音色' : '选择模型',
+          initialValue: controller.text,
+          examples: voiceCatalogExamples(
+            _protocol,
+            kind,
+            ttsModel: _tts.text.trim(),
+          ),
+          onRefresh:
+              _protocol == VoiceProtocol.doubao ||
+                  kind == VoiceCatalogKind.voice
+              ? null
+              : refresh,
+        ),
+      ),
+    );
+    if (result != null && mounted) controller.text = result;
+  }
+
   Widget _field(
     String label,
     TextEditingController controller, {
     bool secret = false,
+    VoidCallback? onPick,
   }) => Padding(
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
     child: Column(
@@ -343,7 +405,16 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
                     semanticLabel: tr('扫码填写 API Key'),
                   ),
                 )
-              : null,
+              : onPick == null
+              ? null
+              : CupertinoButton(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  onPressed: onPick,
+                  child: Text(
+                    tr('选择'),
+                    style: TextStyle(color: IosColors.blue),
+                  ),
+                ),
           autocorrect: false,
           style: TextStyle(color: IosColors.label),
           padding: const EdgeInsets.all(10),
@@ -403,6 +474,14 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
           (await ChatStore.instance.apiKey(_textProviderId!))?.isNotEmpty !=
               true) {
         throw const FormatException('选中的文字服务缺少 API Key');
+      }
+      if (_textProviderId != null &&
+          _textProviders
+                  .where((item) => item.id == _textProviderId)
+                  .firstOrNull
+                  ?.baseUrl !=
+              baseUrl) {
+        throw const FormatException('复用密钥时，API 根地址须与文字服务一致');
       }
       await ChatStore.instance.saveVoiceProvider(
         service,
@@ -503,9 +582,21 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
             title: '语音模型',
             footer: tr('模型与音色 ID 需要在对应服务开通。豆包语音的模型栏填写资源 ID。'),
             children: [
-              _field('识别模型 ID / 资源 ID', _asr),
-              _field('合成模型 ID / 资源 ID', _tts),
-              _field('音色 ID', _voice),
+              _field(
+                '识别模型 ID / 资源 ID',
+                _asr,
+                onPick: () => _pickCatalog(VoiceCatalogKind.asr, _asr),
+              ),
+              _field(
+                '合成模型 ID / 资源 ID',
+                _tts,
+                onPick: () => _pickCatalog(VoiceCatalogKind.tts, _tts),
+              ),
+              _field(
+                '音色 ID',
+                _voice,
+                onPick: () => _pickCatalog(VoiceCatalogKind.voice, _voice),
+              ),
             ],
           ),
           if (widget.service != null)
