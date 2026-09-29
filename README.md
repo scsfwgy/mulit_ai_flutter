@@ -55,7 +55,7 @@ adb -s <手表序列号> install -r build/wear/outputs/apk/debug/wear-debug.apk
 3. 在手表模拟器的 `⋮ → Microphone` 中开启 `Virtual microphone uses host audio input`，授权电脑麦克风。打开手表应用，按住录音按钮说话，松开后检查转写、自动发送或确认发送、模型回复以及可选朗读。手表状态会提示当前走手机网络还是手表网络。
 4. 两端均联网并配对时，应优先显示「正在通过手机网络…」。手机应用网络失败而手表仍联网时，应显示切换到手表网络；停止手机模拟器、保持手表联网且已同步过配置时，手表可独立请求。恢复配对后，检查手表问答是否只同步一次到手机会话列表。
 
-当前使用的 Android 16/API 37 模拟器可只阻断**本应用**联网，保留 Google Play 服务的配对链路，用于模拟手机网络故障。以下示例中的 `emulator-5554` 必须换成 `adb devices` 列出的**手机模拟器**序列号；测试后恢复网络。若此前防火墙链已开启，先记录原状态，结束时恢复原状态。
+当前使用的 API 37 模拟器可只阻断**本应用**联网，保留 Google Play 服务的配对链路，用于模拟手机网络故障。以下示例中的 `emulator-5554` 必须换成 `adb devices` 列出的**手机模拟器**序列号；测试后恢复网络。若此前防火墙链已开启，先记录原状态，结束时恢复原状态。
 
 ```bash
 adb -s emulator-5554 shell cmd connectivity set-chain3-enabled true
