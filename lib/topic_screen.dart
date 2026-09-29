@@ -33,6 +33,7 @@ class TopicScreen extends StatefulWidget {
 class _TopicScreenState extends State<TopicScreen> {
   List<ChatTopic> _topics = [];
   List<ProviderConfig> _providers = [];
+  Set<int> _watchTopicIds = {};
 
   @override
   void initState() {
@@ -43,10 +44,12 @@ class _TopicScreenState extends State<TopicScreen> {
   Future<void> _load() async {
     final topics = await ChatStore.instance.topics();
     final providers = await ChatStore.instance.providers();
+    final watchTopicIds = await ChatStore.instance.watchTopicIds();
     if (mounted) {
       setState(() {
         _topics = topics;
         _providers = providers;
+        _watchTopicIds = watchTopicIds;
       });
     }
   }
@@ -217,7 +220,9 @@ class _TopicScreenState extends State<TopicScreen> {
                           subtitle:
                               '${_providers.where((p) => p.id == topic.providerId).firstOrNull?.name ?? '服务已删除'} · ${topic.model}',
                           leading: Icon(
-                            CupertinoIcons.chat_bubble_text,
+                            _watchTopicIds.contains(topic.id)
+                                ? Icons.watch_outlined
+                                : CupertinoIcons.chat_bubble_text,
                             color: topic.id == widget.selectedId
                                 ? IosColors.blue
                                 : IosColors.secondary,
@@ -242,17 +247,21 @@ class _TopicScreenState extends State<TopicScreen> {
             ),
           ),
           Divider(height: .5, color: IosColors.separator),
-          Align(
-            alignment: Alignment.centerRight,
-            child: CupertinoButton(
-              onPressed: widget.onSettings,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(CupertinoIcons.gear, color: IosColors.blue, size: 22),
-                  const SizedBox(width: 6),
-                  Text(tr('设置'), style: TextStyle(color: IosColors.blue)),
-                ],
+          SizedBox(
+            height: 62,
+            child: Align(
+              alignment: Alignment.bottomRight,
+              child: CupertinoButton(
+                padding: const EdgeInsets.fromLTRB(12, 4, 18, 4),
+                onPressed: widget.onSettings,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(CupertinoIcons.gear, color: IosColors.blue, size: 22),
+                    const SizedBox(width: 6),
+                    Text(tr('设置'), style: TextStyle(color: IosColors.blue)),
+                  ],
+                ),
               ),
             ),
           ),

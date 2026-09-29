@@ -1,6 +1,8 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'app_preferences.dart';
 import 'ios_style.dart';
@@ -390,6 +392,21 @@ class AboutScreen extends StatefulWidget {
 class _AboutScreenState extends State<AboutScreen> {
   String? _version;
 
+  Future<void> _contact() async {
+    const address = 'mateolim93@gmail.com';
+    try {
+      if (await launchUrl(Uri(scheme: 'mailto', path: address))) return;
+    } catch (_) {
+      // A mail client is optional; keep the support address usable.
+    }
+    await Clipboard.setData(const ClipboardData(text: address));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(tr('邮箱已复制'))),
+      );
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -418,7 +435,7 @@ class _AboutScreenState extends State<AboutScreen> {
           IosSection(
             title: tr('应用信息'),
             children: [
-              IosRow(title: tr('模型之间'), chevron: false),
+              IosRow(title: tr('AI Link'), chevron: false),
               IosRow(
                 title: tr('版本'),
                 subtitle: _version ?? '…',
@@ -439,10 +456,16 @@ class _AboutScreenState extends State<AboutScreen> {
           IosSection(
             children: [
               IosRow(
+                title: tr('联系与反馈'),
+                subtitle: 'mateolim93@gmail.com',
+                leading: Icon(CupertinoIcons.mail, color: IosColors.blue),
+                onTap: _contact,
+              ),
+              IosRow(
                 title: tr('开源许可'),
                 onTap: () => showLicensePage(
                   context: context,
-                  applicationName: tr('模型之间'),
+                  applicationName: tr('AI Link'),
                   applicationVersion: _version,
                 ),
               ),

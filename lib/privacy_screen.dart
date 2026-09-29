@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'data.dart';
 import 'app_preferences.dart';
@@ -111,6 +112,23 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
               _PrivacyRow(
                 title: '单独删除',
                 detail: tr('可在话题列表删除某个话题，在模型服务页删除某项服务及其密钥。'),
+              ),
+            ],
+          ),
+          IosSection(
+            children: [
+              IosRow(
+                title: tr('完整隐私政策'),
+                subtitle: 'tools24.uk/app/ai-link/privacy',
+                leading: Icon(
+                  CupertinoIcons.doc_text,
+                  color: IosColors.blue,
+                  size: 22,
+                ),
+                onTap: () => launchUrl(
+                  Uri.parse('https://www.tools24.uk/app/ai-link/privacy'),
+                  mode: LaunchMode.externalApplication,
+                ),
               ),
             ],
           ),

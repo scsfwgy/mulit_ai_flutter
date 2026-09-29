@@ -1,6 +1,6 @@
 # Codex 项目指引
 
-本文件适用于仓库根目录及其所有子目录。项目名为「模型之间」，是使用用户自有 API Key 的 Flutter 多模型聊天应用。
+本文件适用于仓库根目录及其所有子目录。项目名为「AI Link」，是使用用户自有 API Key 的 Flutter 多模型聊天应用。
 
 ## 产品与当前范围
 
@@ -16,6 +16,7 @@
 - `lib/chat_more_menu.dart`：聊天页右上角“更多”操作表，包含新对话、切换模型和模型服务。
 - `lib/chat_model_title.dart`：聊天页顶部当前服务与模型标题，可点按切换模型。
 - `lib/topic_screen.dart`：左侧会话抽屉，以及话题重命名、删除；底部设置入口。
+- 手表参与过的话题通过本机 `settings` 中的手表会话映射识别，侧栏显示手表图标；设置入口贴在抽屉右下角。
 - `lib/chat_model_selector.dart`：聊天页统一的服务与模型选择，支持最近使用、服务端列表和手动 ID。
 - `lib/chat_scroll.dart`：流式回复时的底部跟随，用户滑离底部后保留阅读位置。
 - `lib/chat_message_meta.dart`：气泡下的模型、耗时、Token 与字数展示。
@@ -40,11 +41,13 @@
 - `lib/watch_settings_screen.dart`：手机端的手表模型与播报开关。
 - `lib/watch_chat.dart`：手机后台 Flutter 入口，把所选服务配置发给手表，执行手机优先的无落库语音/模型/朗读请求，并将手表离线问答同步进手机会话库；保留旧版手表的手机处理路径。
 - `android/wear/`：独立 Wear OS APK，负责录音、路由选择、手表独立请求、展示回复和音频播放；`WatchPhoneRelay.kt` 处理手机网络路径，`WatchNetworkSelector.kt` 指定手表 Wi-Fi/蜂窝网络，所选密钥用 Android Keystore 加密保存。
+- 手表原生界面跟随手表自身的系统语言与日夜模式，支持中文和英文；不读取手机 Flutter 的语言或主题偏好。
 - `android/app/.../MainActivity.kt` 与 `android/wear/.../WatchActivity.kt`：手机和手表通过静态 capability 检查另一端安装状态，并向缺失设备发送商店安装页跳转；未上架的测试包仍需分别安装。
-- `android/app/src/main/kotlin/com/example/mulit_ai_flutter/WatchRequestListener.kt` 与 `WatchRequestWorker.kt`：Data Layer 处理手表配置请求、手机网络路径与问答同步；兼容旧版录音请求。
+- `android/app/src/main/kotlin/com/maxhall/ailink/WatchRequestListener.kt` 与 `WatchRequestWorker.kt`：Data Layer 处理手表配置请求、手机网络路径与问答同步；兼容旧版录音请求。
 - `lib/voice_catalog.dart` 与 `lib/voice_catalog_picker.dart`：语音模型/音色候选、兼容服务 `/models` 查询和选择界面；候选不表示账号权限。
 - `test/`：协议、配置、Markdown 和界面行为测试。
 - `android/app/src/main/AndroidManifest.xml` 与 `res/xml/network_security_config.xml`：网络权限与明文连接范围。
+- `release.sh`、`android/key.properties.example`、`doc/google_play/`：本地签名打包和 Google Play 上架草稿；真实签名文件、密钥及构建产物不得提交。手机和手表要用相同的包名 `com.maxhall.ailink` 与发布签名。
 
 ## UI 约定
 
@@ -78,6 +81,7 @@
 - “清空所有本地数据”需经明确确认，并在模型回复或自动标题请求进行期间禁止执行；不得把清空入口的测试运行在含有用户数据的模拟器上。
 - 非本机 API 地址使用 HTTPS。Android 模拟器访问宿主机服务用 `10.0.2.2`；`127.0.0.1` 和 `localhost` 指向运行应用的设备自身。这些本地地址可用于 HTTP 联调。网络请求直接从设备发到用户配置的服务。
 - 模拟器可能已有用户的服务、密钥和聊天记录。不要用 `adb shell pm clear`、卸载应用或删除数据库作为常规测试步骤；只清理自己创建的临时服务和话题。
+- 从旧包名 `com.example.mulit_ai_flutter` 改到 `com.maxhall.ailink` 会产生新的应用沙盒；重装新包不能自动迁移旧 SQLite 和安全存储。测试时保留旧包及其数据。
 
 ## 开发与验证
 
@@ -92,6 +96,8 @@ cd android && ./gradlew :wear:assembleDebug
 有 Android 模拟器时可用 `adb install -r build/app/outputs/flutter-apk/app-debug.apk` 安装；重装不会清空应用数据。真实平台 API 请求必须区分于本地模拟接口验证，不要在没有真实密钥测试时宣称平台实测通过。
 
 iOS 编译和设备验证需要完整 Xcode 与 CocoaPods；如果当前开发机只有 Xcode Command Line Tools，明确记录该限制，不要用 Android 构建结果代替 iOS 验证。
+
+发布构建运行 `./release.sh`，会先分析和测试，再从未入库的 `android/key.properties` 使用同一个上传密钥生成手机和手表 AAB；缺少真实密钥时只验证脚本能安全失败，不使用 debug 签名冒充发布包。Google Play 隐私政策 URL、Data safety、AI 内容举报流程、真实截图和设备测试见 `doc/google_play/README.md`，未完成项不能写成已上架。
 
 提交代码前先检查 `git status`、变更范围和 `git diff --check`。只提交本次工作涉及的文件；`build/`、`.dart_tool/` 等构建产物由 `.gitignore` 排除。
 

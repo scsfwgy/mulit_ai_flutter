@@ -900,6 +900,20 @@ class ChatStore {
     orderBy: 'updated_at DESC, id DESC',
   )).map(ChatTopic.fromMap).toList();
 
+  /// Topic IDs that have received at least one watch turn. The mapping is
+  /// already persisted for idempotent watch sync, including older phone relays.
+  Future<Set<int>> watchTopicIds() async {
+    final rows = await (await db).query(
+      'settings',
+      columns: ['value'],
+      where: "key = 'watch_topic_id' OR key LIKE 'watch_conversation_%'",
+    );
+    return rows
+        .map((row) => int.tryParse(row['value'] as String))
+        .whereType<int>()
+        .toSet();
+  }
+
   Future<int> createTopicWithMessage(
     ProviderConfig provider,
     String model,

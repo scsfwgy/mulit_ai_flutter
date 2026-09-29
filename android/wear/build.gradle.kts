@@ -1,18 +1,48 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
 
+val releaseProperties = Properties().apply {
+    val config = rootProject.file("key.properties")
+    if (config.isFile) config.inputStream().use(::load)
+}
+val releaseCredentials = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+    .all { !releaseProperties.getProperty(it).isNullOrBlank() }
+val releaseRequested = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+if (releaseRequested && !releaseCredentials) {
+    error("Release signing requires android/key.properties (see android/key.properties.example)")
+}
+val watchBuildCode = providers.gradleProperty("watchVersionCode").orNull?.toIntOrNull() ?: 1000001
+val watchBuildName = providers.gradleProperty("watchVersionName").orNull ?: "1.0.0"
+
 android {
-    namespace = "com.example.mulit_ai_flutter.wear"
+    namespace = "com.maxhall.ailink.wear"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.mulit_ai_flutter"
+        applicationId = "com.maxhall.ailink"
         minSdk = 30
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = watchBuildCode
+        versionName = watchBuildName
+    }
+
+    signingConfigs {
+        if (releaseCredentials) create("release") {
+            storeFile = rootProject.file(releaseProperties.getProperty("storeFile"))
+            storePassword = releaseProperties.getProperty("storePassword")
+            keyAlias = releaseProperties.getProperty("keyAlias")
+            keyPassword = releaseProperties.getProperty("keyPassword")
+        }
+    }
+
+    buildTypes {
+        release {
+            if (releaseCredentials) signingConfig = signingConfigs.getByName("release")
+        }
     }
 
     compileOptions {

@@ -190,10 +190,10 @@ void main() {
   testWidgets('top title has no model switch before setup', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
-        home: Scaffold(body: ChatModelTitle(label: '模型之间', onPressed: null)),
+        home: Scaffold(body: ChatModelTitle(label: 'AI Link', onPressed: null)),
       ),
     );
-    expect(find.text('模型之间'), findsOneWidget);
+    expect(find.text('AI Link'), findsOneWidget);
     expect(find.byIcon(CupertinoIcons.chevron_down), findsNothing);
   });
 
@@ -408,7 +408,7 @@ void main() {
       MaterialApp(home: PrivacyScreen(clearData: () async => clearCount++)),
     );
     expect(find.textContaining('数据库内容未加密'), findsOneWidget);
-    await tester.ensureVisible(find.text('清空所有本地数据'));
+    await tester.scrollUntilVisible(find.text('清空所有本地数据'), 250);
     await tester.pumpAndSettle();
     await tester.tap(find.text('清空所有本地数据'));
     await tester.pumpAndSettle();
@@ -435,7 +435,7 @@ void main() {
         ),
       ),
     );
-    await tester.ensureVisible(find.text('清空所有本地数据'));
+    await tester.scrollUntilVisible(find.text('清空所有本地数据'), 250);
     await tester.pumpAndSettle();
     await tester.tap(find.text('清空所有本地数据'));
     await tester.pumpAndSettle();

@@ -6,6 +6,7 @@ import 'package:audioplayers/audioplayers.dart';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:path_provider/path_provider.dart';
@@ -38,6 +39,14 @@ enum _ChatErrorAction { none, configure, model, request, retry }
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  assert(() {
+    // Inspector paint diagnostics can persist across hot restarts in debug.
+    debugPaintBaselinesEnabled = false;
+    debugPaintPointersEnabled = false;
+    debugPaintSizeEnabled = false;
+    debugRepaintRainbowEnabled = false;
+    return true;
+  }());
   try {
     await AppPreferences.instance.load();
   } catch (_) {
@@ -56,7 +65,7 @@ class ModelChatApp extends StatelessWidget {
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: AppPreferences.instance,
     builder: (context, _) => MaterialApp(
-      title: tr('模型之间'),
+      title: tr('AI Link'),
       debugShowCheckedModeBanner: false,
       locale: AppPreferences.instance.locale,
       supportedLocales: const [Locale('zh'), Locale('en')],
@@ -1207,7 +1216,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     final activeModel = _topic != null || _hasDraft;
     final title = activeModel
         ? '${provider?.name ?? '服务已删除'} · ${_currentModel ?? ''}'
-        : tr('模型之间');
+        : tr('AI Link');
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: IosColors.background,
@@ -1327,22 +1336,20 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
+          SizedBox(
             width: 76,
             height: 76,
-            decoration: BoxDecoration(
-              color: IosColors.blue.withValues(alpha: .10),
+            child: ClipRRect(
               borderRadius: BorderRadius.circular(22),
-            ),
-            child: Icon(
-              CupertinoIcons.chat_bubble_2_fill,
-              color: IosColors.blue,
-              size: 36,
+              child: Image.asset(
+                'assets/branding/ai_link_icon_source.png',
+                fit: BoxFit.cover,
+              ),
             ),
           ),
           const SizedBox(height: 24),
           Text(
-            tr('模型之间'),
+            tr('AI Link'),
             style: TextStyle(
               color: IosColors.label,
               fontSize: 28,

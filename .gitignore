@@ -32,6 +32,7 @@ migrate_working_dir/
 .pub/
 **/build/
 **/.gradle/
+**/.kotlin/
 /coverage/
 
 # Symbolication related
@@ -47,3 +48,10 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Release signing credentials and keys
+/android/key.properties
+/localConfig/
+*.jks
+*.keystore
+/release-artifacts/
