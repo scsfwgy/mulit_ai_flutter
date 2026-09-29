@@ -12,15 +12,21 @@ import android.media.AudioRecord
 import android.media.MediaPlayer
 import android.media.MediaRecorder
 import android.os.Bundle
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.net.Uri
+import android.text.TextUtils
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Switch
 import android.widget.TextView
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
 import androidx.wear.remote.interactions.RemoteActivityHelper
 import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.Asset
@@ -55,10 +61,24 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
     private lateinit var retry: TextView
     private lateinit var sound: TextView
     private lateinit var companion: TextView
+    private lateinit var history: LinearLayout
+    private lateinit var historyHint: TextView
+    private lateinit var historyScroll: ScrollView
+    private lateinit var pages: FrameLayout
+    private lateinit var settingsStatus: TextView
+    private lateinit var configSummary: TextView
+    private lateinit var autoSendSwitch: Switch
+    private lateinit var speakSwitch: Switch
+    private var page = 0
+    private var swipeStartX = 0f
+    private var swipeStartY = 0f
+    private var updatingSettings = false
+    private var backCallback: OnBackInvokedCallback? = null
     private var phoneNodeId: String? = null
     private var companionWarning = false
     private val configStore by lazy { WatchConfigStore(this) }
     private val conversation by lazy { getSharedPreferences("watch_conversation", MODE_PRIVATE) }
+    private val watchSettings by lazy { getSharedPreferences("watch_settings", MODE_PRIVATE) }
     @Volatile private var directBusy = false
     private var recorder: AudioRecord? = null
     private var recordingThread: Thread? = null
@@ -83,6 +103,16 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             ?: getPreferences(MODE_PRIVATE).getString("requestId", null)
         lastAudioId = getPreferences(MODE_PRIVATE).getString("playedAudioId", null)
         buildScreen()
+        if (Build.VERSION.SDK_INT >= 33) {
+            backCallback = OnBackInvokedCallback {
+                if (page == 1) showPage(0) else finish()
+            }.also {
+                onBackInvokedDispatcher.registerOnBackInvokedCallback(
+                    OnBackInvokedDispatcher.PRIORITY_DEFAULT, it)
+            }
+        }
+        renderHistory()
+        refreshSettings()
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
             if (getPreferences(MODE_PRIVATE).getBoolean("pending", false)) {
                 status.text = "正在等待手机回复…"
@@ -108,7 +138,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
     override fun onRequestPermissionsResult(code: Int, permissions: Array<out String>, grants: IntArray) {
         super.onRequestPermissionsResult(code, permissions, grants)
         if (code == 10 && grants.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-            status.text = "按住下方按钮开始说话"
+            status.text = ""
         } else if (code == 10) {
             showError("需要麦克风权限才能录音")
         }
@@ -142,8 +172,10 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             try {
                 configStore.save(event.data)
                 handler.post {
+                    refreshSettings()
                     if (!directBusy && !recording) {
-                        status.text = "配置已同步，可以提问"
+                        status.text = ""
+                        settingsStatus.text = "配置已同步，可以提问"
                         action.text = "按住说话"
                         action.isEnabled = true
                         companion.visibility = if (phoneNodeId == null) View.GONE else View.VISIBLE
@@ -190,18 +222,20 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
                         companion.text = "同步手机配置"
                         if (companionWarning && !recording && !directBusy &&
                             !getPreferences(MODE_PRIVATE).getBoolean("pending", false)) {
-                            status.text = if (ready) "按住下方按钮开始说话" else "正在等待手机同步配置…"
+                            status.text = if (ready) "" else "正在等待手机同步配置…"
                             action.text = "按住说话"
                             action.isEnabled = ready
                         }
                         companionWarning = false
                     }
+                    settingsStatus.text = if (phone == null) "手机未连接" else "手机已连接"
                 }
             } catch (_: Exception) {
                 handler.post {
                     companion.visibility = View.VISIBLE
                     companion.text = "重新检查连接"
                     status.text = "暂时无法检查手机连接"
+                    settingsStatus.text = "暂时无法检查手机连接"
                 }
             }
         }
@@ -268,10 +302,18 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
     }
 
     override fun onDestroy() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            backCallback?.let { onBackInvokedDispatcher.unregisterOnBackInvokedCallback(it) }
+        }
         handler.removeCallbacks(requestTimeout)
         stopPlayback()
         executor.shutdown()
         super.onDestroy()
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        if (page == 1) showPage(0) else super.onBackPressed()
     }
 
     override fun onDataChanged(events: DataEventBuffer) {
@@ -309,7 +351,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
                     "transcribed", "thinking" -> "模型正在思考…"
                     "awaiting_confirmation" -> "请确认识别文字"
                     "replying" -> "正在回答…"
-                    "complete" -> "回答完成"
+                    "complete" -> ""
                     "error" -> error ?: "处理失败，请重试"
                     else -> "正在处理…"
                 }
@@ -459,7 +501,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
                         pendingTranscript = text
                     }
                 }
-                if (!config.optBoolean("autoSend", true)) {
+                if (!watchSettings.getBoolean("autoSend", config.optBoolean("autoSend", true))) {
                     directBusy = false
                     handler.post {
                         if (requestId == id) {
@@ -595,13 +637,15 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         directBusy = false
         handler.post {
             if (requestId == id) {
-                answer.text = readable(reply)
-                status.text = "回答完成"
+                renderHistory()
+                transcript.text = ""
+                answer.text = ""
+                status.text = ""
                 action.text = "按住再说"
                 action.isEnabled = true
             }
         }
-        if (config.optBoolean("speak", false)) {
+        if (watchSettings.getBoolean("speak", config.optBoolean("speak", false))) {
             try {
                 val speech = readable(reply).take(1800)
                 val audio = routed(
@@ -687,7 +731,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         awaitingConfirmation = false
         pendingTranscript = null
         retry.visibility = View.GONE
-        status.text = "按住下方按钮开始说话"
+        status.text = ""
         action.text = "按住说话"
         action.isEnabled = true
     }
@@ -746,30 +790,124 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         retry.visibility = View.GONE
     }
 
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                swipeStartX = event.rawX
+                swipeStartY = event.rawY
+            }
+            MotionEvent.ACTION_UP -> {
+                val dx = event.rawX - swipeStartX
+                val dy = event.rawY - swipeStartY
+                val threshold = 55 * resources.displayMetrics.density
+                if (!recording && kotlin.math.abs(dx) > threshold &&
+                    kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.3f) {
+                    val next = if (dx < 0) 1 else 0
+                    if (next != page) {
+                        showPage(next)
+                        return true
+                    }
+                }
+            }
+        }
+        return super.dispatchTouchEvent(event)
+    }
+
+    private fun showPage(index: Int) {
+        page = index
+        pages.getChildAt(0).visibility = if (index == 0) View.VISIBLE else View.GONE
+        pages.getChildAt(1).visibility = if (index == 1) View.VISIBLE else View.GONE
+        if (index == 0) historyScroll.post { historyScroll.fullScroll(View.FOCUS_UP) }
+        else refreshSettings()
+    }
+
+    private fun refreshSettings() {
+        val config = configStore.load()
+        configSummary.text = if (config == null) "等待手机配置"
+            else "${config.optString("providerName")} · ${config.optString("model")}"
+        updatingSettings = true
+        autoSendSwitch.isChecked = watchSettings.getBoolean(
+            "autoSend", config?.optBoolean("autoSend", true) ?: true)
+        speakSwitch.isChecked = watchSettings.getBoolean(
+            "speak", config?.optBoolean("speak", false) ?: false)
+        updatingSettings = false
+    }
+
+    private fun renderHistory() {
+        history.removeAllViews()
+        val turns = try {
+            JSONArray(conversation.getString("turns", "[]"))
+        } catch (_: Exception) { JSONArray() }
+        if (turns.length() == 0) {
+            history.addView(label("还没有问答", 13f, Color.rgb(146, 171, 198)))
+        } else {
+            for (index in turns.length() - 1 downTo 0) {
+                val turn = turns.optJSONObject(index) ?: continue
+                val latest = index == turns.length() - 1
+                val question = label(
+                    if (latest) "我 · ${turn.optString("transcript")}"
+                    else "${turn.optString("transcript")} → ${readable(turn.optString("answer"))}",
+                    12f, Color.rgb(146, 171, 198),
+                ).apply {
+                    gravity = Gravity.START
+                    if (!latest) {
+                        isSingleLine = true
+                        ellipsize = TextUtils.TruncateAt.END
+                    }
+                }
+                val response = label(
+                    readable(turn.optString("answer")), 15f, Color.WHITE,
+                ).apply {
+                    gravity = Gravity.START
+                    setPadding(0, 4, 0, if (latest) 40 else 14)
+                    if (!latest) visibility = View.GONE
+                }
+                if (!latest) question.setOnClickListener {
+                    response.visibility = if (response.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+                }
+                history.addView(question)
+                history.addView(response)
+            }
+        }
+        historyHint.visibility = if (turns.length() > 1) View.VISIBLE else View.GONE
+        historyScroll.post { historyScroll.fullScroll(View.FOCUS_UP) }
+    }
+
     private fun buildScreen() {
-        val root = LinearLayout(this).apply {
+        pages = FrameLayout(this)
+        val chatPage = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(30, 28, 30, 54)
+            setPadding(34, 27, 34, 49)
             setBackgroundColor(Color.rgb(9, 12, 19))
         }
-        val scroll = ScrollView(this).apply { isFillViewport = true }
+        chatPage.addView(label("最近问答  ›", 15f, Color.WHITE, true).apply {
+            setOnClickListener { showPage(1) }
+        })
+        status = label("", 12f, Color.rgb(146, 171, 198))
+        status.setPadding(0, 4, 0, 4)
+        chatPage.addView(status)
+        historyScroll = ScrollView(this).apply { isFillViewport = true }
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
+            gravity = Gravity.TOP
         }
-        val title = label("模型之间", 19f, Color.WHITE, true)
-        content.addView(title)
-        status = label("按住下方按钮开始说话", 13f, Color.rgb(146, 171, 198))
-        content.addView(status)
         transcript = label("", 13f, Color.rgb(177, 191, 211))
-        transcript.setPadding(0, 12, 0, 8)
+        transcript.gravity = Gravity.START
+        transcript.setPadding(0, 6, 0, 5)
         content.addView(transcript)
         answer = label("", 15f, Color.WHITE)
         answer.gravity = Gravity.START
         content.addView(answer, LinearLayout.LayoutParams(-1, -2))
-        scroll.addView(content)
-        root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        history = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        content.addView(history)
+        historyScroll.addView(content)
+        chatPage.addView(historyScroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        historyHint = label("上滑查看更早问答", 11f, Color.rgb(146, 171, 198)).apply {
+            visibility = View.GONE
+            setPadding(0, 0, 0, 7)
+        }
+        chatPage.addView(historyHint)
         action = label("按住说话", 16f, Color.WHITE, true).apply {
             gravity = Gravity.CENTER
             setPadding(16, 12, 16, 12)
@@ -811,7 +949,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
                 }
             }
         }
-        root.addView(action, LinearLayout.LayoutParams(
+        chatPage.addView(action, LinearLayout.LayoutParams(
             (resources.displayMetrics.widthPixels * 0.66f).toInt(), -2,
         ))
         retry = label("重新录音", 12f, Color.rgb(146, 171, 198)).apply {
@@ -819,14 +957,50 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             setPadding(0, 8, 0, 0)
             setOnClickListener { resetForRecording() }
         }
-        root.addView(retry)
-        companion = label("在手机安装应用", 12f, Color.rgb(80, 165, 255), true).apply {
+        chatPage.addView(retry)
+
+        val settingsScroll = ScrollView(this).apply {
             visibility = View.GONE
-            setPadding(0, 10, 0, 10)
+            setBackgroundColor(Color.rgb(9, 12, 19))
+        }
+        val settingsPage = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(38, 30, 38, 48)
+        }
+        settingsPage.addView(label("‹  设置", 18f, Color.WHITE, true).apply {
+            setOnClickListener { showPage(0) }
+        })
+        settingsStatus = label("正在检查手机连接…", 12f, Color.rgb(146, 171, 198))
+        settingsStatus.setPadding(0, 7, 0, 10)
+        settingsPage.addView(settingsStatus)
+        configSummary = label("等待手机配置", 12f, Color.rgb(177, 191, 211))
+        configSummary.setPadding(0, 0, 0, 8)
+        settingsPage.addView(configSummary)
+        autoSendSwitch = Switch(this).apply {
+            text = "识别后自动发送"
+            textSize = 13f
+            setTextColor(Color.WHITE)
+            setOnCheckedChangeListener { _, checked ->
+                if (!updatingSettings) watchSettings.edit().putBoolean("autoSend", checked).apply()
+            }
+        }
+        settingsPage.addView(autoSendSwitch)
+        speakSwitch = Switch(this).apply {
+            text = "自动播报回答"
+            textSize = 13f
+            setTextColor(Color.WHITE)
+            setOnCheckedChangeListener { _, checked ->
+                if (!updatingSettings) watchSettings.edit().putBoolean("speak", checked).apply()
+            }
+        }
+        settingsPage.addView(speakSwitch)
+        companion = label("在手机安装应用", 12f, Color.rgb(80, 165, 255), true).apply {
+            setPadding(0, 12, 0, 8)
             setOnClickListener {
                 when {
                     text == "同步手机配置" -> {
-                        status.text = "正在向手机请求最新配置…"
+                        settingsStatus.text = "正在向手机请求最新配置…"
                         requestConfiguration()
                     }
                     phoneNodeId == null || text == "重新检查连接" -> checkPhoneApp()
@@ -834,14 +1008,18 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
                 }
             }
         }
-        root.addView(companion)
+        settingsPage.addView(companion)
         sound = label("停止播放", 12f, Color.rgb(146, 171, 198)).apply {
             visibility = View.GONE
             setPadding(0, 8, 0, 0)
             setOnClickListener { stopPlayback() }
         }
-        root.addView(sound)
-        setContentView(root)
+        settingsPage.addView(sound)
+        settingsPage.addView(label("模型与语音服务在手机端设置", 11f, Color.rgb(146, 171, 198)))
+        settingsScroll.addView(settingsPage)
+        pages.addView(chatPage)
+        pages.addView(settingsScroll)
+        setContentView(pages)
     }
 
     private fun label(text: String, size: Float, color: Int, bold: Boolean = false) =
