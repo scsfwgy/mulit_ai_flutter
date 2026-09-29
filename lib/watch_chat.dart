@@ -1,4 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:http/http.dart' as http;
 
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -9,8 +13,8 @@ import 'message_copy.dart';
 import 'voice_client.dart';
 import 'voice_send_preference.dart';
 
-/// Runs in a separate Flutter engine owned by the Android watch request worker.
-/// The phone remains the only owner of providers, secrets and chat history.
+/// Handles configuration delivery and deferred history sync for the watch.
+/// Older watch builds can still send audio through the phone worker.
 void startWatchWorker() {
   WidgetsFlutterBinding.ensureInitialized();
   const channel = MethodChannel('between_models/watch_worker');
@@ -30,17 +34,52 @@ void startWatchWorker() {
         );
       } else if (kind == 'audio') {
         await processor.process(args['audio'] as Uint8List, onUpdate: publish);
+      } else if (kind == 'config') {
+        final payload = utf8.encode(
+          jsonEncode(await processor.configuration()),
+        );
+        await channel.invokeMethod<void>('sendConfig', {
+          'id': requestId,
+          'nodeId': args['nodeId'],
+          'payload': Uint8List.fromList(payload),
+        });
+      } else if (kind == 'turn') {
+        await processor.syncTurn(args['turn'] as String);
+      } else if (kind == 'remote-asr') {
+        final transcript = await processor.remoteTranscribe(
+          args['audio'] as Uint8List,
+        );
+        await publish({'stage': 'complete', 'transcript': transcript});
+      } else if (kind == 'remote-chat') {
+        await processor.remoteReply(
+          args['history'] as String,
+          args['providerId'] as int,
+          args['model'] as String,
+          onUpdate: publish,
+        );
+      } else if (kind == 'remote-tts') {
+        final result = await processor.remoteSpeak(args['text'] as String);
+        await publish({
+          'stage': 'complete',
+          'audio': result.bytes,
+          'audioFormat': result.format,
+        });
       } else {
         throw const WatchChatException('手表请求无效');
       }
     } catch (error) {
+      if (kind == 'config' || kind == 'turn') rethrow;
       final message = switch (error) {
         WatchChatException() => error.message,
         VoiceException() => error.message,
         ApiException() => error.message,
         _ => '手机处理请求失败，请重试',
       };
-      await publish({'stage': 'error', 'error': message});
+      await publish({
+        'stage': 'error',
+        'error': message,
+        'networkFailure': _isNetworkFailure(error),
+      });
     }
   });
   channel.invokeMethod<void>('ready');
@@ -48,10 +87,198 @@ void startWatchWorker() {
 
 typedef WatchUpdate = Future<void> Function(Map<String, Object?> update);
 
+bool _isNetworkFailure(Object error) =>
+    error is SocketException ||
+    error is TimeoutException ||
+    error is HttpException ||
+    error is http.ClientException ||
+    (error is ApiException && error.kind == ApiErrorKind.network);
+
+typedef WatchAudio = ({Uint8List bytes, String format});
+
 class WatchChatProcessor {
   WatchChatProcessor({ChatStore? store}) : store = store ?? ChatStore.instance;
 
   final ChatStore store;
+
+  /// Phone network execution for a watch-owned turn. These methods never write
+  /// the conversation; the watch stores one result and syncs it afterward.
+  Future<String> remoteTranscribe(Uint8List audio) async {
+    if (audio.isEmpty || audio.length > 4 * 1024 * 1024) {
+      throw const WatchChatException('录音无效或超过大小限制');
+    }
+    final asr = await _selectedVoice('voice_asr_id');
+    if (asr == null) throw const WatchChatException('请先在手机端配置语音识别服务');
+    final key = await store.voiceApiKey(asr);
+    if (key == null || key.isEmpty) {
+      throw const WatchChatException('手机端语音识别密钥未配置');
+    }
+    final client = VoiceClient(asr, key);
+    try {
+      return await client.transcribe(audio);
+    } finally {
+      client.close();
+    }
+  }
+
+  Future<void> remoteReply(
+    String rawHistory,
+    int providerId,
+    String model, {
+    required WatchUpdate onUpdate,
+  }) async {
+    final source = jsonDecode(rawHistory);
+    if (source is! List ||
+        source.isEmpty ||
+        source.length > 25 ||
+        model.isEmpty ||
+        model.length > 500) {
+      throw const WatchChatException('手表会话上下文无效');
+    }
+    final history = <ChatMessage>[];
+    for (final item in source) {
+      if (item is! Map ||
+          (item['role'] != 'user' && item['role'] != 'assistant') ||
+          item['content'] is! String ||
+          (item['content'] as String).length > 100000) {
+        throw const WatchChatException('手表会话上下文无效');
+      }
+      history.add(
+        ChatMessage(
+          id: 0,
+          topicId: 0,
+          role: item['role'] as String,
+          content: item['content'] as String,
+          createdAt: 0,
+        ),
+      );
+    }
+    if (history.last.role != 'user') {
+      throw const WatchChatException('手表会话上下文无效');
+    }
+    final providers = await store.providers();
+    final provider = providers.where((p) => p.id == providerId).firstOrNull;
+    if (provider == null) throw const WatchChatException('手机端模型服务已变更，请同步手表配置');
+    final key = await store.apiKey(providerId);
+    if (key == null || key.isEmpty) {
+      throw const WatchChatException('手机端文字模型密钥未配置');
+    }
+    final client = ModelApiClient(provider, key);
+    final answer = StringBuffer();
+    var lastPublished = 0;
+    final clock = Stopwatch()..start();
+    try {
+      await for (final chunk in client.streamReply(
+        history,
+        model,
+        systemPrompt: await store.systemPrompt(providerId, model),
+      )) {
+        answer.write(chunk);
+        if (answer.length > 100000) throw const WatchChatException('模型回复过长');
+        if (clock.elapsedMilliseconds - lastPublished >= 500) {
+          lastPublished = clock.elapsedMilliseconds;
+          await onUpdate({'stage': 'replying', 'answer': answer.toString()});
+        }
+      }
+      if (answer.isEmpty) throw const WatchChatException('模型没有返回文字');
+      await onUpdate({'stage': 'complete', 'answer': answer.toString()});
+    } catch (error) {
+      await onUpdate({
+        'stage': 'error',
+        'error': error is ApiException ? error.message : '手机模型请求失败',
+        'networkFailure': answer.isEmpty && _isNetworkFailure(error),
+      });
+    } finally {
+      clock.stop();
+      client.cancel();
+    }
+  }
+
+  Future<WatchAudio> remoteSpeak(String text) async {
+    final clean = text.trim();
+    if (clean.isEmpty || clean.runes.length > 1800) {
+      throw const WatchChatException('朗读文字无效或过长');
+    }
+    final tts = await _selectedVoice('voice_tts_id');
+    if (tts == null) throw const WatchChatException('请先在手机端配置朗读服务');
+    final key = await store.voiceApiKey(tts);
+    if (key == null || key.isEmpty) {
+      throw const WatchChatException('手机端朗读服务密钥未配置');
+    }
+    final client = VoiceClient(tts, key);
+    try {
+      return (
+        bytes: await client.synthesize(clean),
+        format: tts.protocol == VoiceProtocol.mimo ? 'wav' : 'mp3',
+      );
+    } finally {
+      client.close();
+    }
+  }
+
+  Future<Map<String, Object?>> configuration() async {
+    final providers = await store.providers();
+    final selectedId = int.tryParse(
+      await store.setting('watch_provider_id') ?? '',
+    );
+    final provider =
+        providers.where((p) => p.id == selectedId).firstOrNull ??
+        providers.firstOrNull;
+    if (provider == null) {
+      throw const WatchChatException('请先在手机端配置文字模型服务');
+    }
+    final key = await store.apiKey(provider.id);
+    if (key == null || key.isEmpty) {
+      throw const WatchChatException('手机端文字模型密钥未配置');
+    }
+    final model = provider.id == selectedId
+        ? await store.setting('watch_model_id') ?? provider.model
+        : provider.model;
+    Future<Map<String, Object?>?> voice(String settingKey) async {
+      final selected = await _selectedVoice(settingKey);
+      if (selected == null) return null;
+      final voiceKey = await store.voiceApiKey(selected);
+      if (voiceKey == null || voiceKey.isEmpty) return null;
+      return {
+        'protocol': selected.protocol.name,
+        'baseUrl': selected.baseUrl,
+        'asrModel': selected.asrModel,
+        'ttsModel': selected.ttsModel,
+        'voice': selected.voice,
+        'apiKey': voiceKey,
+      };
+    }
+
+    final asr = await voice('voice_asr_id');
+    if (asr == null) {
+      throw const WatchChatException('请先在手机端配置语音识别服务及密钥');
+    }
+    return {
+      'version': 1,
+      'providerId': provider.id,
+      'providerName': provider.name,
+      'providerPresetId': provider.presetId,
+      'protocol': provider.protocol.value,
+      'baseUrl': provider.baseUrl,
+      'model': model,
+      'apiKey': key,
+      'systemPrompt': await store.systemPrompt(provider.id, model),
+      'asr': asr,
+      'tts': await voice('voice_tts_id'),
+      'autoSend': VoiceSendPreference.autoSend(
+        await store.setting(VoiceSendPreference.key),
+      ),
+      'speak': await store.setting('watch_tts_enabled') == '1',
+    };
+  }
+
+  Future<void> syncTurn(String raw) async {
+    final value = jsonDecode(raw);
+    if (value is! Map<String, dynamic>) {
+      throw const WatchChatException('手表会话格式无效');
+    }
+    await store.saveWatchTurn(value);
+  }
 
   Future<void> process(Uint8List audio, {required WatchUpdate onUpdate}) async {
     if (audio.isEmpty || audio.length > 4 * 1024 * 1024) {

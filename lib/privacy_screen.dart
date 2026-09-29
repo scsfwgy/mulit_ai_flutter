@@ -29,7 +29,11 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
       context: context,
       builder: (context) => CupertinoAlertDialog(
         title: Text(tr('清空本地数据？')),
-        content: Text(tr('所有话题、聊天记录、服务配置、API Key 和提示词都会从本应用中删除。此操作无法撤销。')),
+        content: Text(
+          tr(
+            '手机上的话题、聊天记录、服务配置、API Key 和提示词会被删除。已同步到手表的配置与离线记录需在手表上卸载应用才能清除。此操作无法撤销。',
+          ),
+        ),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(context, false),
@@ -91,6 +95,12 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
               _PrivacyRow(
                 title: '模型请求',
                 detail: tr('对话内容、提示词和 API Key 从设备直接发送到你选择的服务地址，由该服务处理。'),
+              ),
+              _PrivacyRow(
+                title: '手表数据',
+                detail: tr(
+                  '手表会加密保存所选服务的密钥，并在应用私有存储中保存离线问答；重连后将问答同步到手机。清空手机数据不会清除离线手表数据。',
+                ),
               ),
             ],
           ),

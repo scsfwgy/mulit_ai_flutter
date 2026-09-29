@@ -20,6 +20,11 @@ class WatchRequestListener : WearableListenerService() {
             val kind = when {
                 uri.path.orEmpty().startsWith("/between-models/request/") -> "audio"
                 uri.path.orEmpty().startsWith("/between-models/confirm/") -> "confirm"
+                uri.path.orEmpty().startsWith("/between-models/config-request/") -> "config"
+                uri.path.orEmpty().startsWith("/between-models/turn/") -> "turn"
+                uri.path.orEmpty().startsWith("/between-models/remote-asr/") -> "remote-asr"
+                uri.path.orEmpty().startsWith("/between-models/remote-chat/") -> "remote-chat"
+                uri.path.orEmpty().startsWith("/between-models/remote-tts/") -> "remote-tts"
                 else -> continue
             }
             if (!id.matches(Regex("[a-f0-9-]{36}"))) continue

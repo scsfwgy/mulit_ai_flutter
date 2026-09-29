@@ -359,6 +359,52 @@ class ChatTopic {
   );
 }
 
+class ChatSelection {
+  const ChatSelection(this.providerId, this.model);
+
+  final int providerId;
+  final String model;
+
+  String toJson() => jsonEncode({'providerId': providerId, 'model': model});
+
+  static ChatSelection? tryParse(String? raw) {
+    if (raw == null) return null;
+    try {
+      final value = jsonDecode(raw);
+      if (value is! Map<String, dynamic>) return null;
+      final providerId = value['providerId'];
+      final model = value['model'];
+      if (providerId is! int || model is! String || model.trim().isEmpty) {
+        return null;
+      }
+      return ChatSelection(providerId, model);
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+ChatSelection? initialChatSelection(
+  List<ProviderConfig> providers,
+  List<ChatTopic> topics,
+  ChatSelection? saved,
+) {
+  if (providers.isEmpty) return null;
+  if (saved != null &&
+      providers.any((provider) => provider.id == saved.providerId)) {
+    return saved;
+  }
+  for (final topic in topics) {
+    if (topic.providerId != null &&
+        topic.model.trim().isNotEmpty &&
+        providers.any((provider) => provider.id == topic.providerId)) {
+      return ChatSelection(topic.providerId!, topic.model);
+    }
+  }
+  final provider = providers.first;
+  return ChatSelection(provider.id, provider.model);
+}
+
 String initialTopicTitle(String content) {
   final compact = content.replaceAll(RegExp(r'\s+'), ' ').trim();
   return compact.length > 28 ? '${compact.substring(0, 28)}…' : compact;
@@ -712,6 +758,13 @@ class ChatStore {
     }
     await (await db).delete('providers', where: 'id = ?', whereArgs: [id]);
     await deleteModelCache(id);
+    if ((await lastChatSelection())?.providerId == id) {
+      await (await db).delete(
+        'settings',
+        where: 'key = ?',
+        whereArgs: ['last_chat_selection'],
+      );
+    }
     await _secrets.delete(key: 'provider_$id');
   }
 
@@ -748,6 +801,12 @@ class ChatStore {
       'value': value,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
+
+  Future<ChatSelection?> lastChatSelection() async =>
+      ChatSelection.tryParse(await setting('last_chat_selection'));
+
+  Future<void> saveLastChatSelection(ChatSelection selection) async =>
+      saveSetting('last_chat_selection', selection.toJson());
 
   static String _modelCacheKey(int providerId) => 'model_cache_$providerId';
 
@@ -866,6 +925,121 @@ class ChatStore {
         'model_id': model,
       });
       return topicId;
+    });
+  }
+
+  /// Applies a watch turn once, in conversation order, when the phone reconnects.
+  Future<void> saveWatchTurn(Map<String, dynamic> turn) async {
+    final id = turn['id'];
+    final conversationId = turn['conversationId'];
+    final sequence = turn['sequence'];
+    final transcript = turn['transcript'];
+    final answer = turn['answer'];
+    final model = turn['model'];
+    final providerName = turn['providerName'];
+    if (id is! String ||
+        !RegExp(r'^[a-f0-9-]{36}$').hasMatch(id) ||
+        conversationId is! String ||
+        !RegExp(r'^[a-f0-9-]{36}$').hasMatch(conversationId) ||
+        sequence is! int ||
+        sequence < 0 ||
+        transcript is! String ||
+        transcript.trim().isEmpty ||
+        transcript.length > 10000 ||
+        answer is! String ||
+        answer.isEmpty ||
+        answer.length > 100000 ||
+        model is! String ||
+        model.isEmpty ||
+        model.length > 500 ||
+        providerName is! String ||
+        providerName.length > 200) {
+      throw const FormatException('手表会话数据无效');
+    }
+    final providerId = turn['providerId'] is int
+        ? turn['providerId'] as int
+        : null;
+    final when = turn['createdAt'] is int
+        ? turn['createdAt'] as int
+        : DateTime.now().millisecondsSinceEpoch;
+    final database = await db;
+    await database.transaction((transaction) async {
+      Future<String?> value(String key) async {
+        final rows = await transaction.query(
+          'settings',
+          columns: ['value'],
+          where: 'key = ?',
+          whereArgs: [key],
+          limit: 1,
+        );
+        return rows.isEmpty ? null : rows.first['value'] as String;
+      }
+
+      Future<void> put(String key, String value) => transaction
+          .insert('settings', {
+            'key': key,
+            'value': value,
+          }, conflictAlgorithm: ConflictAlgorithm.replace)
+          .then((_) {});
+      if (await value('watch_turn_$id') != null) return;
+      final sequenceKey = 'watch_sequence_$conversationId';
+      final expected = int.tryParse(await value(sequenceKey) ?? '0') ?? 0;
+      if (sequence != expected) throw StateError('等待前一条手表会话同步');
+      final topicKey = 'watch_conversation_$conversationId';
+      final existingTopicId = int.tryParse(await value(topicKey) ?? '');
+      final existingTopic = existingTopicId == null
+          ? <Map<String, Object?>>[]
+          : await transaction.query(
+              'topics',
+              where: 'id = ?',
+              whereArgs: [existingTopicId],
+            );
+      final validProvider = providerId == null
+          ? <Map<String, Object?>>[]
+          : await transaction.query(
+              'providers',
+              columns: ['id'],
+              where: 'id = ?',
+              whereArgs: [providerId],
+            );
+      final storedProviderId = validProvider.isEmpty ? null : providerId;
+      final topicId = existingTopic.isNotEmpty
+          ? existingTopicId!
+          : await transaction.insert('topics', {
+              'title': initialTopicTitle(transcript),
+              'provider_id': storedProviderId,
+              'model': model,
+              'updated_at': when,
+            });
+      final common = <String, Object?>{
+        'topic_id': topicId,
+        'provider_id': storedProviderId,
+        'provider_name': providerName,
+        'provider_preset_id': turn['providerPresetId'] is String
+            ? turn['providerPresetId'] as String
+            : null,
+        'model_id': model,
+        'created_at': when,
+      };
+      await transaction.insert('messages', {
+        ...common,
+        'role': 'user',
+        'content': transcript,
+      });
+      await transaction.insert('messages', {
+        ...common,
+        'role': 'assistant',
+        'content': answer,
+      });
+      await transaction.update(
+        'topics',
+        {'updated_at': when},
+        where: 'id = ?',
+        whereArgs: [topicId],
+      );
+      await put(topicKey, '$topicId');
+      await put(sequenceKey, '${sequence + 1}');
+      await put('watch_turn_$id', '1');
     });
   }
 

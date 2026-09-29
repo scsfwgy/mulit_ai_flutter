@@ -2,6 +2,7 @@ package com.example.mulit_ai_flutter.wear
 
 import android.Manifest
 import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
@@ -13,28 +14,38 @@ import android.media.MediaRecorder
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.net.Uri
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.wear.remote.interactions.RemoteActivityHelper
 import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.Asset
+import com.google.android.gms.wearable.CapabilityClient
 import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataMapItem
+import com.google.android.gms.wearable.MessageClient
+import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.UUID
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import org.json.JSONArray
+import org.json.JSONObject
 
-class WatchActivity : Activity(), DataClient.OnDataChangedListener {
+class WatchActivity : Activity(), DataClient.OnDataChangedListener,
+    MessageClient.OnMessageReceivedListener {
     private val executor = Executors.newSingleThreadExecutor()
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var status: TextView
@@ -43,6 +54,12 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener {
     private lateinit var action: TextView
     private lateinit var retry: TextView
     private lateinit var sound: TextView
+    private lateinit var companion: TextView
+    private var phoneNodeId: String? = null
+    private var companionWarning = false
+    private val configStore by lazy { WatchConfigStore(this) }
+    private val conversation by lazy { getSharedPreferences("watch_conversation", MODE_PRIVATE) }
+    @Volatile private var directBusy = false
     private var recorder: AudioRecord? = null
     private var recordingThread: Thread? = null
     @Volatile private var recording = false
@@ -95,11 +112,136 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener {
         } else if (code == 10) {
             showError("需要麦克风权限才能录音")
         }
+        if (code == 10) checkPhoneApp()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        checkPhoneApp()
+        requestConfiguration()
+        syncPendingTurns()
+    }
+
+    private fun requestConfiguration() {
+        executor.execute {
+            try {
+                val prefs = getPreferences(MODE_PRIVATE)
+                val id = prefs.getString("configRequestId", null) ?: UUID.randomUUID().toString().also {
+                    prefs.edit().putString("configRequestId", it).apply()
+                }
+                val request = PutDataMapRequest.create("/between-models/config-request/$id")
+                request.dataMap.putLong("updated", System.currentTimeMillis())
+                Tasks.await(Wearable.getDataClient(this).putDataItem(request.asPutDataRequest().setUrgent()))
+            } catch (_: Exception) { /* Saved configuration remains usable offline. */ }
+        }
+    }
+
+    override fun onMessageReceived(event: MessageEvent) {
+        if (event.path != "/between-models/config") return
+        executor.execute {
+            try {
+                configStore.save(event.data)
+                handler.post {
+                    if (!directBusy && !recording) {
+                        status.text = "配置已同步，可以提问"
+                        action.text = "按住说话"
+                        action.isEnabled = true
+                        companion.visibility = if (phoneNodeId == null) View.GONE else View.VISIBLE
+                        companion.text = "同步手机配置"
+                    }
+                }
+            } catch (_: Exception) {
+                handler.post { status.text = "配置同步失败，请在手机检查模型和语音服务" }
+            }
+        }
+    }
+
+    private fun checkPhoneApp() {
+        executor.execute {
+            try {
+                val nodes = Tasks.await(Wearable.getNodeClient(this).connectedNodes)
+                val installed = if (nodes.isEmpty()) emptySet<String>() else Tasks.await(
+                    Wearable.getCapabilityClient(this).getCapability(
+                        "between_models_phone_app", CapabilityClient.FILTER_REACHABLE,
+                    ),
+                ).nodes.map { it.id }.toSet()
+                val phone = nodes.firstOrNull { it.id in installed }
+                handler.post {
+                    val ready = configStore.load() != null
+                    if (phone == null) {
+                        phoneNodeId = nodes.firstOrNull()?.id
+                        if (!ready) {
+                            companionWarning = true
+                            companion.visibility = View.VISIBLE
+                            companion.text = if (phoneNodeId == null) "重新检查连接" else "在手机安装应用"
+                            status.text = if (phoneNodeId == null)
+                                "请先连接安卓手机并同步配置" else "请在手机安装应用并配置模型"
+                            action.isEnabled = false
+                            action.text = "等待手机配置"
+                        } else if (!directBusy && !recording) {
+                            companion.visibility = View.GONE
+                            status.text = "手机未连接，可用手表 Wi-Fi 或蜂窝网络提问"
+                            action.isEnabled = true
+                            action.text = "按住说话"
+                        }
+                    } else {
+                        phoneNodeId = phone.id
+                        companion.visibility = View.VISIBLE
+                        companion.text = "同步手机配置"
+                        if (companionWarning && !recording && !directBusy &&
+                            !getPreferences(MODE_PRIVATE).getBoolean("pending", false)) {
+                            status.text = if (ready) "按住下方按钮开始说话" else "正在等待手机同步配置…"
+                            action.text = "按住说话"
+                            action.isEnabled = ready
+                        }
+                        companionWarning = false
+                    }
+                }
+            } catch (_: Exception) {
+                handler.post {
+                    companion.visibility = View.VISIBLE
+                    companion.text = "重新检查连接"
+                    status.text = "暂时无法检查手机连接"
+                }
+            }
+        }
+    }
+
+    private fun openPhoneStore() {
+        val nodeId = phoneNodeId ?: run {
+            checkPhoneApp()
+            return
+        }
+        companion.isEnabled = false
+        status.text = "正在手机打开安装页…"
+        executor.execute {
+            try {
+                val connected = Tasks.await(Wearable.getNodeClient(this).connectedNodes)
+                if (connected.none { it.id == nodeId }) throw IllegalStateException("phone disconnected")
+                val intent = Intent(Intent.ACTION_VIEW)
+                    .setData(Uri.parse("market://details?id=$packageName"))
+                    .addCategory(Intent.CATEGORY_BROWSABLE)
+                RemoteActivityHelper(this, { command -> handler.post(command) })
+                    .startRemoteActivity(intent, nodeId).get(20, TimeUnit.SECONDS)
+                handler.post {
+                    status.text = "请在手机完成安装，再点下方检查"
+                    companion.text = "重新检查连接"
+                    companion.isEnabled = true
+                }
+            } catch (_: Exception) {
+                handler.post {
+                    status.text = "无法打开手机商店，请手动安装手机应用"
+                    companion.text = "重试打开安装页"
+                    companion.isEnabled = true
+                }
+            }
+        }
     }
 
     override fun onStart() {
         super.onStart()
         Wearable.getDataClient(this).addListener(this)
+        Wearable.getMessageClient(this).addListener(this)
         val id = requestId
         if (id == null) return
         executor.execute {
@@ -120,6 +262,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener {
 
     override fun onStop() {
         Wearable.getDataClient(this).removeListener(this)
+        Wearable.getMessageClient(this).removeListener(this)
         if (recording) cancelRecording()
         super.onStop()
     }
@@ -195,6 +338,11 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener {
 
     private fun startRecording() {
         if (recording) return
+        if (configStore.load() == null) {
+            status.text = "先在手机完成模型与语音配置"
+            requestConfiguration()
+            return
+        }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 10)
             return
@@ -288,29 +436,49 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener {
             showError("录音太短，请再试一次")
             return
         }
-        status.text = "正在发送到手机…"
+        status.text = "正在选择网络并识别语音…"
         action.text = "请稍候"
         action.isEnabled = false
         val id = UUID.randomUUID().toString()
         requestId = id
         lastAudioId = null
-        getPreferences(MODE_PRIVATE).edit().putString("requestId", id)
-            .putBoolean("pending", true).putLong("sentAt", System.currentTimeMillis()).apply()
-        handler.postDelayed(requestTimeout, 250_000)
+        directBusy = true
         executor.execute {
             try {
-                val nodes = Tasks.await(Wearable.getNodeClient(this).connectedNodes)
-                if (nodes.isEmpty()) {
-                    handler.post { showError("请连接已安装手机端的安卓手机") }
-                    return@execute
+                val config = configStore.load() ?: throw WatchNetworkException("请先从手机同步配置")
+                val recording = wav(pcm)
+                val text = routed(
+                    "正在通过手机网络识别…",
+                    "正在通过手表网络识别…",
+                    phone = { node -> WatchPhoneRelay(this, node).transcribe(recording) },
+                    watch = { network -> WatchModelClient(config, network).transcribe(recording) },
+                )
+                handler.post {
+                    if (requestId == id) {
+                        transcript.text = "我：$text"
+                        pendingTranscript = text
+                    }
                 }
-                val map = PutDataMapRequest.create("/between-models/request/$id")
-                map.dataMap.putString("id", id)
-                map.dataMap.putAsset("audio", Asset.createFromBytes(wav(pcm)))
-                Tasks.await(Wearable.getDataClient(this).putDataItem(map.asPutDataRequest().setUrgent()))
-                handler.post { if (requestId == id) status.text = "正在等待手机处理…" }
-            } catch (_: Exception) {
-                handler.post { if (requestId == id) showError("发送失败，请确认手机已连接") }
+                if (!config.optBoolean("autoSend", true)) {
+                    directBusy = false
+                    handler.post {
+                        if (requestId == id) {
+                            awaitingConfirmation = true
+                            status.text = "请确认识别文字"
+                            action.text = "确认发送"
+                            action.isEnabled = true
+                            retry.visibility = View.VISIBLE
+                        }
+                    }
+                } else {
+                    sendTextRouted(id, text, config)
+                }
+            } catch (error: Exception) {
+                directBusy = false
+                handler.post {
+                    if (requestId == id) showError(
+                        routeError(error))
+                }
             }
         }
     }
@@ -332,24 +500,187 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener {
     private fun confirmTranscript() {
         val id = requestId ?: return
         val text = pendingTranscript ?: return
+        val config = configStore.load() ?: run {
+            showError("请先从手机同步配置")
+            return
+        }
         awaitingConfirmation = false
         retry.visibility = View.GONE
-        status.text = "正在发送文字…"
+        status.text = "正在请求模型…"
         action.text = "请稍候"
         action.isEnabled = false
-        getPreferences(MODE_PRIVATE).edit().putBoolean("pending", true)
-            .putLong("sentAt", System.currentTimeMillis()).apply()
-        handler.postDelayed(requestTimeout, 250_000)
+        directBusy = true
         executor.execute {
             try {
-                val map = PutDataMapRequest.create("/between-models/confirm/$id")
-                map.dataMap.putString("id", id)
-                map.dataMap.putString("transcript", text)
-                Tasks.await(Wearable.getDataClient(this).putDataItem(map.asPutDataRequest().setUrgent()))
-            } catch (_: Exception) {
-                handler.post { if (requestId == id) showError("发送失败，请确认手机已连接") }
+                sendTextRouted(id, text, config)
+            } catch (error: Exception) {
+                directBusy = false
+                handler.post {
+                    if (requestId == id) showError(
+                        routeError(error))
+                }
             }
         }
+    }
+
+    private fun sendTextRouted(id: String, text: String, config: JSONObject) {
+        val fingerprint = "${config.optInt("providerId")}:${config.optString("model")}"
+        val oldFingerprint = conversation.getString("fingerprint", null)
+        val conversationId = if (oldFingerprint == fingerprint)
+            conversation.getString("conversationId", null) ?: UUID.randomUUID().toString()
+        else UUID.randomUUID().toString()
+        val oldTurns = if (oldFingerprint == fingerprint)
+            JSONArray(conversation.getString("turns", "[]")) else JSONArray()
+        val sequence = if (oldFingerprint == fingerprint) conversation.getInt("sequence", 0) else 0
+        val history = JSONArray()
+        val start = (oldTurns.length() - 12).coerceAtLeast(0)
+        for (index in start until oldTurns.length()) {
+            val turn = oldTurns.getJSONObject(index)
+            history.put(JSONObject().put("role", "user").put("content", turn.getString("transcript")))
+            history.put(JSONObject().put("role", "assistant").put("content", turn.getString("answer")))
+        }
+        history.put(JSONObject().put("role", "user").put("content", text))
+        handler.post { if (requestId == id) status.text = "模型正在回答…" }
+        var lastUpdate = 0L
+        var receivedText = false
+        val onText: (String) -> Unit = { current ->
+            if (current.isNotEmpty()) receivedText = true
+            val now = System.currentTimeMillis()
+            if (now - lastUpdate >= 250) {
+                lastUpdate = now
+                handler.post { if (requestId == id) answer.text = readable(current) }
+            }
+        }
+        val reply = routed(
+            "正在通过手机网络请求模型…",
+            "正在通过手表网络请求模型…",
+            phone = { node -> WatchPhoneRelay(this, node).reply(
+                history.toString().toByteArray(Charsets.UTF_8),
+                config.optInt("providerId"), config.optString("model"), onText) },
+            watch = { network ->
+                try {
+                    WatchModelClient(config, network).reply(history, onText)
+                } catch (error: IOException) {
+                    if (receivedText) throw WatchNetworkException(
+                        "连接中断，已收到部分回答；为避免重复请求，请稍后手动重试")
+                    throw error
+                }
+            },
+        )
+        val turn = JSONObject()
+            .put("id", id)
+            .put("conversationId", conversationId)
+            .put("sequence", sequence)
+            .put("createdAt", System.currentTimeMillis())
+            .put("providerId", config.optInt("providerId"))
+            .put("providerName", config.optString("providerName"))
+            .put("providerPresetId", config.optString("providerPresetId"))
+            .put("model", config.optString("model"))
+            .put("transcript", text)
+            .put("answer", reply)
+        val recent = JSONArray()
+        for (index in (oldTurns.length() - 49).coerceAtLeast(0) until oldTurns.length()) {
+            recent.put(oldTurns.getJSONObject(index))
+        }
+        recent.put(turn)
+        conversation.edit().putString("fingerprint", fingerprint)
+            .putString("conversationId", conversationId)
+            .putInt("sequence", sequence + 1)
+            .putString("turns", recent.toString()).apply()
+        try {
+            queueTurn(turn)
+        } catch (_: Exception) {
+            // The answer is already saved locally. Retry history sync on next resume.
+        }
+        directBusy = false
+        handler.post {
+            if (requestId == id) {
+                answer.text = readable(reply)
+                status.text = "回答完成"
+                action.text = "按住再说"
+                action.isEnabled = true
+            }
+        }
+        if (config.optBoolean("speak", false)) {
+            try {
+                val speech = readable(reply).take(1800)
+                val audio = routed(
+                    "正在通过手机网络生成语音…",
+                    "正在通过手表网络生成语音…",
+                    phone = { node -> WatchPhoneRelay(this, node).speak(speech) },
+                    watch = { network -> WatchModelClient(config, network).synthesize(speech) },
+                )
+                if (audio != null) handler.post {
+                    if (requestId == id) playAudio(audio.first, audio.second)
+                }
+            } catch (_: Exception) { /* Text remains available if speech fails. */ }
+        }
+    }
+
+    private fun routeError(error: Exception): String = when (error) {
+        is WatchNetworkException, is PhoneRelayException -> error.message ?: "网络请求失败"
+        is IOException -> "网络连接失败，请检查手机或手表网络"
+        else -> "请求失败，请检查网络和服务配置"
+    }
+
+    private fun connectedPhone(): String? = try {
+        val nodes = Tasks.await(Wearable.getNodeClient(this).connectedNodes)
+        val installed = Tasks.await(Wearable.getCapabilityClient(this).getCapability(
+            "between_models_phone_app", CapabilityClient.FILTER_REACHABLE,
+        )).nodes.map { it.id }.toSet()
+        nodes.firstOrNull { it.id in installed }?.id
+    } catch (_: Exception) { null }
+
+    private fun <T> routed(
+        phoneStatus: String,
+        watchStatus: String,
+        phone: (String) -> T,
+        watch: (android.net.Network) -> T,
+    ): T = WatchRouteExecutor().run(
+        connectedPhone = connectedPhone(),
+        reconnectPhone = ::connectedPhone,
+        phone = phone,
+        watch = { WatchNetworkSelector(this).use(watch) },
+        onPhone = { fallback -> handler.post {
+            status.text = if (fallback) "手表网络失败，正在切换手机网络…" else phoneStatus
+        } },
+        onWatch = { fallback -> handler.post {
+            status.text = if (fallback) "手机网络失败，正在切换手表网络…" else watchStatus
+        } },
+    )
+
+    private fun readable(source: String): String = source
+        .replace(Regex("\\[([^]]+)]\\([^)]+\\)"), "$1")
+        .replace(Regex("[*_`#>]"), "")
+        .trim()
+
+    private fun queueTurn(turn: JSONObject) {
+        val pending = JSONArray(conversation.getString("pendingTurns", "[]"))
+        pending.put(turn)
+        conversation.edit().putString("pendingTurns", pending.toString()).apply()
+        flushPendingTurns()
+    }
+
+    private fun syncPendingTurns() {
+        executor.execute { flushPendingTurns() }
+    }
+
+    private fun flushPendingTurns() {
+        val pending = JSONArray(conversation.getString("pendingTurns", "[]"))
+        val remaining = JSONArray()
+        for (index in 0 until pending.length()) {
+            val turn = pending.getJSONObject(index)
+            try {
+                val map = PutDataMapRequest.create("/between-models/turn/${turn.getString("id")}")
+                map.dataMap.putAsset("turn", Asset.createFromBytes(
+                    turn.toString().toByteArray(Charsets.UTF_8)))
+                Tasks.await(Wearable.getDataClient(this)
+                    .putDataItem(map.asPutDataRequest().setUrgent()))
+            } catch (_: Exception) {
+                remaining.put(turn)
+            }
+        }
+        conversation.edit().putString("pendingTurns", remaining.toString()).apply()
     }
 
     private fun resetForRecording() {
@@ -489,6 +820,21 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener {
             setOnClickListener { resetForRecording() }
         }
         root.addView(retry)
+        companion = label("在手机安装应用", 12f, Color.rgb(80, 165, 255), true).apply {
+            visibility = View.GONE
+            setPadding(0, 10, 0, 10)
+            setOnClickListener {
+                when {
+                    text == "同步手机配置" -> {
+                        status.text = "正在向手机请求最新配置…"
+                        requestConfiguration()
+                    }
+                    phoneNodeId == null || text == "重新检查连接" -> checkPhoneApp()
+                    else -> openPhoneStore()
+                }
+            }
+        }
+        root.addView(companion)
         sound = label("停止播放", 12f, Color.rgb(146, 171, 198)).apply {
             visibility = View.GONE
             setPadding(0, 8, 0, 0)

@@ -409,6 +409,7 @@ void main() {
     );
     expect(find.textContaining('数据库内容未加密'), findsOneWidget);
     await tester.ensureVisible(find.text('清空所有本地数据'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('清空所有本地数据'));
     await tester.pumpAndSettle();
     expect(clearCount, 0);
@@ -435,6 +436,7 @@ void main() {
       ),
     );
     await tester.ensureVisible(find.text('清空所有本地数据'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('清空所有本地数据'));
     await tester.pumpAndSettle();
     expect(clearCount, 0);

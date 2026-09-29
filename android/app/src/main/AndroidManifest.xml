@@ -38,6 +38,11 @@
                 <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
                 <data android:scheme="wear" android:host="*" android:pathPrefix="/between-models/request/" />
                 <data android:scheme="wear" android:host="*" android:pathPrefix="/between-models/confirm/" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/between-models/config-request/" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/between-models/turn/" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/between-models/remote-asr/" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/between-models/remote-chat/" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/between-models/remote-tts/" />
             </intent-filter>
         </service>
         <!-- Don't delete the meta-data below.
