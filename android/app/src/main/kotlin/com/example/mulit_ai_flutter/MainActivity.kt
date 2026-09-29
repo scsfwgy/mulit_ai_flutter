@@ -10,6 +10,12 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        WatchUpdateBridge.messenger = flutterEngine.dartExecutor.binaryMessenger
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "between_models/watch_updates")
+            .setMethodCallHandler { call, result ->
+                if (call.method == "isProcessing") result.success(WatchUpdateBridge.processing)
+                else result.notImplemented()
+            }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "between_models/clipboard")
             .setMethodCallHandler { call, result ->
                 if (call.method != "setHtml") {
@@ -26,5 +32,12 @@ class MainActivity : FlutterActivity() {
                 clipboard.setPrimaryClip(ClipData.newHtmlText("Message", plain, html))
                 result.success(null)
             }
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        if (WatchUpdateBridge.messenger === flutterEngine.dartExecutor.binaryMessenger) {
+            WatchUpdateBridge.messenger = null
+        }
+        super.cleanUpFlutterEngine(flutterEngine)
     }
 }

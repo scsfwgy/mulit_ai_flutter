@@ -8,6 +8,7 @@ import 'privacy_screen.dart';
 import 'prompt_screen.dart';
 import 'provider_screen.dart';
 import 'voice_settings_screen.dart';
+import 'watch_settings_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key, this.canClearData});
@@ -99,6 +100,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   context,
                   CupertinoPageRoute(
                     builder: (_) => const VoiceSettingsScreen(),
+                  ),
+                ),
+              ),
+              IosRow(
+                title: tr('手表'),
+                leading: Icon(
+                  CupertinoIcons.device_phone_portrait,
+                  color: IosColors.blue,
+                ),
+                onTap: () => Navigator.push<void>(
+                  context,
+                  CupertinoPageRoute(
+                    builder: (_) => const WatchSettingsScreen(),
                   ),
                 ),
               ),

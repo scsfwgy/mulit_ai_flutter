@@ -35,7 +35,11 @@
 - `assets/provider_icons/`：本地服务图标及 Lobe Icons 的许可文件。
 - `lib/api_client.dart`：HTTP 请求、SSE 解析和协议适配。
 - `lib/voice_client.dart`：云端语音识别和合成的 OpenAI 兼容、MiMo、豆包语音协议适配；不得使用系统 ASR/TTS 代替。
-- `lib/voice_settings_screen.dart`：独立语音提供商、文字服务密钥复用、识别/朗读选择和自动朗读设置。
+- `lib/voice_settings_screen.dart`：独立语音提供商、文字服务密钥复用、识别/朗读选择、转写后自动发送和自动朗读设置。
+- `lib/watch_settings_screen.dart`：手机端的手表模型与播报开关。
+- `lib/watch_chat.dart`：手机后台 Flutter 入口，复用云端识别、聊天和合成，并把手表问答写入同一本地会话库。
+- `android/wear/`：独立 Wear OS APK，负责录音、展示回复和播放手机传来的合成音频。
+- `android/app/src/main/kotlin/com/example/mulit_ai_flutter/WatchRequestListener.kt` 与 `WatchRequestWorker.kt`：Data Layer 接收录音并调度手机后台处理。
 - `lib/voice_catalog.dart` 与 `lib/voice_catalog_picker.dart`：语音模型/音色候选、兼容服务 `/models` 查询和选择界面；候选不表示账号权限。
 - `test/`：协议、配置、Markdown 和界面行为测试。
 - `android/app/src/main/AndroidManifest.xml` 与 `res/xml/network_security_config.xml`：网络权限与明文连接范围。
@@ -64,7 +68,8 @@
 - 扫码导入新服务时二维码必须包含非空 `apiKey`；复用 JSON 字段和 URL 校验，识别成功后直接保存。不要在日志、错误弹窗或测试快照中输出二维码原文。
 - 平台预设的密钥输入框支持扫描仅包含 API Key 字符串的二维码，扫描结果先填入表单或 JSON 编辑框，用户保存后才持久化；不要把纯密钥二维码当作完整服务配置导入。
 - 密钥说明要准确：应用不设中转服务器，不收集密钥到自有服务器；密钥仅在设备安全存储中持久化，但获取模型列表或聊天请求会将密钥直接发给用户配置的 API 服务商。不要使用“密钥绝不上传到任何地方”之类与实际请求流程冲突的文案。完整 JSON/二维码原文不持久化，非密钥配置字段写入本机 SQLite。
-- 语音提供商的非密钥配置存在 SQLite `settings` 中，独立语音 API Key 存在安全存储；复用文字服务时只引用其服务 ID，不复制密钥。豆包语音与火山方舟文字聊天的密钥、资源权限不同，不自动复用。录音仅作临时文件，直接发给选定语音服务；转写结果由用户检查后走文字发送，合成音频播放后删除。语音请求不得在重定向中转发密钥。
+- 语音提供商的非密钥配置存在 SQLite `settings` 中，独立语音 API Key 存在安全存储；复用文字服务时只引用其服务 ID，不复制密钥。豆包语音与火山方舟文字聊天的密钥、资源权限不同，不自动复用。录音仅作临时文件，直接发给选定语音服务；转写结果默认直接发送，关闭 `voice_auto_send` 后等待用户确认；合成音频播放后删除。语音请求不得在重定向中转发密钥。
+- 手机与手表都按住录音、松开转写，上滑松开取消。手表语音经 Data Layer 送到配对手机，手机用已有语音服务校验转写；自动发送关闭时手表先显示文字，确认后才写入会话和请求模型。手机保存会话和密钥，手表只显示回复并按手机开关播放合成音频。手表不保存 API Key。手表音频与回复数据项需限制大小和清理；无配对手机时明确失败，不声称跨设备云同步。
 - 服务端错误展示须隐藏当前 API Key，并限制错误正文读取和展示长度；解析失败时不要直接显示可能包含密钥的原始响应。
 - “清空所有本地数据”需经明确确认，并在模型回复或自动标题请求进行期间禁止执行；不得把清空入口的测试运行在含有用户数据的模拟器上。
 - 非本机 API 地址使用 HTTPS。Android 模拟器访问宿主机服务用 `10.0.2.2`；`127.0.0.1` 和 `localhost` 指向运行应用的设备自身。这些本地地址可用于 HTTP 联调。网络请求直接从设备发到用户配置的服务。
@@ -77,6 +82,7 @@ flutter pub get
 flutter analyze
 flutter test
 flutter build apk --debug
+cd android && ./gradlew :wear:assembleDebug
 ```
 
 有 Android 模拟器时可用 `adb install -r build/app/outputs/flutter-apk/app-debug.apk` 安装；重装不会清空应用数据。真实平台 API 请求必须区分于本地模拟接口验证，不要在没有真实密钥测试时宣称平台实测通过。
