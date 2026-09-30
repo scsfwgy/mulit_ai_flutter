@@ -1,21 +1,45 @@
 #!/usr/bin/env bash
-# Build signed phone and Wear OS packages locally. This script never uploads.
+# 默认只打包归档；--push-release 才上传手机和 Wear OS AAB 到 Google Play。
 set -Eeuo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$repo_root"
 
 profile="release"
-case "${1:-}" in
-  --help|-h)
-    echo "Usage: ./release.sh [--test]"
-    echo "  default: sign phone and Wear OS AABs with the formal upload key"
-    echo "  --test:  sign installable phone and Wear OS APKs with the separate test key"
-    exit 0 ;;
-  --test) profile="test"; shift ;;
+push_release=0
+play_track="internal"
+json_key="${PLAY_SERVICE_ACCOUNT_JSON:-$repo_root/localConfig/google-play-service-account.json}"
+
+usage() {
+  echo "用法：./release.sh [--test] [--push-release] [--play-track internal|alpha|beta|production] [--json-key 路径]"
+  echo "  （无参数）        分析、测试并构建正式签名的手机和 Wear OS AAB；仅本地归档"
+  echo "  --test          构建本地测试签名的手机和 Wear OS APK；不上传"
+  echo "  --push-release  构建并通过 Google Play API 上传两个正式 AAB（默认内部测试）"
+  echo "  --play-track    手机轨道；Wear OS 自动使用 wear:<轨道>"
+  echo "  --json-key      服务账号 JSON 路径；也可设 PLAY_SERVICE_ACCOUNT_JSON"
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --test) profile="test"; shift ;;
+    --push-release) push_release=1; shift ;;
+    --play-track)
+      [[ $# -ge 2 ]] || { echo "--play-track 缺少轨道" >&2; exit 2; }
+      play_track="$2"; shift 2 ;;
+    --json-key)
+      [[ $# -ge 2 ]] || { echo "--json-key 缺少路径" >&2; exit 2; }
+      json_key="$2"; shift 2 ;;
+    --help|-h) usage; exit 0 ;;
+    *) echo "未知参数：$1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+case "$play_track" in
+  internal|alpha|beta|production) ;;
+  *) echo "不支持的 Play 轨道：$play_track" >&2; exit 2 ;;
 esac
-if [[ $# -ne 0 ]]; then
-  echo "Unknown arguments. Run ./release.sh --help" >&2
+if (( push_release )) && [[ "$profile" == "test" ]]; then
+  echo "测试签名 APK 不可上传到 Google Play；请去掉 --test。" >&2
   exit 2
 fi
 export AI_LINK_SIGNING_PROFILE="$profile"
@@ -48,30 +72,155 @@ if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+$ ]]; then
   exit 2
 fi
 name="${version%%+*}"
-code="${version##*+}"
+code="$((10#${version##*+}))"
 watch_code="$((1000000 + code))"
+if (( code < 1 || watch_code > 2100000000 )); then
+  echo "versionCode 超出 Google Play 可用范围" >&2
+  exit 2
+fi
 
+if (( push_release )); then
+  resolve_http_proxy() {
+    local configured="${http_proxy:-${HTTP_PROXY:-${https_proxy:-${HTTPS_PROXY:-}}}}" candidate
+    if [[ -n "$configured" ]]; then printf '%s' "$configured"; return; fi
+    if command -v scutil >/dev/null 2>&1; then
+      local cfg host port
+      cfg="$(scutil --proxy 2>/dev/null)"
+      host="$(awk '/^[[:space:]]*HTTPProxy[[:space:]]*:/{sub(/.*:[[:space:]]*/,""); print; exit}' <<< "$cfg")"
+      port="$(awk '/^[[:space:]]*HTTPPort[[:space:]]*:/{sub(/.*:[[:space:]]*/,""); print; exit}' <<< "$cfg")"
+      if [[ -n "$host" && -n "$port" ]]; then printf 'http://%s:%s' "$host" "$port"; return; fi
+    fi
+    for candidate in 7897 7890 1080 8080; do
+      if curl -sS --proxy "http://127.0.0.1:$candidate" --connect-timeout 1 --max-time 3 \
+        -o /dev/null https://www.googleapis.com 2>/dev/null; then
+        printf 'http://127.0.0.1:%s' "$candidate"
+        return
+      fi
+    done
+  }
+  proxy="$(resolve_http_proxy)"
+  if [[ -n "$proxy" ]]; then
+    export http_proxy="$proxy" https_proxy="$proxy"
+    echo "已为 Google Play API 配置 HTTP 代理。"
+  fi
+  [[ -f "$json_key" ]] || { echo "服务账号密钥不存在：$json_key" >&2; exit 2; }
+  if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
+    echo "警告：工作区有未提交文件，本次上传产物可能无法由 HEAD 精确复现。" >&2
+  fi
+  python_bin="$repo_root/scripts/.venv/bin/python"
+  if [[ ! -x "$python_bin" ]]; then
+    python3 -m venv "$repo_root/scripts/.venv"
+  fi
+  if ! "$python_bin" -c 'import googleapiclient, google.oauth2, google_auth_httplib2, httplib2' >/dev/null 2>&1; then
+    "$python_bin" -m pip install -r "$repo_root/scripts/requirements.txt"
+  fi
+  "$python_bin" scripts/play_upload.py \
+    --json-key "$json_key" --track "$play_track" --check-tracks
+fi
+
+normalize_fingerprint() {
+  tr -d ':[:space:]' | tr '[:lower:]' '[:upper:]'
+}
+
+find_apksigner() {
+  if command -v apksigner >/dev/null 2>&1; then
+    command -v apksigner
+    return
+  fi
+  local sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}"
+  find "$sdk_root/build-tools" -maxdepth 2 -type f -name apksigner 2>/dev/null | sort | tail -1
+}
+
+apk_cert_sha256() {
+  local signer digest
+  signer="$(find_apksigner)"
+  [[ -n "$signer" ]] || { echo "未找到 apksigner" >&2; return 1; }
+  digest="$("$signer" verify --print-certs "$1" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1)"
+  [[ -n "$digest" ]] || { echo "无法读取 APK 签名：$1" >&2; return 1; }
+  printf '%s' "$digest" | normalize_fingerprint
+}
+
+aab_cert_sha256() {
+  local digest
+  digest="$(keytool -printcert -jarfile "$1" | sed -n 's/^[[:space:]]*SHA256: //p' | head -1)"
+  [[ -n "$digest" ]] || { echo "无法读取 AAB 签名：$1" >&2; return 1; }
+  printf '%s' "$digest" | normalize_fingerprint
+}
+
+history="release-history"
+if (( push_release )); then history="release-publish-history"; fi
+stamp="$(date +%Y%m%d%H%M%S)-$$"
+output="$repo_root/release-artifacts/$history/$version/$stamp"
+mkdir -p "$output"
+
+echo "分析与测试 Flutter 项目..."
 flutter pub get
 flutter analyze
 flutter test
+
 if [[ "$profile" == "test" ]]; then
-  flutter build apk --release
+  echo "构建测试签名手机与 Wear OS APK..."
+  flutter build apk --release --build-name="$name" --build-number="$code"
   (cd android && ./gradlew :wear:assembleRelease "-PwatchVersionCode=$watch_code" "-PwatchVersionName=$name")
+  phone="$output/AI-Link-phone-test-$version.apk"
+  wear="$output/AI-Link-wear-test-$version.apk"
+  cp build/app/outputs/flutter-apk/app-release.apk "$phone"
+  cp build/wear/outputs/apk/release/wear-release.apk "$wear"
+  phone_cert="$(apk_cert_sha256 "$phone")"
+  wear_cert="$(apk_cert_sha256 "$wear")"
+  expected_cert="F539897F7B786486EBC44F1383AF434DCE6AE6BB3ED12DCF363F6F4633B8596F"
 else
-  flutter build appbundle --release
+  echo "构建正式签名手机与 Wear OS AAB..."
+  flutter build appbundle --release --build-name="$name" --build-number="$code"
   (cd android && ./gradlew :wear:bundleRelease "-PwatchVersionCode=$watch_code" "-PwatchVersionName=$name")
+  phone="$output/AI-Link-phone-$version.aab"
+  wear="$output/AI-Link-wear-$version.aab"
+  cp build/app/outputs/bundle/release/app-release.aab "$phone"
+  cp build/wear/outputs/bundle/release/wear-release.aab "$wear"
+  phone_cert="$(aab_cert_sha256 "$phone")"
+  wear_cert="$(aab_cert_sha256 "$wear")"
+  expected_cert="7D40427292830784C3DB74560D3F1368B9A0B8E5DACD6D73FFBBD4A771D211DE"
 fi
 
-output="$repo_root/release-artifacts/$profile/$version"
-mkdir -p "$output"
-if [[ "$profile" == "test" ]]; then
-  cp build/app/outputs/flutter-apk/app-release.apk "$output/AI-Link-phone-test-$version.apk"
-  cp build/wear/outputs/apk/release/wear-release.apk "$output/AI-Link-wear-test-$version.apk"
-  (cd "$output" && shasum -a 256 ./*.apk > SHA256SUMS)
-else
-  cp build/app/outputs/bundle/release/app-release.aab "$output/AI-Link-phone-$version.aab"
-  cp build/wear/outputs/bundle/release/wear-release.aab "$output/AI-Link-wear-$version.aab"
-  (cd "$output" && shasum -a 256 ./*.aab > SHA256SUMS)
+if [[ "$phone_cert" != "$wear_cert" || "$phone_cert" != "$expected_cert" ]]; then
+  echo "手机和手表签名不一致，或与已记录的 $profile 证书不一致；已停止。" >&2
+  exit 1
 fi
-echo "$profile signed packages saved to $output"
-echo "Phone versionCode=$code; Wear versionCode=$watch_code; package=com.maxhall.ailink"
+(cd "$output" && shasum -a 256 "$(basename "$phone")" "$(basename "$wear")" > SHA256SUMS)
+{
+  echo "profile=$profile"
+  echo "versionName=$name"
+  echo "phoneVersionCode=$code"
+  echo "wearVersionCode=$watch_code"
+  echo "gitHead=$(git rev-parse --short=8 HEAD)"
+  echo "certificateSHA256=$phone_cert"
+  echo "phone=$phone"
+  echo "wear=$wear"
+  echo "playTrack=$play_track"
+} > "$output/release-info.txt"
+echo "本地产物：$output"
+echo "签名证书 SHA-256：$phone_cert"
+
+if (( push_release )); then
+  echo "上传手机到 $play_track，Wear OS 到 wear:$play_track ..."
+  upload_log="$output/play-upload.log"
+  if ! "$python_bin" -u scripts/play_upload.py \
+    --json-key "$json_key" \
+    --phone-aab "$phone" --wear-aab "$wear" \
+    --phone-version-code "$code" --wear-version-code "$watch_code" \
+    --track "$play_track" 2>&1 | tee "$upload_log"; then
+    echo "playStatus=FAILED" >> "$output/release-info.txt"
+    echo "Google Play 上传未完成，详情见 $upload_log" >&2
+    exit 1
+  fi
+  status_line="$(sed -n 's/^PLAY_UPLOAD_STATUS=//p' "$upload_log" | tail -1)"
+  if [[ "$status_line" != COMMITTED\|* ]]; then
+    echo "playStatus=UNKNOWN" >> "$output/release-info.txt"
+    echo "Play API 未返回确认状态，请到 Console 核对。" >&2
+    exit 1
+  fi
+  echo "playStatus=$status_line" >> "$output/release-info.txt"
+  echo "手机和 Wear OS 版本已提交；审核及上线状态以 Play Console 为准。"
+else
+  echo "playStatus=NOT_UPLOADED" >> "$output/release-info.txt"
+fi

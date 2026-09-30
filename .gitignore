@@ -56,3 +56,5 @@ app.*.map.json
 *.keystore
 !/localConfig/ai-link-test.jks
 /release-artifacts/
+/scripts/.venv/
+/scripts/__pycache__/
