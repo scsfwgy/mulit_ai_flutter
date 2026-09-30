@@ -43,6 +43,12 @@ flutter run
 开发安装（分别选择手机与手表设备；`adb install -r` 保留现有应用数据）：
 
 ```bash
+./install-dev.sh
+```
+
+脚本会构建并安装两端调试包。若连接了多台手机或手表，先运行 `adb devices` 查看序列号，再执行 `./install-dev.sh <手机序列号> <手表序列号>`。也可手动执行相同流程：
+
+```bash
 flutter build apk --debug
 cd android && ./gradlew :wear:assembleDebug && cd ..
 adb -s <手机序列号> install -r build/app/outputs/flutter-apk/app-debug.apk
