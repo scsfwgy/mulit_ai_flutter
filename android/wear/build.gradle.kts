@@ -5,15 +5,20 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val signingProfile = System.getenv("AI_LINK_SIGNING_PROFILE") ?: "release"
+require(signingProfile == "release" || signingProfile == "test") {
+    "AI_LINK_SIGNING_PROFILE must be release or test"
+}
+val signingConfigFile = if (signingProfile == "test") "key.test.properties" else "key.properties"
 val releaseProperties = Properties().apply {
-    val config = rootProject.file("key.properties")
+    val config = rootProject.file(signingConfigFile)
     if (config.isFile) config.inputStream().use(::load)
 }
 val releaseCredentials = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
     .all { !releaseProperties.getProperty(it).isNullOrBlank() }
 val releaseRequested = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
 if (releaseRequested && !releaseCredentials) {
-    error("Release signing requires android/key.properties (see android/key.properties.example)")
+    error("$signingProfile signing requires android/$signingConfigFile (see its .example file)")
 }
 val watchBuildCode = providers.gradleProperty("watchVersionCode").orNull?.toIntOrNull() ?: 1000001
 val watchBuildName = providers.gradleProperty("watchVersionName").orNull ?: "1.0.0"

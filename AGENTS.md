@@ -7,7 +7,7 @@
 - 当前交付重点是 Android；保留 iOS 工程，并让应用内界面在 Android 与 iOS 使用同一套 iOS 风格组件。不要按运行平台切换两套页面。
 - 已实现文本聊天、流式回复、Markdown 回复、多话题、模型服务预设、自定义 API、表单、JSON 与扫码导入配置，以及全局和单模型提示词。
 - 当前协议是 OpenAI 兼容 Chat Completions 和 Claude Messages。新增平台时先判断能否复用协议适配器，再增加专用实现。
-- 尚未实现图片/文件发送、工具调用、同步、历史导入导出和正式发布签名。不要把 Android 构建成功写成 iOS 或商店发布成功。
+- 尚未实现图片/文件发送、工具调用、跨设备云同步和历史导入导出。正式上传签名已在本机配置，但尚未在 Play Console 注册或上架；不要把 Android 构建成功写成 iOS 或商店发布成功。
 - 产品功能路线与 RikkaHub 对照来源见 `TODO.md`；实施前重新核对现状与参考项目的最新说明。
 
 ## 代码地图
@@ -16,7 +16,7 @@
 - `lib/chat_more_menu.dart`：聊天页右上角“更多”操作表，包含新对话、切换模型和模型服务。
 - `lib/chat_model_title.dart`：聊天页顶部当前服务与模型标题，可点按切换模型。
 - `lib/topic_screen.dart`：左侧会话抽屉，以及话题重命名、删除；底部设置入口。
-- 手表参与过的话题通过本机 `settings` 中的手表会话映射识别，侧栏显示手表图标；设置入口贴在抽屉右下角。
+- 手表参与过的话题通过本机 `settings` 中的手表会话映射识别，侧栏显示手表图标；设置入口贴在抽屉左下角。
 - `lib/chat_model_selector.dart`：聊天页统一的服务与模型选择，支持最近使用、服务端列表和手动 ID。
 - `lib/chat_scroll.dart`：流式回复时的底部跟随，用户滑离底部后保留阅读位置。
 - `lib/chat_message_meta.dart`：气泡下的模型、耗时、Token 与字数展示。
@@ -47,7 +47,8 @@
 - `lib/voice_catalog.dart` 与 `lib/voice_catalog_picker.dart`：语音模型/音色候选、兼容服务 `/models` 查询和选择界面；候选不表示账号权限。
 - `test/`：协议、配置、Markdown 和界面行为测试。
 - `android/app/src/main/AndroidManifest.xml` 与 `res/xml/network_security_config.xml`：网络权限与明文连接范围。
-- `release.sh`、`android/key.properties.example`、`doc/google_play/`：本地签名打包和 Google Play 上架草稿；真实签名文件、密钥及构建产物不得提交。手机和手表要用相同的包名 `com.maxhall.ailink` 与发布签名。
+- `release.sh`、`android/key.properties.example`、`android/key.test.properties.example`、`doc/google_play/`：本地正式/测试签名打包和 Google Play 上架资料；真实签名文件、密码及构建产物不得提交。手机和手表使用包名 `com.maxhall.ailink`，同一套包必须共用签名；`./release.sh` 出正式 AAB，`./release.sh --test` 出测试 APK。
+- 官方网站为 `https://www.tools24.uk/app/ai-link`，公开隐私政策为 `https://www.tools24.uk/app/ai-link/privacy`；上架前核对线上政策与最终安装包行为一致。
 
 ## UI 约定
 
@@ -55,7 +56,7 @@
 - 聊天页新对话先作为内存中的草稿显示；发送第一条消息时再将话题和消息一起写入 SQLite。切换草稿模型不应生成空白话题。网络失败后的“重试回复”只重新请求回复，不重复写入用户消息。
 - 上次选中的文字服务 ID 和完整模型 ID 保存在本机 `settings` 表；冷启动恢复为新会话草稿，不自动创建话题。服务已删除时，从最近仍可用的话题或现有服务默认模型回退；手动输入的模型 ID 不依赖服务端列表验证。
 - 首轮助手回复成功后，使用当前服务和模型发起一次短请求，根据首轮用户与助手内容生成会话标题；限制输入长度与输出 token，生成失败保留首条消息标题，且不得覆盖用户手动重命名。标题仅存本机 SQLite。输入框回车/发送键与发送按钮执行同一逻辑。
-- 聊天页顶部保留左侧会话抽屉入口、可点按切换的当前服务与模型标题、右侧“更多”。边缘右滑也可打开会话列表；设置入口在抽屉右下角。“更多”放新对话、切换模型和模型服务，不重复放会话列表与设置。
+- 聊天页顶部保留左侧会话抽屉入口、可点按切换的当前服务与模型标题、右侧“更多”。边缘右滑也可打开会话列表；设置入口在抽屉左下角。“更多”放新对话、切换模型和模型服务，不重复放会话列表与设置。
 - 服务端模型数量少时直接列出；大列表按 `平台/模型` 或 `家族-型号` 前缀分组，单独型号放“其他模型”；搜索仍覆盖完整列表，选中时保留完整模型 ID。
 - 服务端模型列表按服务 ID 缓存在本机 SQLite `settings` 表中；进入选择页优先展示缓存，手动刷新成功后覆盖，刷新失败时保留旧列表。修改服务地址、协议或密钥后不得继续使用旧缓存，删除服务或清空本地数据时一并清除缓存。缓存包含模型 ID、接口地址、协议和更新时间，不含密钥。
 - 新消息记录发送时的模型 ID；助手回复额外记录首段可见文字耗时、流式总耗时与服务端报告的输入/输出 Token。历史消息和未报告用量的服务保留空值，不推算为精确 Token。OpenAI 兼容流式请求可带 `stream_options.include_usage`，遇到明确不支持该字段的 400/422 响应时重试普通流式请求；Claude Messages 从 `message_start`/`message_delta` 读取用量。
@@ -97,7 +98,7 @@ cd android && ./gradlew :wear:assembleDebug
 
 iOS 编译和设备验证需要完整 Xcode 与 CocoaPods；如果当前开发机只有 Xcode Command Line Tools，明确记录该限制，不要用 Android 构建结果代替 iOS 验证。
 
-发布构建运行 `./release.sh`，会先分析和测试，再从未入库的 `android/key.properties` 使用同一个上传密钥生成手机和手表 AAB；缺少真实密钥时只验证脚本能安全失败，不使用 debug 签名冒充发布包。Google Play 隐私政策 URL、Data safety、AI 内容举报流程、真实截图和设备测试见 `doc/google_play/README.md`，未完成项不能写成已上架。
+发布构建运行 `./release.sh`，会先分析和测试，再从未入库的 `android/key.properties` 使用同一个上传密钥生成手机和手表 AAB；本地测试运行 `./release.sh --test`，用 `android/key.test.properties` 生成两端 APK。两套签名不同，不能在同一设备上互相覆盖安装；不得通过卸载或清空用户数据强行切换。密钥和密码必须离线备份，不使用 debug 签名冒充发布包。Google Play 隐私政策、Data safety、AI 内容举报流程、真实截图和设备测试见 `doc/google_play/README.md`，未完成项不能写成已上架。
 
 提交代码前先检查 `git status`、变更范围和 `git diff --check`。只提交本次工作涉及的文件；`build/`、`.dart_tool/` 等构建产物由 `.gitignore` 排除。
 

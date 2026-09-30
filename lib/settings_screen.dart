@@ -392,6 +392,13 @@ class AboutScreen extends StatefulWidget {
 class _AboutScreenState extends State<AboutScreen> {
   String? _version;
 
+  Future<void> _openWebsite() async {
+    await launchUrl(
+      Uri.parse('https://www.tools24.uk/app/ai-link'),
+      mode: LaunchMode.externalApplication,
+    );
+  }
+
   Future<void> _contact() async {
     const address = 'mateolim93@gmail.com';
     try {
@@ -455,6 +462,12 @@ class _AboutScreenState extends State<AboutScreen> {
           ),
           IosSection(
             children: [
+              IosRow(
+                title: tr('官方网站'),
+                subtitle: 'tools24.uk/app/ai-link',
+                leading: Icon(CupertinoIcons.globe, color: IosColors.blue),
+                onTap: _openWebsite,
+              ),
               IosRow(
                 title: tr('联系与反馈'),
                 subtitle: 'mateolim93@gmail.com',

@@ -361,6 +361,7 @@ const _english = <String, String>{
   '应用信息': 'App information',
   '数据与隐私': 'Data & privacy',
   '完整隐私政策': 'Full privacy policy',
+  '官方网站': 'Official website',
   '提示词': 'Prompts',
   '全局和单模型提示词': 'Global and model prompts',
   '服务与数据': 'Services & data',

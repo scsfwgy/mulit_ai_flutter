@@ -1,4 +1,4 @@
-# Copy to android/key.properties and keep that file out of Git.
+# Formal Google Play upload key. Copy to android/key.properties and keep it out of Git.
 # Relative storeFile paths are resolved from android/.
 storeFile=../localConfig/ai-link-upload.jks
 storePassword=REPLACE_WITH_STORE_PASSWORD

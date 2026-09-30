@@ -51,6 +51,7 @@ app.*.map.json
 
 # Release signing credentials and keys
 /android/key.properties
+/android/key.test.properties
 /localConfig/
 *.jks
 *.keystore

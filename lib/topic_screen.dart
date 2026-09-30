@@ -250,9 +250,9 @@ class _TopicScreenState extends State<TopicScreen> {
           SizedBox(
             height: 62,
             child: Align(
-              alignment: Alignment.bottomRight,
+              alignment: Alignment.bottomLeft,
               child: CupertinoButton(
-                padding: const EdgeInsets.fromLTRB(12, 4, 18, 4),
+                padding: const EdgeInsets.fromLTRB(18, 4, 12, 4),
                 onPressed: widget.onSettings,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,

@@ -2,6 +2,8 @@
 
 一个使用自有 API Key 的本地优先聊天应用。当前版本面向 Android；应用内页面在 Android 和 iOS 共用同一套 iOS 风格界面。iOS 工程尚未构建或设备验证。
 
+[官方网站](https://www.tools24.uk/app/ai-link) · [隐私政策](https://www.tools24.uk/app/ai-link/privacy)
+
 ## 已实现
 
 - 19 个服务预设，覆盖 OpenAI、Claude、Gemini、DeepSeek、GLM、千问、豆包、Kimi、MiniMax、百度千帆、腾讯混元、OpenRouter 等；按国内、国际、聚合与推理平台分组。选平台、粘贴密钥即可接入；地址和模型均可修改。
@@ -96,11 +98,11 @@ adb -s emulator-5554 shell cmd connectivity set-chain3-enabled false
 
 服务图标来自 [Lobe Icons](https://github.com/lobehub/lobe-icons)，随应用本地打包；许可见 [assets/provider_icons/LICENSE](assets/provider_icons/LICENSE)。预设地址和模型随第三方服务变化，实际可用性以服务商及账户为准；没有真实 API Key 的平台不视为已实测。
 
-当前聊天请求仍发送文字消息；语音输入先经所选语音模型转写为文字。模型回复可以显示 Markdown，但尚不支持公式、HTML、图片上传或文件上传。工具调用、历史导入导出及多设备同步尚未实现；Token 用量仅在服务端报告时展示。iOS 工程保留，但尚未构建或设备测试。发布签名与商店资料已搭建本地流程，真实签名、公开隐私政策链接、真实截图和 Play Console 审核尚待完成，详见 [上架清单](doc/google_play/README.md)。
+当前聊天请求仍发送文字消息；语音输入先经所选语音模型转写为文字。模型回复可以显示 Markdown，但尚不支持公式、HTML、图片上传或文件上传。工具调用、历史导入导出及多设备同步尚未实现；Token 用量仅在服务端报告时展示。iOS 工程保留，但尚未构建或设备测试。正式和测试签名已在本机配置，公开隐私政策已上线；密钥离线备份、真实截图和 Play Console 审核尚待完成，详见 [上架清单](doc/google_play/README.md)。
 
 应用 ID 已改为 `com.maxhall.ailink`。旧测试包 `com.example.mulit_ai_flutter` 会与新包并存，旧包中的服务密钥与聊天记录不会自动迁移；不要为了测试新包而卸载或清空旧包。
 
-本地发布构建可参考 `android/key.properties.example` 配置私有上传密钥后运行 `./release.sh`。脚本只生成手机与手表 AAB，不会上传到 Google Play。两端必须使用同一签名。
+本机已配置正式上传密钥与独立测试密钥。运行 `./release.sh` 生成正式签名的手机、手表 AAB；运行 `./release.sh --test` 生成测试签名的手机、手表 APK。脚本不会上传 Google Play。两端必须使用同一套签名；正式密钥与密码须离线备份，测试签名包不能覆盖安装正式包。详见 [上架清单](doc/google_play/README.md)。
 
 ## 开发验证
 
