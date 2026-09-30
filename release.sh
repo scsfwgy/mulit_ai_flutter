@@ -202,7 +202,7 @@ echo "本地产物：$output"
 echo "签名证书 SHA-256：$phone_cert"
 
 if (( push_release )); then
-  echo "上传手机到 $play_track，Wear OS 到 wear:$play_track ..."
+  echo "上传手机到 ${play_track}，Wear OS 到 wear:${play_track} ..."
   upload_log="$output/play-upload.log"
   if ! "$python_bin" -u scripts/play_upload.py \
     --json-key "$json_key" \
