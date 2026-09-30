@@ -47,7 +47,7 @@
 - `lib/voice_catalog.dart` 与 `lib/voice_catalog_picker.dart`：语音模型/音色候选、兼容服务 `/models` 查询和选择界面；候选不表示账号权限。
 - `test/`：协议、配置、Markdown 和界面行为测试。
 - `android/app/src/main/AndroidManifest.xml` 与 `res/xml/network_security_config.xml`：网络权限与明文连接范围。
-- `release.sh`、`android/key.properties.example`、`android/key.test.properties.example`、`doc/google_play/`：本地正式/测试签名打包和 Google Play 上架资料；真实签名文件、密码及构建产物不得提交。手机和手表使用包名 `com.maxhall.ailink`，同一套包必须共用签名；`./release.sh` 出正式 AAB，`./release.sh --test` 出测试 APK。
+- `release.sh`、`android/key.properties.example`、`android/key.test.properties`、`localConfig/ai-link-test.jks`、`doc/google_play/`：本地正式/测试签名打包和 Google Play 上架资料。测试签名及配置允许入库，其密码视为公开信息；正式 `android/key.properties`、`localConfig/ai-link-upload.jks`、正式密码和构建产物绝对不得提交。手机和手表使用包名 `com.maxhall.ailink`，同一套包必须共用签名；`./release.sh` 出正式 AAB，`./release.sh --test` 出测试 APK。
 - 官方网站为 `https://www.tools24.uk/app/ai-link`，公开隐私政策为 `https://www.tools24.uk/app/ai-link/privacy`；上架前核对线上政策与最终安装包行为一致。
 
 ## UI 约定

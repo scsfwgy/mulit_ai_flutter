@@ -9,10 +9,10 @@
 - `zh-CN/LISTING.md`、`en-US/LISTING.md`：商店文案草稿；上线前按实际功能复核。
 - `wear/`：Wear OS 480×480 模拟器真实界面截图（中英、明暗及设置页），作为审核素材候选；最终上架前仍需核对签名版和实际配置。
 - `../../release.sh`：本地运行分析、测试；默认用正式上传密钥构建手机与 Wear OS AAB，`--test` 用独立测试密钥构建两端可安装 APK；产物记录 SHA-256，均不会上传。
-- `../../android/key.properties.example` 和 `../../android/key.test.properties.example`：两套签名配置模板。本机正式密钥 `localConfig/ai-link-upload.jks`、测试密钥 `localConfig/ai-link-test.jks` 以及两个实际 properties 文件均被 Git 忽略；同一套构建中的手机与手表必须使用同一密钥。
+- `../../android/key.properties.example` 和 `../../android/key.test.properties.example`：两套签名配置模板。测试密钥 `localConfig/ai-link-test.jks` 与实际配置 `android/key.test.properties` 已入库，便于共同测试；正式密钥 `localConfig/ai-link-upload.jks` 和实际配置 `android/key.properties` 仅在本机，始终被 Git 忽略。同一套构建中的手机与手表必须使用同一密钥。
 - 官方网站：<https://www.tools24.uk/app/ai-link>；中英文隐私政策：<https://www.tools24.uk/app/ai-link/privacy>。两页已公开可访问；应用内“数据与隐私”和“关于”分别提供入口。
 
-首次配置时已在本机生成两套独立 RSA 4096 / PKCS12 密钥。**正式密钥、`android/key.properties` 和密码必须一起离线备份**；仅备份 keystore 而丢失密码仍无法继续签包。切勿将密钥、properties、密码或含密钥的压缩包提交到 Git、上传到公开网盘或放进截图。Google Play 的 Play App Signing 以正式上传证书识别上传包；测试签名只用于本地安装，不可用于 Play 上传。若已有 Play Console 上传证书，必须先比对指纹，不能擅自换钥。
+首次配置时已在本机生成两套独立 RSA 4096 / PKCS12 密钥。**正式密钥、`android/key.properties` 和密码必须一起离线备份**；仅备份 keystore 而丢失密码仍无法继续签包。正式密钥、配置、密码及其备份绝对不能提交到 Git、上传到公开网盘或放进截图。测试签名及配置在仓库中，测试密码是公开信息，不能作为正式上传密钥或保护真实用户数据。Google Play 的 Play App Signing 以正式上传证书识别上传包；测试签名只用于本地安装，不可用于 Play 上传。若已有 Play Console 上传证书，必须先比对指纹，不能擅自换钥。
 
 ```bash
 ./release.sh --test  # 测试签名：手机和手表 APK

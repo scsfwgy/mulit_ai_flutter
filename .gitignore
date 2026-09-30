@@ -49,10 +49,10 @@ app.*.map.json
 # Widget Preview related
 .widget_preview/
 
-# Release signing credentials and keys
+# Formal signing credentials stay local. Only the test pair is versioned.
 /android/key.properties
-/android/key.test.properties
-/localConfig/
+/localConfig/*
 *.jks
 *.keystore
+!/localConfig/ai-link-test.jks
 /release-artifacts/

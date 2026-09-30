@@ -1,4 +1,4 @@
-# Local test signing key. Copy to android/key.test.properties and keep it out of Git.
+# Example for regenerating the versioned test signing pair.
 # Relative storeFile paths are resolved from android/.
 storeFile=../localConfig/ai-link-test.jks
 storePassword=REPLACE_WITH_STORE_PASSWORD
