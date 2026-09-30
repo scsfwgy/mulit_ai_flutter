@@ -7,11 +7,16 @@ import UIKit
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    let launched = super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    AppleWatchBridge.shared.start()
+    return launched
   }
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    AppleWatchBridge.shared.attachCompanionChannel(
+      messenger: engineBridge.applicationRegistrar.messenger()
+    )
     FlutterMethodChannel(
       name: "between_models/clipboard",
       binaryMessenger: engineBridge.applicationRegistrar.messenger()

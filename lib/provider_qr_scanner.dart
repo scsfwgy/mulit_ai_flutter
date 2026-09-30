@@ -202,8 +202,8 @@ class _ProviderQrScannerState extends State<ProviderQrScanner>
             child: Text(
               tr(
                 widget.mode == ProviderQrScanMode.apiKey
-                    ? '扫码后请检查密钥并保存服务。密钥保存在设备安全存储中；若选作手表服务，也会加密同步到手表。调用模型时直发服务商。'
-                    : '二维码需包含 name、protocol、baseUrl、model、apiKey。\n密钥保存在设备安全存储中；若选作手表服务，也会加密同步到手表。',
+                    ? '扫码后请检查密钥并保存服务。密钥保存在设备安全存储中；选作 Wear OS 服务时会加密同步到手表。Apple Watch 首版不接收密钥。'
+                    : '二维码需包含 name、protocol、baseUrl、model、apiKey。\n密钥保存在设备安全存储中；选作 Wear OS 服务时会加密同步到手表，Apple Watch 首版不接收。',
               ),
               textAlign: TextAlign.center,
               style: TextStyle(color: IosColors.secondary, fontSize: 13),

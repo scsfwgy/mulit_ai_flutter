@@ -148,7 +148,7 @@ class _ProviderScreenState extends State<ProviderScreen> {
           IosSection(
             title: '我的服务',
             footer: tr(
-              '密钥保存在手机安全存储中；启用手表后，所选服务的密钥会经配对通道同步至手表并加密保存。我们不设中转服务器，设备会将密钥直接发送给你配置的 API 服务商。',
+              '密钥保存在手机安全存储中；选作 Wear OS 服务时会经配对通道同步并加密保存。Apple Watch 首版由 iPhone 代为请求，不接收密钥。我们不设中转服务器，请求会直达你配置的 API 服务商。',
             ),
             children: _providers.isEmpty
                 ? [

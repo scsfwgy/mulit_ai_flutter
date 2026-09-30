@@ -26,6 +26,9 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
   int _connectedWatches = 0;
   List<(String, String)> _missingWatches = [];
   bool _checkingWatches = true;
+  bool _isAppleWatch = false;
+  bool _watchAppInstalled = false;
+  bool _watchReachable = false;
   bool _openingStore = false;
   String? _watchCheckError;
 
@@ -64,6 +67,9 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
           .where((item) => item.$1.isNotEmpty)
           .toList();
       setState(() {
+        _isAppleWatch = status?['platform'] == 'apple';
+        _watchAppInstalled = status?['installed'] == true;
+        _watchReachable = status?['reachable'] == true;
         _connectedWatches = status?['connected'] as int? ?? 0;
         _missingWatches = missing;
         _watchCheckError = null;
@@ -120,6 +126,11 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
   String get _watchStatus {
     if (_checkingWatches) return tr('正在检查已连接的手表…');
     if (_watchCheckError != null) return _watchCheckError!;
+    if (_isAppleWatch) {
+      if (_connectedWatches == 0) return tr('尚未配对 Apple Watch');
+      if (!_watchAppInstalled) return tr('Apple Watch 尚未安装 AI Link');
+      return _watchReachable ? tr('Apple Watch 已连接') : tr('手表应用已安装，等待连接');
+    }
     if (_connectedWatches == 0) return tr('尚未建立 Wear OS 数据连接');
     if (_missingWatches.isNotEmpty) {
       return tr('有手表尚未安装应用');
@@ -194,7 +205,9 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
         children: [
           IosSection(
             footer: tr(
-              '蓝牙配对后，还需完成 Wear OS 配套应用的连接设置。模拟器请使用 Android Studio 的 Pair Wearable；完成后点上方状态重新检查。商店暂无本应用时，请从原安装渠道获取手表版。',
+              _isAppleWatch
+                  ? '在 iPhone 的 Watch 应用中安装 AI Link 手表版。首次使用请先在手机端配置文字和语音服务；手表与手机配对并连接后，点上方状态重新检查。'
+                  : '蓝牙配对后，还需完成 Wear OS 配套应用的连接设置。模拟器请使用 Android Studio 的 Pair Wearable；完成后点上方状态重新检查。商店暂无本应用时，请从原安装渠道获取手表版。',
             ),
             children: [
               IosRow(
@@ -209,7 +222,8 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
                     : null,
                 onTap: _checkWatches,
               ),
-              for (final (id, name) in _missingWatches)
+              for (final (id, name)
+                  in _isAppleWatch ? <(String, String)>[] : _missingWatches)
                 IosRow(
                   title: tr('在手表安装'),
                   subtitle: name,
@@ -223,7 +237,9 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
           ),
           IosSection(
             footer: tr(
-              '已连接手机时优先使用手机网络，失败后尝试手表网络；未连接时先用手表 Wi-Fi 或蜂窝网络。仅明确的网络故障才自动换路，避免重复请求。配置与密钥由手机同步到手表。',
+              _isAppleWatch
+                  ? 'Apple Watch 首版由配对 iPhone 完成语音识别、模型请求和可选朗读，结果保存到手机会话。手表仅保存最近显示的问答，不接收 API Key；手机不可达时暂不能提问。'
+                  : '已连接手机时优先使用手机网络，失败后尝试手表网络；未连接时先用手表 Wi-Fi 或蜂窝网络。仅明确的网络故障才自动换路，避免重复请求。配置与密钥由手机同步到手表。',
             ),
             children: [
               IosRow(

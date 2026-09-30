@@ -4,7 +4,7 @@
 
 ## 产品与当前范围
 
-- 当前交付重点是 Android；保留 iOS 工程，并让应用内界面在 Android 与 iOS 使用同一套 iOS 风格组件。不要按运行平台切换两套页面。
+- Android 与 iOS 手机端共用 Flutter 的 iOS 风格页面，不按运行平台切换两套页面；Wear OS 与 Apple Watch 使用各自的原生界面。Apple 平台代码待完整 Xcode 构建及配对设备验证。
 - 已实现文本聊天、流式回复、Markdown 回复、多话题、模型服务预设、自定义 API、表单、JSON 与扫码导入配置，以及全局和单模型提示词。
 - 当前协议是 OpenAI 兼容 Chat Completions 和 Claude Messages。新增平台时先判断能否复用协议适配器，再增加专用实现。
 - 尚未实现图片/文件发送、工具调用、跨设备云同步和历史导入导出。正式上传签名已在本机配置，但尚未在 Play Console 注册或上架；不要把 Android 构建成功写成 iOS 或商店发布成功。
@@ -41,6 +41,8 @@
 - `lib/watch_settings_screen.dart`：手机端的手表模型与播报开关。
 - `lib/watch_chat.dart`：手机后台 Flutter 入口，把所选服务配置发给手表，执行手机优先的无落库语音/模型/朗读请求，并将手表离线问答同步进手机会话库；保留旧版手表的手机处理路径。
 - `android/wear/`：独立 Wear OS APK，负责录音、路由选择、手表独立请求、展示回复和音频播放；`WatchPhoneRelay.kt` 处理手机网络路径，`WatchNetworkSelector.kt` 指定手表 Wi-Fi/蜂窝网络，所选密钥用 Android Keystore 加密保存。
+- `ios/AILinkWatch/`：SwiftUI Apple Watch 配套应用，按住录音、松开转写、上滑取消，显示最近问答和可选的模型语音播放；跟随手表系统语言及外观。首版经 WatchConnectivity 把录音发到配对 iPhone，不接收密钥，也不独立请求模型。
+- `ios/Runner/AppleWatchBridge.swift`：iPhone 端 WatchConnectivity 与后台 Flutter worker 桥接；沿用 `WatchChatProcessor` 云端识别、聊天、可选合成及 SQLite 入库。Apple 平台待 Xcode 编译、后台唤醒和配对设备验证，不能仅凭 Swift 语法检查声明可运行。
 - 手表原生界面跟随手表自身的系统语言与日夜模式，支持中文和英文；不读取手机 Flutter 的语言或主题偏好。
 - `android/app/.../MainActivity.kt` 与 `android/wear/.../WatchActivity.kt`：手机和手表通过静态 capability 检查另一端安装状态，并向缺失设备发送商店安装页跳转；未上架的测试包仍需分别安装。
 - `android/app/src/main/kotlin/com/maxhall/ailink/WatchRequestListener.kt` 与 `WatchRequestWorker.kt`：Data Layer 处理手表配置请求、手机网络路径与问答同步；兼容旧版录音请求。
@@ -77,6 +79,7 @@
 - 密钥说明要准确：应用不设中转服务器，不收集密钥到自有服务器；密钥仅在设备安全存储中持久化，但获取模型列表或聊天请求会将密钥直接发给用户配置的 API 服务商。不要使用“密钥绝不上传到任何地方”之类与实际请求流程冲突的文案。完整 JSON/二维码原文不持久化，非密钥配置字段写入本机 SQLite。
 - 语音提供商的非密钥配置存在 SQLite `settings` 中，独立语音 API Key 存在安全存储；复用文字服务时只引用其服务 ID，不复制密钥。豆包语音与火山方舟文字聊天的密钥、资源权限不同，不自动复用。录音仅作临时文件，直接发给选定语音服务；转写结果默认直接发送，关闭 `voice_auto_send` 后等待用户确认；合成音频播放后删除。语音请求不得在重定向中转发密钥。
 - 手机输入区左侧按钮切换文字与语音模式；语音模式中央按住录音，全局浮层显示音量波纹与时间，松开转写，上滑松开取消。手表也按住录音、松开转写。手机经配对 Data Layer 将所选文字和语音服务的配置与密钥发给手表；手表使用 Android Keystore 加密保存密钥。手机可达时优先由手机执行语音/模型/朗读请求，但不由手机后台落库；手机明确网络失败时，手表指定自身 Wi-Fi/蜂窝网络执行。手机不可达时先使用手表网络；期间手机恢复且手表网络失败时可再试手机。仅在无部分回答、失败可确认为网络故障时自动切换，超时状态不明或服务端配置错误不重发。自动发送关闭时手表先显示文字，确认后才请求模型。问答先保存在手表私有存储，重连后经 Data Layer 同步至手机 SQLite；无网络时明确失败，不声称跨账户云同步。手机数据清空不会自动清除离线手表数据。
+- 上一条手表独立网络及 Android Keystore 规则专指 Wear OS。Apple Watch 首版用配对 iPhone 的 `WatchChatProcessor` 发起请求，iPhone 保存会话，手表仅用本机私有存储保存最近显示的问答；不在 Apple Watch 存储 API Key。手机不可达或后台执行超时时明确失败，不声称支持独立蜂窝/Wi-Fi 请求。手表录音和合成音频都是临时文件，用后删除；手机清空数据不会自动清空手表最近问答。
 - 手机检测到已连接但缺少应用的手表时，首次提示用户到手表设置页安装；用户选“稍后”后不针对同一节点重复弹窗，设置页仍可手动重查。手表启动或返回前台时检查配对手机应用；缺失时给出手机商店入口。商店跳转仅表示已发送打开请求，不代表安装成功；正式使用前两端仍需以相同应用 ID 和签名安装。
 - 服务端错误展示须隐藏当前 API Key，并限制错误正文读取和展示长度；解析失败时不要直接显示可能包含密钥的原始响应。
 - “清空所有本地数据”需经明确确认，并在模型回复或自动标题请求进行期间禁止执行；不得把清空入口的测试运行在含有用户数据的模拟器上。
@@ -96,7 +99,7 @@ cd android && ./gradlew :wear:assembleDebug
 
 有 Android 模拟器时可用 `adb install -r build/app/outputs/flutter-apk/app-debug.apk` 安装；重装不会清空应用数据。真实平台 API 请求必须区分于本地模拟接口验证，不要在没有真实密钥测试时宣称平台实测通过。
 
-iOS 编译和设备验证需要完整 Xcode 与 CocoaPods；如果当前开发机只有 Xcode Command Line Tools，明确记录该限制，不要用 Android 构建结果代替 iOS 验证。
+iOS/watchOS 编译和设备验证需要完整 Xcode 与 Apple 平台 SDK，并完成 Flutter 插件依赖集成；如果当前开发机只有 Xcode Command Line Tools，明确记录该限制，不要用 Swift 语法检查或 Android 构建结果代替 Apple 平台验证。
 
 发布构建运行 `./release.sh`，会先分析和测试，再从未入库的 `android/key.properties` 使用同一个上传密钥生成手机和手表 AAB；本地测试运行 `./release.sh --test`，用 `android/key.test.properties` 生成两端 APK。两套签名不同，不能在同一设备上互相覆盖安装；不得通过卸载或清空用户数据强行切换。密钥和密码必须离线备份，不使用 debug 签名冒充发布包。Google Play 隐私政策、Data safety、AI 内容举报流程、真实截图和设备测试见 `doc/google_play/README.md`，未完成项不能写成已上架。
 

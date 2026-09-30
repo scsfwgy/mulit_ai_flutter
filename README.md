@@ -1,6 +1,6 @@
 # AI Link
 
-一个使用自有 API Key 的本地优先聊天应用。当前版本面向 Android；应用内页面在 Android 和 iOS 共用同一套 iOS 风格界面。iOS 工程尚未构建或设备验证。
+一个使用自有 API Key 的本地优先聊天应用。Android 与 iOS 手机端共用 Flutter 页面；Wear OS 与 Apple Watch 使用各自的原生手表界面。Apple 平台代码尚未在完整 Xcode 环境中编译或设备验证。
 
 [官方网站](https://www.tools24.uk/app/ai-link) · [隐私政策](https://www.tools24.uk/app/ai-link/privacy)
 
@@ -17,6 +17,7 @@
 - 全局提示词和按「服务 + 模型 ID」设置的模型提示词。发送时先应用全局内容，再追加当前模型的内容；提示词不会显示在聊天记录中。
 - 云端语音识别与朗读：设置中单独添加语音提供商，分别选择识别和朗读服务。支持 OpenAI 兼容音频接口、小米 MiMo 和豆包语音；手机与手表均按住录音、松开转写，默认直接发送文字，也可在手机端关闭自动发送并先确认文字。回复可手动朗读，或开启完成后自动朗读。仅使用录音、音频播放能力，不调用系统语音识别或系统文字转语音。
 - Wear OS 第一版配套应用：手机配置模型与语音服务后，连接手机时优先由手机网络处理云端识别、文字模型和可选语音合成；手机网络失败时切到手表 Wi-Fi 或蜂窝网络。未连接手机时先用手表网络，若请求前后手机恢复连接且手表网络失败，再尝试手机。手表统一保存问答，重连后同步到手机会话列表；继续提问会带上手表本地最近的历史文字。
+- Apple Watch 第一版配套应用：在手表按住录音、松开转写、上滑取消；iPhone 使用已配置的云端语音服务和文字模型处理，按手机设置决定转写后自动发送或确认后发送，并可将模型合成的语音返回手表播放。问答进入 iPhone 会话库；手表仅保留最近显示的问答，不接收 API Key。当前需要配对 iPhone 可达，不支持手表独立联网请求。
 - 手表端页面按手表自身的系统语言切换简体中文或英文，并跟随手表日夜模式；手表参与过的话题在手机侧栏带手表图标。
 
 ## 运行
@@ -56,6 +57,12 @@ adb -s <手表序列号> install -r build/wear/outputs/apk/debug/wear-debug.apk
 ```
 
 两端须以同一个应用 ID 和签名安装。首次配置仍需与手机配对；随后手表可独立请求模型。模拟器编译与界面检查不等于配对真机的录音、后台唤醒、断连恢复、Data Layer 或真实语音平台验证。
+
+### Apple Watch
+
+在 iPhone 上安装 AI Link，进入「设置 → 语音服务」选择识别服务并决定是否自动发送，再到「设置 → 手表」选择文字模型和可选朗读。通过 iPhone 的 Watch 应用安装配套手表版；手表上按住说话、松开转写，上滑松开取消。回答会出现在手表和 iPhone 的会话列表中。此版经 WatchConnectivity 把临时 WAV 录音交给 iPhone 处理；手表不使用系统语音识别或系统朗读，也不接收模型密钥。iPhone 不可达、未运行服务或后台执行时间不足时，手表会提示失败或等待；后续独立网络版见 [产品待办](TODO.md)。
+
+工程、安装与验证步骤见 [Apple 平台说明](doc/ios/README.md)。当前开发机没有完整 Xcode 和 CocoaPods，iOS/watchOS 代码只完成源文件、工程结构及静态检查，**尚未获得 iOS/watchOS 构建或真机运行证据**。
 
 #### 没有真机手表时的模拟测试
 
@@ -104,7 +111,7 @@ adb -s emulator-5554 shell cmd connectivity set-chain3-enabled false
 
 服务图标来自 [Lobe Icons](https://github.com/lobehub/lobe-icons)，随应用本地打包；许可见 [assets/provider_icons/LICENSE](assets/provider_icons/LICENSE)。预设地址和模型随第三方服务变化，实际可用性以服务商及账户为准；没有真实 API Key 的平台不视为已实测。
 
-当前聊天请求仍发送文字消息；语音输入先经所选语音模型转写为文字。模型回复可以显示 Markdown，但尚不支持公式、HTML、图片上传或文件上传。工具调用、历史导入导出及多设备同步尚未实现；Token 用量仅在服务端报告时展示。iOS 工程保留，但尚未构建或设备测试。正式和测试签名已在本机配置，公开隐私政策已上线；密钥离线备份、真实截图和 Play Console 审核尚待完成，详见 [上架清单](doc/google_play/README.md)。
+当前聊天请求仍发送文字消息；语音输入先经所选语音模型转写为文字。模型回复可以显示 Markdown，但尚不支持公式、HTML、图片上传或文件上传。工具调用、历史导入导出及跨账户同步尚未实现；Token 用量仅在服务端报告时展示。Apple 平台尚未构建或设备测试。Android 正式和测试签名已在本机配置，公开隐私政策已上线；发布 Apple 版前须更新线上隐私政策的 Apple Watch 数据说明，详见 [Apple 平台说明](doc/ios/README.md)。密钥离线备份、真实截图和 Play Console 审核详见 [Android 上架清单](doc/google_play/README.md)。
 
 应用 ID 已改为 `com.maxhall.ailink`。旧测试包 `com.example.mulit_ai_flutter` 会与新包并存，旧包中的服务密钥与聊天记录不会自动迁移；不要为了测试新包而卸载或清空旧包。
 
