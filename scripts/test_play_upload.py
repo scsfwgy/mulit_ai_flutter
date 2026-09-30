@@ -72,7 +72,7 @@ class PlayUploadTest(unittest.TestCase):
         self.service.edits.return_value.tracks.return_value.list.return_value.execute.return_value = {
             "tracks": [{"track": "internal"}]
         }
-        with self.assertRaisesRegex(RuntimeError, "尚未提供 internal / wear:internal"):
+        with self.assertRaisesRegex(RuntimeError, "尚未提供 Wear OS wear:internal"):
             upload_to_edit(
                 self.service,
                 self.phone,
@@ -85,6 +85,31 @@ class PlayUploadTest(unittest.TestCase):
             )
         self.service.edits.return_value.bundles.return_value.upload.assert_not_called()
         self.service.edits.return_value.delete.assert_called_once()
+
+    def test_missing_wear_alpha_is_created_in_same_edit(self):
+        self.service.edits.return_value.tracks.return_value.list.return_value.execute.return_value = {
+            "tracks": [{"track": "alpha"}]
+        }
+        self.service.edits.return_value.bundles.return_value.upload.return_value.execute.side_effect = [
+            {"versionCode": 7},
+            {"versionCode": 1000007},
+        ]
+        upload_to_edit(
+            self.service,
+            self.phone,
+            self.wear,
+            7,
+            1000007,
+            "alpha",
+            [],
+            lambda *args, **kwargs: object(),
+        )
+        create = self.service.edits.return_value.tracks.return_value.create
+        self.assertEqual(
+            create.call_args.kwargs["body"],
+            {"track": "wear:alpha", "type": "CLOSED_TESTING", "formFactor": "WEAR"},
+        )
+        self.service.edits.return_value.commit.assert_called_once()
 
 
 if __name__ == "__main__":

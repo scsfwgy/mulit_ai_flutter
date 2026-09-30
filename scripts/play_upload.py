@@ -45,7 +45,7 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def require_tracks(service, edit_id: str, track: str) -> None:
+def require_tracks(service, edit_id: str, track: str) -> bool:
     available_tracks = {
         item["track"]
         for item in service.edits()
@@ -55,12 +55,22 @@ def require_tracks(service, edit_id: str, track: str) -> None:
         .get("tracks", [])
     }
     wear_track = f"wear:{track}"
-    if track not in available_tracks or wear_track not in available_tracks:
-        raise RuntimeError(
-            f"Play Console 尚未提供 {track} / {wear_track} 轨道。"
-            "请先在‘测试和发布 → 高级设置 → 设备类型’中添加 Wear OS，"
-            "并建立对应测试轨道。"
-        )
+    if track not in available_tracks:
+        raise RuntimeError(f"Play Console 尚未提供手机 {track} 轨道。")
+    if wear_track in available_tracks:
+        return False
+    if track == "alpha":
+        service.edits().tracks().create(
+            packageName=PACKAGE_NAME,
+            editId=edit_id,
+            body={"track": wear_track, "type": "CLOSED_TESTING", "formFactor": "WEAR"},
+        ).execute(num_retries=3)
+        return True
+    raise RuntimeError(
+        f"Play Console 尚未提供 Wear OS {wear_track} 轨道。"
+        "请先在‘测试和发布 → 高级设置 → 设备类型’中添加 Wear OS，"
+        "并建立对应测试轨道。"
+    )
 
 
 def upload_to_edit(
@@ -79,7 +89,8 @@ def upload_to_edit(
     )["id"]
     codes: dict[str, int] = {}
     try:
-        require_tracks(service, edit_id, track)
+        if require_tracks(service, edit_id, track):
+            print(f"已在本次编辑会话创建 Wear OS {track} 封闭测试轨道", flush=True)
 
         for label, path, expected in (
             ("phone", phone, phone_code),
@@ -200,14 +211,15 @@ def main(argv: list[str] | None = None) -> int:
                 num_retries=3
             )["id"]
             try:
-                require_tracks(service, edit_id, args.track)
+                created = require_tracks(service, edit_id, args.track)
             finally:
                 service.edits().delete(
                     packageName=PACKAGE_NAME, editId=edit_id
                 ).execute(num_retries=1)
         except Exception as exc:
             return fail(str(exc))
-        print(f"Play 轨道已就绪：{args.track} / wear:{args.track}")
+        suffix = "（上传时创建）" if created else ""
+        print(f"Play 轨道预检通过：{args.track} / wear:{args.track}{suffix}")
         return 0
 
     if any(
