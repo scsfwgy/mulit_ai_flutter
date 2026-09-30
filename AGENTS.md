@@ -41,9 +41,11 @@
 - `lib/watch_settings_screen.dart`：手机端的手表模型与播报开关。
 - `lib/watch_chat.dart`：手机后台 Flutter 入口，把所选服务配置发给手表，执行手机优先的无落库语音/模型/朗读请求，并将手表离线问答同步进手机会话库；保留旧版手表的手机处理路径。
 - `android/wear/`：独立 Wear OS APK，负责录音、路由选择、手表独立请求、展示回复和音频播放；`WatchPhoneRelay.kt` 处理手机网络路径，`WatchNetworkSelector.kt` 指定手表 Wi-Fi/蜂窝网络，所选密钥用 Android Keystore 加密保存。
-- `ios/AILinkWatch/`：SwiftUI Apple Watch 配套应用，按住录音、松开转写、上滑取消，显示最近问答和可选的模型语音播放；跟随手表系统语言及外观。首版经 WatchConnectivity 把录音发到配对 iPhone，不接收密钥，也不独立请求模型。
+- `ios/AILinkWatch/`：SwiftUI Apple Watch 配套应用，按住录音、松开转写、上滑取消，显示最近问答和可选的模型语音播放；语言跟随手机 App，外观跟随手表系统。首版经 WatchConnectivity 把录音发到配对 iPhone，不接收密钥，也不独立请求模型。
 - `ios/Runner/AppleWatchBridge.swift`：iPhone 端 WatchConnectivity 与后台 Flutter worker 桥接；沿用 `WatchChatProcessor` 云端识别、聊天、可选合成及 SQLite 入库。Apple 平台待 Xcode 编译、后台唤醒和配对设备验证，不能仅凭 Swift 语法检查声明可运行。
-- 手表原生界面跟随手表自身的系统语言与日夜模式，支持中文和英文；不读取手机 Flutter 的语言或主题偏好。
+- 手表应用是手机应用的功能子集，界面语言跟随手机 App，支持中文和英文。手机选“跟随系统”时，同步手机实际使用的语言，不能改为跟随手表系统语言；手机切换语言、冷启动和恢复前台时发送最新设置。Wear OS 用持久化 DataItem，Apple Watch 用 applicationContext；手表离线保留最后收到的语言，重连补同步。外观仍跟随手表自身日夜模式。
+- 手表按住录音时使用全屏浮层中的圆形录音弹窗，显示实时音量波形、计时和松开提示；上滑时变红，松开取消。浮层只负责显示，不抢占原按钮的按住手势。
+- 手机（Android/iOS）和手表（Wear OS/Apple Watch）录音不足 0.6 秒视为误触：松开后静默忽略、清理临时录音并恢复输入状态，不显示录音太短提示、不请求转写或模型；达到 0.6 秒才进入正常流程。时长从实际开始录音计算，不包含权限弹窗或启动录音的等待。
 - `android/app/.../MainActivity.kt` 与 `android/wear/.../WatchActivity.kt`：手机和手表通过静态 capability 检查另一端安装状态，并向缺失设备发送商店安装页跳转；未上架的测试包仍需分别安装。
 - `android/app/src/main/kotlin/com/maxhall/ailink/WatchRequestListener.kt` 与 `WatchRequestWorker.kt`：Data Layer 处理手表配置请求、手机网络路径与问答同步；兼容旧版录音请求。
 - `lib/voice_catalog.dart` 与 `lib/voice_catalog_picker.dart`：语音模型/音色候选、兼容服务 `/models` 查询和选择界面；候选不表示账号权限。

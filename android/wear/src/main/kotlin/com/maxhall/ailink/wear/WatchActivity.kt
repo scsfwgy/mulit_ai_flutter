@@ -16,6 +16,7 @@ import android.os.Bundle
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.net.Uri
 import android.text.TextUtils
 import android.view.Gravity
@@ -78,6 +79,8 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
     private lateinit var configSummary: TextView
     private lateinit var autoSendSwitch: Switch
     private lateinit var speakSwitch: Switch
+    private lateinit var recordingOverlay: WatchRecordingOverlay
+    private val localizedLabels = mutableMapOf<TextView, String>()
     private var page = 0
     private var swipeStartX = 0f
     private var swipeStartY = 0f
@@ -88,10 +91,12 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
     private val configStore by lazy { WatchConfigStore(this) }
     private val conversation by lazy { getSharedPreferences("watch_conversation", MODE_PRIVATE) }
     private val watchSettings by lazy { getSharedPreferences("watch_settings", MODE_PRIVATE) }
+    private var phoneLanguage = "zh"
     @Volatile private var directBusy = false
     private var recorder: AudioRecord? = null
     private var recordingThread: Thread? = null
     @Volatile private var recording = false
+    private var recordingStartedAtMs = 0L
     private var requestId: String? = null
     private var pendingTranscript: String? = null
     private var awaitingConfirmation = false
@@ -111,6 +116,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         requestId = savedInstanceState?.getString("requestId")
             ?: getPreferences(MODE_PRIVATE).getString("requestId", null)
         lastAudioId = getPreferences(MODE_PRIVATE).getString("playedAudioId", null)
+        phoneLanguage = watchSettings.getString("language", "zh") ?: "zh"
         buildScreen()
         if (Build.VERSION.SDK_INT >= 33) {
             backCallback = OnBackInvokedCallback {
@@ -288,13 +294,15 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         Wearable.getDataClient(this).addListener(this)
         Wearable.getMessageClient(this).addListener(this)
         val id = requestId
-        if (id == null) return
         executor.execute {
             try {
                 val items = Tasks.await(Wearable.getDataClient(this).dataItems)
                 try {
                     for (item in items) {
-                        if (item.uri.path == "/between-models/reply/$id") {
+                        if (item.uri.path == "/between-models/preferences") {
+                            val language = DataMapItem.fromDataItem(item).dataMap.getString("language")
+                            handler.post { applyPhoneLanguage(language) }
+                        } else if (id != null && item.uri.path == "/between-models/reply/$id") {
                             renderResponse(item)
                         }
                     }
@@ -328,9 +336,13 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
     }
 
     override fun onDataChanged(events: DataEventBuffer) {
-        val id = requestId ?: return
+        val id = requestId
         for (event in events) {
-            if (event.type == DataEvent.TYPE_CHANGED &&
+            if (event.type != DataEvent.TYPE_CHANGED) continue
+            if (event.dataItem.uri.path == "/between-models/preferences") {
+                val language = DataMapItem.fromDataItem(event.dataItem).dataMap.getString("language")
+                handler.post { applyPhoneLanguage(language) }
+            } else if (id != null &&
                 event.dataItem.uri.path == "/between-models/reply/$id") {
                 val item = event.dataItem.freeze()
                 executor.execute { renderResponse(item) }
@@ -446,19 +458,23 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             }
             recorder = audio
             recording = true
-            status.text = watchText("正在聆听…")
-            transcript.text = watchText("松开后转写语音")
+            status.text = ""
+            transcript.text = ""
             answer.text = ""
-            action.text = watchText("松开识别 · 上滑取消")
             action.isEnabled = true
             audio.startRecording()
+            recordingStartedAtMs = SystemClock.elapsedRealtime()
+            recordingOverlay.start()
             recordingThread = Thread {
                 val samples = ByteArrayOutputStream()
                 val buffer = ByteArray(4096)
                 val started = System.currentTimeMillis()
                 while (recording && System.currentTimeMillis() - started < 30_000) {
                     val count = audio.read(buffer, 0, buffer.size)
-                    if (count > 0) samples.write(buffer, 0, count)
+                    if (count > 0) {
+                        samples.write(buffer, 0, count)
+                        recordingOverlay.level = WatchRecordingOverlay.levelOf(buffer, count)
+                    }
                 }
                 if (recording) handler.post { finishRecording() }
                 synchronized(this) {
@@ -467,6 +483,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             }.also { it.start() }
         } catch (_: Exception) {
             recording = false
+            recordingOverlay.visibility = View.GONE
             recorder?.release()
             recorder = null
             showError(watchText("无法录音，请检查麦克风权限"))
@@ -477,7 +494,9 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
 
     private fun finishRecording() {
         if (!recording) return
+        val durationMs = SystemClock.elapsedRealtime() - recordingStartedAtMs
         recording = false
+        recordingOverlay.visibility = View.GONE
         recorder?.stop()
         recordingThread?.join(1000)
         recorder?.release()
@@ -485,6 +504,10 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         recordingThread = null
         val pcm = pendingPcm
         pendingPcm = null
+        if (durationMs < 600) {
+            resetForRecording()
+            return
+        }
         if (pcm == null || pcm.size < 3200) {
             showError(watchText("录音太短，请再试一次"))
             return
@@ -537,7 +560,9 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
     }
 
     private fun cancelRecording() {
+        val accidental = SystemClock.elapsedRealtime() - recordingStartedAtMs < 600
         recording = false
+        recordingOverlay.visibility = View.GONE
         try { recorder?.stop() } catch (_: Exception) { }
         recordingThread?.join(1000)
         recorder?.release()
@@ -545,7 +570,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         recordingThread = null
         pendingPcm = null
         if (::status.isInitialized) {
-            status.text = watchText("录音已取消")
+            status.text = if (accidental) "" else watchText("录音已取消")
             action.text = watchText("按住说话")
         }
     }
@@ -892,7 +917,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             setPadding(34, 27, 34, 49)
             setBackgroundColor(backgroundColor)
         }
-        chatPage.addView(label(watchText("最近问答  ›"), 15f, primaryColor, true).apply {
+        chatPage.addView(uiLabel("最近问答  ›", 15f, primaryColor, true).apply {
             setOnClickListener { showPage(1) }
         })
         status = label("", 12f, secondaryColor)
@@ -914,7 +939,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         content.addView(history)
         historyScroll.addView(content)
         chatPage.addView(historyScroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        historyHint = label(watchText("上滑查看更早问答"), 11f, secondaryColor).apply {
+        historyHint = uiLabel("上滑查看更早问答", 11f, secondaryColor).apply {
             visibility = View.GONE
             setPadding(0, 0, 0, 7)
         }
@@ -940,7 +965,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
                             val cancel = event.rawY < pressStartY - 65 * resources.displayMetrics.density
                             if (cancel != cancelOnRelease) {
                                 cancelOnRelease = cancel
-                                status.text = if (cancel) watchText("松开取消录音") else watchText("正在聆听…")
+                                recordingOverlay.cancelling = cancel
                             }
                         }
                         true
@@ -963,7 +988,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         chatPage.addView(action, LinearLayout.LayoutParams(
             (resources.displayMetrics.widthPixels * 0.66f).toInt(), -2,
         ))
-        retry = label(watchText("重新录音"), 12f, secondaryColor).apply {
+        retry = uiLabel("重新录音", 12f, secondaryColor).apply {
             visibility = View.GONE
             setPadding(0, 8, 0, 0)
             setOnClickListener { resetForRecording() }
@@ -979,7 +1004,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(38, 30, 38, 48)
         }
-        settingsPage.addView(label(watchText("‹  设置"), 18f, primaryColor, true).apply {
+        settingsPage.addView(uiLabel("‹  设置", 18f, primaryColor, true).apply {
             setOnClickListener { showPage(0) }
         })
         settingsStatus = label(watchText("正在检查手机连接…"), 12f, secondaryColor)
@@ -1020,25 +1045,45 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             }
         }
         settingsPage.addView(companion)
-        sound = label(watchText("停止播放"), 12f, secondaryColor).apply {
+        sound = uiLabel("停止播放", 12f, secondaryColor).apply {
             visibility = View.GONE
             setPadding(0, 8, 0, 0)
             setOnClickListener { stopPlayback() }
         }
         settingsPage.addView(sound)
-        settingsPage.addView(label(watchText("模型与语音服务在手机端设置"), 11f, secondaryColor))
+        settingsPage.addView(uiLabel("模型与语音服务在手机端设置", 11f, secondaryColor))
         settingsScroll.addView(settingsPage)
         pages.addView(chatPage)
         pages.addView(settingsScroll)
+        recordingOverlay = WatchRecordingOverlay(this, { darkMode }, ::watchText).apply {
+            visibility = View.GONE
+        }
+        pages.addView(recordingOverlay, FrameLayout.LayoutParams(-1, -1))
         setContentView(pages)
     }
 
-    private fun watchText(zh: String): String {
-        val language = resources.configuration.locales[0].language
-        if (language == "zh") return zh
-        return watchTranslations[zh] ?: if (zh.any { it.code in 0x4E00..0x9FFF })
-            "Request failed. Check connection and settings." else zh
+    private fun applyPhoneLanguage(language: String?) {
+        if (language != "zh" && language != "en" || language == phoneLanguage) return
+        phoneLanguage = language
+        watchSettings.edit().putString("language", language).apply()
+        for ((view, key) in localizedLabels) view.text = watchText(key)
+        for (view in listOf(status, action, companion, settingsStatus)) {
+            view.text = watchText(view.text.toString())
+        }
+        autoSendSwitch.text = watchText("识别后自动发送")
+        speakSwitch.text = watchText("自动播报回答")
+        val scrollY = historyScroll.scrollY
+        renderHistory()
+        historyScroll.post { historyScroll.scrollTo(0, scrollY) }
+        pendingTranscript?.let { transcript.text = "${watchText("我")}: $it" }
+        refreshSettings()
+        recordingOverlay.invalidate()
     }
+
+    private fun watchText(text: String): String = translateWatchText(text, phoneLanguage)
+
+    private fun uiLabel(key: String, size: Float, color: Int, bold: Boolean = false) =
+        label(watchText(key), size, color, bold).also { localizedLabels[it] = key }
 
     private fun label(text: String, size: Float, color: Int, bold: Boolean = false) =
         TextView(this).apply {

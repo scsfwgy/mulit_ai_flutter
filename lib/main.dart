@@ -698,6 +698,10 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
 
   Future<void> _finishRecording() async {
     if (!_recording) return;
+    if (_recordClock.elapsedMilliseconds < 600) {
+      await _cancelRecording();
+      return;
+    }
     _recordTimer?.cancel();
     _recordClock.stop();
     await _amplitudeSubscription?.cancel();

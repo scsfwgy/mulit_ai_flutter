@@ -8,6 +8,7 @@ import android.net.Uri
 import androidx.wear.remote.interactions.RemoteActivityHelper
 import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.CapabilityClient
+import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -29,6 +30,22 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "between_models/companion_install")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
+                    "syncPreferences" -> {
+                        val language = call.argument<String>("language")
+                        if (language != "zh" && language != "en") {
+                            result.error("invalid_language", "Unsupported language", null)
+                        } else companionExecutor.execute {
+                            try {
+                                val request = PutDataMapRequest.create("/between-models/preferences")
+                                request.dataMap.putString("language", language)
+                                Tasks.await(Wearable.getDataClient(this).putDataItem(
+                                    request.asPutDataRequest().setUrgent()), 15, TimeUnit.SECONDS)
+                                runOnUiThread { result.success(null) }
+                            } catch (_: Exception) {
+                                runOnUiThread { result.error("sync_unavailable", "Watch preferences sync unavailable", null) }
+                            }
+                        }
+                    }
                     "watchStatus" -> companionExecutor.execute {
                         try {
                             val nodes = Tasks.await(Wearable.getNodeClient(this).connectedNodes)

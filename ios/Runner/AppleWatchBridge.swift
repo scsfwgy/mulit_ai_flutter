@@ -32,6 +32,16 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
       }
       let session = WCSession.default
       switch call.method {
+      case "syncPreferences":
+        guard let arguments = call.arguments as? [String: Any],
+              let language = arguments["language"] as? String,
+              ["zh", "en"].contains(language) else {
+          result(FlutterError(code: "invalid_language", message: "Unsupported language", details: nil))
+          return
+        }
+        UserDefaults.standard.set(language, forKey: "ai_link_watch_language")
+        self.syncPreferences()
+        result(nil)
       case "watchStatus":
         let paired = session.isPaired
         let installed = session.isWatchAppInstalled
@@ -51,6 +61,18 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
       default:
         result(FlutterMethodNotImplemented)
       }
+    }
+  }
+
+  private func syncPreferences() {
+    let session = WCSession.default
+    guard session.activationState == .activated,
+          session.isPaired, session.isWatchAppInstalled,
+          let language = UserDefaults.standard.string(forKey: "ai_link_watch_language") else { return }
+    // The latest context replaces older preferences and can arrive after reconnect.
+    try? session.updateApplicationContext(["kind": "preferences", "language": language])
+    if session.isReachable {
+      session.sendMessage(["kind": "preferences", "language": language], replyHandler: nil)
     }
   }
 
@@ -157,7 +179,17 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
   func session(
     _ session: WCSession, activationDidCompleteWith state: WCSessionActivationState,
     error: Error?
-  ) {}
+  ) {
+    DispatchQueue.main.async { self.syncPreferences() }
+  }
+
+  func sessionWatchStateDidChange(_ session: WCSession) {
+    DispatchQueue.main.async { self.syncPreferences() }
+  }
+
+  func sessionReachabilityDidChange(_ session: WCSession) {
+    DispatchQueue.main.async { self.syncPreferences() }
+  }
 
   func sessionDidBecomeInactive(_ session: WCSession) {}
 

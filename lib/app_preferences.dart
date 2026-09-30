@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -35,6 +37,7 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
   }
   static final instance = AppPreferences._();
+  static const _companion = MethodChannel('between_models/companion_install');
 
   AppLanguage language = AppLanguage.zh;
   AppSkin skin = AppSkin.blue;
@@ -62,6 +65,30 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
   void didChangePlatformBrightness() {
     _syncSystemBars();
     notifyListeners();
+  }
+
+  @override
+  void didChangeLocales(List<Locale>? locales) {
+    if (language != AppLanguage.system) return;
+    notifyListeners();
+    unawaited(_syncWatchLanguage());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_syncWatchLanguage());
+  }
+
+  Future<void> _syncWatchLanguage() async {
+    try {
+      await _companion.invokeMethod<void>('syncPreferences', {
+        'language': english ? 'en' : 'zh',
+      });
+    } on MissingPluginException {
+      // Desktop, tests, and older phone builds may not expose this channel.
+    } on PlatformException {
+      // Retry on the next foreground entry; phone language remains saved.
+    }
   }
 
   void _syncSystemBars() => SystemChrome.setSystemUIOverlayStyle(
@@ -111,12 +138,14 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
     }
     _syncSystemBars();
     notifyListeners();
+    unawaited(_syncWatchLanguage());
   }
 
   Future<void> setLanguage(AppLanguage value) async {
     await ChatStore.instance.saveSetting('app_language', value.name);
     language = value;
     notifyListeners();
+    unawaited(_syncWatchLanguage());
   }
 
   Future<void> setSkin(AppSkin value) async {

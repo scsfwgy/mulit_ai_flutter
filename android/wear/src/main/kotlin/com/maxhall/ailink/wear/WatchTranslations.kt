@@ -1,7 +1,11 @@
 package com.maxhall.ailink.wear
 
-// The watch follows its own system locale, independently of phone preferences.
+// Phone app preferences are the source of the watch UI language.
 internal val watchTranslations = mapOf(
+    "正在录音" to "Recording",
+    "松开转写" to "Release to transcribe",
+    "上滑取消" to "Slide up to cancel",
+    "松开取消" to "Release to cancel",
     "‹  设置" to "‹  Settings",
     "上滑查看更早问答" to "Swipe up for older chats",
     "停止播放" to "Stop playback",
@@ -97,3 +101,12 @@ internal val watchTranslations = mapOf(
     "手表网络不可用" to "Watch network unavailable.",
     "无法获取手表网络" to "Could not obtain watch network.",
 )
+
+private val watchChineseTexts = watchTranslations.entries.associate { it.value to it.key }
+
+internal fun translateWatchText(text: String, language: String): String {
+    val chinese = watchChineseTexts[text] ?: text
+    if (language == "zh") return chinese
+    return watchTranslations[chinese] ?: if (chinese.any { it.code in 0x4E00..0x9FFF })
+        "Request failed. Check connection and settings." else chinese
+}

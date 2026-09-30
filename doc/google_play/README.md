@@ -23,7 +23,7 @@
 
 上传脚本使用 `localConfig/google-play-service-account.json`（Git 忽略）或 `PLAY_SERVICE_ACCOUNT_JSON` 指定的现有服务账号 JSON。当前机器上的本地路径已链接到 Tools24 使用的同一 API 账号；仓库源码不依赖 Tools24 的路径，也不复制或提交账号私钥。首次在其他机器运行时需自行配置该文件。`--play-track` 支持 `internal`、`alpha`、`beta`、`production`；手机使用所选轨道，Wear OS 使用 `wear:<轨道>`。脚本在一次 Play 编辑会话中上传两端 AAB，核对版本号与 SHA-256，校验编辑后才提交；失败不会提交该编辑。版本更新日志见 `release_notes.json`。当前版本号仍由 `pubspec.yaml` 管理，手表 versionCode 为手机加 1,000,000；每次向 Play 上传新包前必须递增构建号。
 
-上传前需在 Play Console 完成 Play App Signing、Wear OS form factor 和相关应用内容设置。当前 API 预检只看到 `internal` 等手机轨道，尚未看到 `wear:internal`；`--push-release` 会在构建前明确停止，直到 Wear OS 轨道建好。提交成功只表示 API 编辑已提交，审核与上线结果以 Console 为准；脚本不会自动完成这些问卷，也不会上传 Tools24 专用的 OSS/官网发布接口。每次正式上传前更新 `release_notes.json` 的版本说明。
+上传前需在 Play Console 完成 Play App Signing、Wear OS form factor 和相关应用内容设置。2026-09-30 API 已可见 `wear:internal`、`wear:beta`、`wear:production`，但尚无 `wear:alpha`；选择 `--play-track alpha` 时，脚本会在同一编辑会话中创建对应的 Wear OS 封闭测试轨道，再上传两端 AAB。其他缺失的 Wear OS 轨道仍会在构建前停止。提交成功只表示 API 编辑已提交，审核与上线状态以 Console 为准；脚本不会自动完成问卷，也不会上传 Tools24 专用的 OSS/官网发布接口。每次正式上传前更新 `release_notes.json` 的版本说明。
 
 两种包使用同一个应用 ID `com.maxhall.ailink`，但证书不同，无法在同一设备上互相覆盖安装。测试前先确认设备中是否有需要保留的聊天和密钥；**不要通过卸载或清除数据来强行切换签名**。普通 `flutter run`/Debug APK 仍使用 Android SDK 默认调试证书，与这里的测试签名也不同。
 
@@ -45,7 +45,7 @@
 5. Play Console 应用已建立；仍需配置 Wear OS form factor，先上传到测试轨道，检查预发布报告、设备兼容性、权限说明、配对和断连流程，再提交审核。不要把本地 AAB 构建成功或商品素材保存当作已上架。
 6. 核对 Android 目标 API：截至 2026-09-29，新手机应用需 API 36+，Wear OS 需 API 35+。重新发布时按当日官方要求复核。
 7. 更换包名后，旧 `com.example.mulit_ai_flutter` 的本地 SQLite 与安全存储不会自动迁移到新包；旧应用可并存。对已有测试数据须先制定迁移或导出方案，不能直接卸载旧包。
-8. 真实手机与至少一款 Wear OS 设备验证安装引导、两端签名一致、语音权限、电话/手表网络切换、离线记录同步与系统语言/主题。iOS 工程存在，但本轮未构建验证。
+8. 真实手机与至少一款 Wear OS 设备验证安装引导、两端签名一致、语音权限、电话/手表网络切换、离线记录同步、手机 App 语言同步与手表系统日夜模式。iOS 工程存在，但本轮未构建验证。
 
 ## 官方依据
 
