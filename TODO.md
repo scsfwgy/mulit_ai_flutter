@@ -4,8 +4,8 @@
 
 ## Apple 平台验证与手表独立能力
 
-- [ ] **完整 Xcode 构建**：在安装 Xcode 和 Apple 平台 SDK 的机器上构建 iOS Runner 与嵌入的 `AILinkWatch`，修正编译、签名和插件集成问题。当前机器只有 Command Line Tools，`swiftc -parse` 与项目文件校验不能代替构建。
-- [ ] **配对设备端到端验证**：在 iPhone 与 Apple Watch 实机或成对模拟器验证录音权限、WAV 传输、转写确认、流式回答、音频播放、手机后台唤醒、断连重试和历史入库。手表版目前通过 iPhone 执行请求，后台执行时间受系统限制。
+- [x] **Debug 完整 Xcode 构建**：2026-10-03 已在 Xcode 27.0 构建 iOS Runner 与嵌入的 `AILinkWatch`，修复单目标 watchOS 配置及后台 Flutter 引擎初始化顺序；两端配对模拟器启动及配置同步通过。发布签名仍待验证。
+- [ ] **配对设备端到端验证**：配对模拟器已验证两页界面和配置摘要同步；在 iPhone 与 Apple Watch 配对真机验证录音权限、WAV 传输、转写确认、流式回答、音频播放、手机后台唤醒、断连重试和历史入库。手表版目前通过 iPhone 执行请求，后台执行时间受系统限制。
 - [ ] **Apple Watch 独立网络**：手机只负责配置；在手表 Keychain 保存必要凭据，直接调用支持的语音和文字协议。手机可达时优先手机网络，明确网络故障再切手表网络；手机不可达时独立请求。需先解决服务能力、密钥同步、上下文和离线同步，避免重复计费。参考 [Apple WatchConnectivity 官方说明](https://developer.apple.com/documentation/WatchConnectivity/transferring-data-with-watch-connectivity) 与 [独立 watchOS 应用说明](https://developer.apple.com/documentation/watchos-apps/creating-independent-watchos-apps/)。
 - [ ] **Apple 发布准备**：核对 Apple Developer 签名、App Store Connect、手表截图及线上隐私政策对 Apple Watch 数据流的描述。细节见 [Apple 平台说明](doc/ios/README.md)。
 

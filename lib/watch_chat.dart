@@ -30,10 +30,21 @@ void startWatchWorker() {
       if (kind == 'confirm') {
         await processor.sendTranscript(
           args['transcript'] as String,
+          speak: args['speak'] as bool?,
           onUpdate: publish,
         );
       } else if (kind == 'audio') {
-        await processor.process(args['audio'] as Uint8List, onUpdate: publish);
+        await processor.process(
+          args['audio'] as Uint8List,
+          autoSend: args['autoSend'] as bool?,
+          speak: args['speak'] as bool?,
+          onUpdate: publish,
+        );
+      } else if (kind == 'apple-preferences') {
+        await publish({
+          'kind': 'preferences',
+          ...await processor.preferences(),
+        });
       } else if (kind == 'config') {
         final payload = utf8.encode(
           jsonEncode(await processor.configuration()),
@@ -107,6 +118,7 @@ class WatchChatProcessor {
     if (audio.isEmpty || audio.length > 4 * 1024 * 1024) {
       throw const WatchChatException('录音无效或超过大小限制');
     }
+    await _requireRecordingSetup();
     final asr = await _selectedVoice('voice_asr_id');
     if (asr == null) throw const WatchChatException('请先在手机端配置语音识别服务');
     final key = await store.voiceApiKey(asr);
@@ -216,7 +228,7 @@ class WatchChatProcessor {
     }
   }
 
-  Future<Map<String, Object?>> configuration() async {
+  Future<Map<String, Object?>> configuration({bool includeKeys = true}) async {
     final providers = await store.providers();
     final selectedId = int.tryParse(
       await store.setting('watch_provider_id') ?? '',
@@ -224,21 +236,24 @@ class WatchChatProcessor {
     final provider =
         providers.where((p) => p.id == selectedId).firstOrNull ??
         providers.firstOrNull;
-    if (provider == null) {
-      throw const WatchChatException('请先在手机端配置文字模型服务');
-    }
-    final key = await store.apiKey(provider.id);
-    if (key == null || key.isEmpty) {
-      throw const WatchChatException('手机端文字模型密钥未配置');
-    }
-    final model = provider.id == selectedId
+    final key = provider == null ? null : await store.apiKey(provider.id);
+    final model = provider == null
+        ? ''
+        : provider.id == selectedId
         ? await store.setting('watch_model_id') ?? provider.model
         : provider.model;
     Future<Map<String, Object?>?> voice(String settingKey) async {
       final selected = await _selectedVoice(settingKey);
       if (selected == null) return null;
       final voiceKey = await store.voiceApiKey(selected);
-      if (voiceKey == null || voiceKey.isEmpty) return null;
+      if (voiceKey == null ||
+          voiceKey.trim().isEmpty ||
+          (settingKey == 'voice_asr_id' ? selected.asrModel : selected.ttsModel)
+              .trim()
+              .isEmpty ||
+          !_validEndpoint(selected.baseUrl)) {
+        return null;
+      }
       return {
         'protocol': selected.protocol.name,
         'baseUrl': selected.baseUrl,
@@ -250,21 +265,30 @@ class WatchChatProcessor {
     }
 
     final asr = await voice('voice_asr_id');
-    if (asr == null) {
-      throw const WatchChatException('请先在手机端配置语音识别服务及密钥');
-    }
+    final textReady =
+        provider != null &&
+        key != null &&
+        key.trim().isNotEmpty &&
+        model.trim().isNotEmpty &&
+        _validEndpoint(provider.baseUrl);
     return {
-      'version': 1,
-      'providerId': provider.id,
-      'providerName': provider.name,
-      'providerPresetId': provider.presetId,
-      'protocol': provider.protocol.value,
-      'baseUrl': provider.baseUrl,
+      'providerName': provider?.name ?? '',
       'model': model,
-      'apiKey': key,
-      'systemPrompt': await store.systemPrompt(provider.id, model),
-      'asr': asr,
-      'tts': await voice('voice_tts_id'),
+      'textReady': textReady,
+      'asrReady': asr != null,
+      if (includeKeys) ...{
+        'version': 1,
+        'providerId': provider?.id,
+        'providerPresetId': provider?.presetId,
+        'protocol': provider?.protocol.value,
+        'baseUrl': provider?.baseUrl,
+        'apiKey': key,
+        'systemPrompt': provider == null
+            ? ''
+            : await store.systemPrompt(provider.id, model),
+        'asr': asr,
+        'tts': await voice('voice_tts_id'),
+      },
       'autoSend': VoiceSendPreference.autoSend(
         await store.setting(VoiceSendPreference.key),
       ),
@@ -280,10 +304,42 @@ class WatchChatProcessor {
     await store.saveWatchTurn(value);
   }
 
-  Future<void> process(Uint8List audio, {required WatchUpdate onUpdate}) async {
+  /// Keys are checked on the phone; only readiness and display metadata leave it.
+  Future<Map<String, Object?>> preferences() =>
+      configuration(includeKeys: false);
+
+  bool _validEndpoint(String value) {
+    try {
+      validateBaseUrl(value);
+      return true;
+    } on FormatException {
+      return false;
+    }
+  }
+
+  Future<void> _requireRecordingSetup() async {
+    final setup = await preferences();
+    if (setup['textReady'] != true && setup['asrReady'] != true) {
+      throw const WatchChatException('请先在手机端配置文字模型和语音识别服务及密钥');
+    }
+    if (setup['textReady'] != true) {
+      throw const WatchChatException('请先在手机端配置文字模型服务、模型和密钥');
+    }
+    if (setup['asrReady'] != true) {
+      throw const WatchChatException('请先在手机端配置语音识别服务、识别模型和密钥');
+    }
+  }
+
+  Future<void> process(
+    Uint8List audio, {
+    bool? autoSend,
+    bool? speak,
+    required WatchUpdate onUpdate,
+  }) async {
     if (audio.isEmpty || audio.length > 4 * 1024 * 1024) {
       throw const WatchChatException('录音无效或超过大小限制');
     }
+    await _requireRecordingSetup();
     final asr = await _selectedVoice('voice_asr_id');
     if (asr == null) throw const WatchChatException('请先在手机端配置语音识别服务');
     final asrKey = await store.voiceApiKey(asr);
@@ -300,23 +356,26 @@ class WatchChatProcessor {
     }
     await onUpdate({'stage': 'transcribed', 'transcript': transcript});
 
-    if (!VoiceSendPreference.autoSend(
-      await store.setting(VoiceSendPreference.key),
-    )) {
+    if (!(autoSend ??
+        VoiceSendPreference.autoSend(
+          await store.setting(VoiceSendPreference.key),
+        ))) {
       await onUpdate({
         'stage': 'awaiting_confirmation',
         'transcript': transcript,
       });
       return;
     }
-    await sendTranscript(transcript, onUpdate: onUpdate);
+    await sendTranscript(transcript, speak: speak, onUpdate: onUpdate);
   }
 
   Future<void> sendTranscript(
     String text, {
+    bool? speak,
     required WatchUpdate onUpdate,
   }) async {
     final transcript = validateTranscript(text);
+    await _requireRecordingSetup();
 
     final providers = await store.providers();
     final selectedId = int.tryParse(
@@ -420,7 +479,7 @@ class WatchChatProcessor {
     final titleFuture = history.length == 1
         ? _generateTitle(topicId, provider, key, model, transcript, complete)
         : Future<void>.value();
-    if (await store.setting('watch_tts_enabled') != '1') {
+    if (!(speak ?? (await store.setting('watch_tts_enabled') == '1'))) {
       await titleFuture;
       return;
     }

@@ -14,6 +14,8 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
   private var pending: [(String, [String: Any])] = []
   private var backgroundTasks: [String: UIBackgroundTaskIdentifier] = [:]
   private var outgoingAudio: [WCSessionFileTransfer: URL] = [:]
+  private var phoneUpdates: FlutterMethodChannel?
+  private var processingIDs: Set<String> = []
 
   func start() {
     guard WCSession.isSupported() else { return }
@@ -22,6 +24,12 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
   }
 
   func attachCompanionChannel(messenger: FlutterBinaryMessenger) {
+    let updates = FlutterMethodChannel(name: "between_models/watch_updates", binaryMessenger: messenger)
+    updates.setMethodCallHandler { [weak self] call, result in
+      if call.method == "isProcessing" { result(!(self?.processingIDs.isEmpty ?? true)) }
+      else { result(FlutterMethodNotImplemented) }
+    }
+    phoneUpdates = updates
     let channel = FlutterMethodChannel(
       name: "between_models/companion_install", binaryMessenger: messenger
     )
@@ -69,16 +77,22 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
     guard session.activationState == .activated,
           session.isPaired, session.isWatchAppInstalled,
           let language = UserDefaults.standard.string(forKey: "ai_link_watch_language") else { return }
-    // The latest context replaces older preferences and can arrive after reconnect.
-    try? session.updateApplicationContext(["kind": "preferences", "language": language])
+    // Preserve display metadata when refreshing the phone's language.
+    var preferences = UserDefaults.standard.dictionary(forKey: "ai_link_watch_preferences") ?? [:]
+    preferences["kind"] = "preferences"
+    preferences["language"] = language
+    try? session.updateApplicationContext(preferences)
     if session.isReachable {
-      session.sendMessage(["kind": "preferences", "language": language], replyHandler: nil)
+      session.sendMessage(preferences, replyHandler: nil)
     }
   }
 
-  private func startWorkerIfNeeded() {
-    guard workerEngine == nil else { return }
+  private func startWorkerIfNeeded() -> Bool {
+    guard workerEngine == nil else { return true }
     let engine = FlutterEngine(name: "AI Link Watch Worker", project: nil, allowHeadlessExecution: true)
+    // Flutter requires a running engine before installing channel handlers.
+    guard engine.run(withEntrypoint: "watchBackgroundMain") else { return false }
+    workerEngine = engine
     let channel = FlutterMethodChannel(
       name: "between_models/watch_worker", binaryMessenger: engine.binaryMessenger
     )
@@ -98,21 +112,25 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
         result(FlutterMethodNotImplemented)
       }
     }
-    workerEngine = engine
     workerChannel = channel
-    guard engine.run(withEntrypoint: "watchBackgroundMain") else {
-      workerEngine = nil
-      workerChannel = nil
-      return
-    }
     GeneratedPluginRegistrant.register(with: engine)
     pluginsReady = true
     flushPending()
+    return true
   }
 
   private func enqueue(id: String, arguments: [String: Any]) {
     DispatchQueue.main.async {
-      self.startWorkerIfNeeded()
+      if ["audio", "confirm"].contains(arguments["kind"] as? String ?? "") {
+        self.processingIDs.insert(id)
+        self.phoneUpdates?.invokeMethod("changed", arguments: nil)
+      }
+      guard self.startWorkerIfNeeded() else {
+        self.processingIDs.remove(id)
+        self.phoneUpdates?.invokeMethod("changed", arguments: nil)
+        self.sendUpdate(["id": id, "stage": "error", "error": "iPhone 处理器无法启动，请打开手机应用后重试"])
+        return
+      }
       self.pending.append((id, arguments))
       self.flushPending()
     }
@@ -131,6 +149,8 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
         if let error = result as? FlutterError {
           self?.sendUpdate(["id": id, "stage": "error", "error": error.message ?? "iPhone 处理失败"])
         }
+        self?.processingIDs.remove(id)
+        self?.phoneUpdates?.invokeMethod("changed", arguments: nil)
         self?.endBackgroundTask(id)
       }
     }
@@ -146,6 +166,13 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
     let session = WCSession.default
     guard session.activationState == .activated else { return }
     var message = update
+    if message["kind"] as? String == "preferences" {
+      message["language"] = UserDefaults.standard.string(forKey: "ai_link_watch_language") ?? "zh"
+      UserDefaults.standard.set(message.filter { $0.key != "id" }, forKey: "ai_link_watch_preferences")
+      try? session.updateApplicationContext(message)
+      if session.isReachable { session.sendMessage(message, replyHandler: nil) }
+      return
+    }
     if let answer = message["answer"] as? String, answer.count > 6_000 {
       message["answer"] = String(answer.prefix(6_000)) + "…"
     }
@@ -166,6 +193,9 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
       }
     }
     let stage = message["stage"] as? String ?? ""
+    if ["complete", "error", "awaiting_confirmation"].contains(stage) {
+      phoneUpdates?.invokeMethod("changed", arguments: nil)
+    }
     let shouldQueue = ["complete", "error", "awaiting_confirmation"].contains(stage)
     if session.isReachable {
       session.sendMessage(message, replyHandler: nil) { _ in
@@ -205,15 +235,23 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
       }
       return
     }
-    enqueue(id: id, arguments: [
+    var arguments: [String: Any] = [
       "id": id, "kind": "audio", "audio": FlutterStandardTypedData(bytes: audio),
-    ])
+    ]
+    if let autoSend = file.metadata?["autoSend"] as? Bool { arguments["autoSend"] = autoSend }
+    if let speak = file.metadata?["speak"] as? Bool { arguments["speak"] = speak }
+    enqueue(id: id, arguments: arguments)
   }
 
   func session(
     _ session: WCSession, didReceiveMessage message: [String: Any],
     replyHandler: @escaping ([String: Any]) -> Void
   ) {
+    if message["kind"] as? String == "preferences", let id = message["id"] as? String {
+      enqueue(id: id, arguments: ["id": id, "kind": "apple-preferences"])
+      replyHandler(["accepted": true])
+      return
+    }
     guard message["kind"] as? String == "confirm",
           let id = message["id"] as? String,
           let transcript = message["transcript"] as? String,
@@ -221,7 +259,9 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
       replyHandler(["accepted": false])
       return
     }
-    enqueue(id: id, arguments: ["id": id, "kind": "confirm", "transcript": transcript])
+    var arguments: [String: Any] = ["id": id, "kind": "confirm", "transcript": transcript]
+    if let speak = message["speak"] as? Bool { arguments["speak"] = speak }
+    enqueue(id: id, arguments: arguments)
     replyHandler(["accepted": true])
   }
 

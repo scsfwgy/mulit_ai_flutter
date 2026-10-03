@@ -3,6 +3,14 @@ package com.maxhall.ailink.wear
 // Phone app preferences are the source of the watch UI language.
 internal val watchTranslations = mapOf(
     "正在录音" to "Recording",
+    "配置服务" to "Set up services",
+    "需要配置服务" to "Services required",
+    "查看设置" to "View settings",
+    "知道了" to "OK",
+    "请先在手机配置文字模型和语音识别服务及密钥" to "Set up text and speech recognition services with API keys on phone",
+    "请先在手机配置文字模型服务、模型和密钥" to "Set up a text service, model and API key on phone",
+    "请先在手机配置语音识别服务、识别模型和密钥" to "Set up a speech recognition service, model and API key on phone",
+    "在手机 AI Link 的设置中，进入模型设置添加文字服务，再进入语音服务添加并选择语音识别服务。完成后回到手表同步配置。" to "On phone: AI Link → Settings → Model settings; then Voice services → Speech recognition service. Return to the watch and sync settings when done.",
     "松开转写" to "Release to transcribe",
     "上滑取消" to "Slide up to cancel",
     "松开取消" to "Release to cancel",

@@ -2,6 +2,7 @@ package com.maxhall.ailink.wear
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -191,9 +192,10 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
                 handler.post {
                     refreshSettings()
                     if (!directBusy && !recording) {
-                        status.text = ""
-                        settingsStatus.text = watchText("配置已同步，可以提问")
-                        action.text = watchText("按住说话")
+                        val issue = configStore.recordingIssue()
+                        status.text = issue?.let(::watchText) ?: ""
+                        settingsStatus.text = issue?.let(::watchText) ?: watchText("配置已同步，可以提问")
+                        action.text = watchText(if (issue == null) "按住说话" else "配置服务")
                         action.isEnabled = true
                         companion.visibility = if (phoneNodeId == null) View.GONE else View.VISIBLE
                         companion.text = watchText("同步手机配置")
@@ -216,7 +218,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
                 ).nodes.map { it.id }.toSet()
                 val phone = nodes.firstOrNull { it.id in installed }
                 handler.post {
-                    val ready = configStore.load() != null
+                    val ready = configStore.recordingIssue() == null
                     if (phone == null) {
                         phoneNodeId = nodes.firstOrNull()?.id
                         if (!ready) {
@@ -239,9 +241,9 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
                         companion.text = watchText("同步手机配置")
                         if (companionWarning && !recording && !directBusy &&
                             !getPreferences(MODE_PRIVATE).getBoolean("pending", false)) {
-                            status.text = if (ready) "" else watchText("正在等待手机同步配置…")
-                            action.text = watchText("按住说话")
-                            action.isEnabled = ready
+                            status.text = configStore.recordingIssue()?.let(::watchText) ?: ""
+                            action.text = watchText(if (ready) "按住说话" else "配置服务")
+                            action.isEnabled = true
                         }
                         companionWarning = false
                     }
@@ -401,13 +403,22 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         }
     }
 
+    private fun requireRecordingSetup(): Boolean {
+        val issue = configStore.recordingIssue() ?: return true
+        status.text = watchText(issue)
+        AlertDialog.Builder(this)
+            .setTitle(watchText("需要配置服务"))
+            .setMessage(watchText(issue) + "\n" + watchText("在手机 AI Link 的设置中，进入模型设置添加文字服务，再进入语音服务添加并选择语音识别服务。完成后回到手表同步配置。"))
+            .setPositiveButton(watchText("查看设置")) { _, _ -> showPage(1) }
+            .setNegativeButton(watchText("知道了"), null)
+            .show()
+        requestConfiguration()
+        return false
+    }
+
     private fun startRecording() {
         if (recording) return
-        if (configStore.load() == null) {
-            status.text = watchText("先在手机完成模型与语音配置")
-            requestConfiguration()
-            return
-        }
+        if (!requireRecordingSetup()) return
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 10)
             return
@@ -576,6 +587,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
     }
 
     private fun confirmTranscript() {
+        if (!requireRecordingSetup()) return
         val id = requestId ?: return
         val text = pendingTranscript ?: return
         val config = configStore.load() ?: run {
@@ -859,8 +871,8 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
 
     private fun refreshSettings() {
         val config = configStore.load()
-        configSummary.text = if (config == null) watchText("等待手机配置")
-            else "${config.optString("providerName")} · ${config.optString("model")}"
+        configSummary.text = configStore.recordingIssue(config)?.let(::watchText)
+            ?: "${config?.optString("providerName")} · ${config?.optString("model")}"
         updatingSettings = true
         autoSendSwitch.isChecked = watchSettings.getBoolean(
             "autoSend", config?.optBoolean("autoSend", true) ?: true)

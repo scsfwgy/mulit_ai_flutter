@@ -33,8 +33,9 @@ class WatchConfigStore(private val context: Context) {
         require(payload.isNotEmpty() && payload.size <= 60000)
         val config = JSONObject(String(payload, Charsets.UTF_8))
         require(config.optInt("version") == 1)
-        require(config.optString("apiKey").isNotBlank())
-        require(config.optString("model").isNotBlank())
+        // Missing-service snapshots must replace stale credentials after phone changes.
+        require(config.has("textReady") && config.has("asrReady") ||
+            config.optString("apiKey").isNotBlank() && config.optString("model").isNotBlank())
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, key())
         val encrypted = cipher.doFinal(payload)
@@ -42,6 +43,16 @@ class WatchConfigStore(private val context: Context) {
             .putString("iv", Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
             .putString("data", Base64.encodeToString(encrypted, Base64.NO_WRAP))
             .apply()
+    }
+
+    fun recordingIssue(config: JSONObject? = load()): String? {
+        val textReady = config != null && config.optBoolean("textReady", true) &&
+            watchServiceReady(config.optString("baseUrl"), config.optString("apiKey"), config.optString("model"))
+        val asr = config?.optJSONObject("asr")
+        val asrReady = asr != null && config?.optBoolean("asrReady", true) != false &&
+            watchServiceReady(asr.optString("baseUrl"), asr.optString("apiKey"), asr.optString("asrModel")) &&
+            asr.optString("protocol") in setOf("openAi", "mimo", "doubao")
+        return missingWatchServices(textReady, asrReady)
     }
 
     fun load(): JSONObject? {
