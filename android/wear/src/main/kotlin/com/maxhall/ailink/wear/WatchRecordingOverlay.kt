@@ -12,14 +12,27 @@ import kotlin.math.log10
 import kotlin.math.sin
 import kotlin.math.sqrt
 
-/** Recording feedback only; the held pointer remains on the button below it. */
-class WatchRecordingOverlay(
+internal enum class WatchReleaseAction {
+    SEND, CANCEL, REVIEW;
+
+    companion object {
+        fun fromDrag(dx: Float, dy: Float): WatchReleaseAction {
+            if (dy > -40f) return SEND
+            if (dx <= -30f) return CANCEL
+            if (dx >= 30f) return REVIEW
+            return SEND
+        }
+    }
+}
+
+/** Recording feedback only; the held pointer remains on the chat below it. */
+internal class WatchRecordingOverlay(
     context: Context,
     private val dark: () -> Boolean,
     private val text: (String) -> String,
 ) : View(context) {
     @Volatile var level = 0f
-    var cancelling = false
+    var releaseAction = WatchReleaseAction.SEND
     private var startedAt = 0L
     private var smoothedLevel = 0f
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -30,7 +43,7 @@ class WatchRecordingOverlay(
         startedAt = SystemClock.elapsedRealtime()
         level = 0f
         smoothedLevel = 0f
-        cancelling = false
+        releaseAction = WatchReleaseAction.SEND
         visibility = VISIBLE
         invalidate()
     }
@@ -41,7 +54,11 @@ class WatchRecordingOverlay(
         val cx = width / 2f
         val cy = height / 2f
         val top = cy - 99 * density
-        val accent = if (cancelling) Color.rgb(255, 69, 58) else Color.rgb(24, 126, 240)
+        val accent = when (releaseAction) {
+            WatchReleaseAction.CANCEL -> Color.rgb(255, 69, 58)
+            WatchReleaseAction.REVIEW -> Color.rgb(48, 176, 89)
+            WatchReleaseAction.SEND -> Color.rgb(24, 126, 240)
+        }
         val foreground = if (dark()) Color.WHITE else Color.rgb(23, 31, 42)
         val secondary = if (dark()) Color.rgb(177, 191, 211) else Color.rgb(77, 92, 111)
         canvas.drawColor(0xA0000000.toInt())
@@ -56,7 +73,7 @@ class WatchRecordingOverlay(
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = 2 * density
         paint.strokeCap = Paint.Cap.ROUND
-        if (cancelling) {
+        if (releaseAction == WatchReleaseAction.CANCEL) {
             canvas.drawLine(cx - 5 * density, micY - 5 * density, cx + 5 * density, micY + 5 * density, paint)
             canvas.drawLine(cx + 5 * density, micY - 5 * density, cx - 5 * density, micY + 5 * density, paint)
         } else {
@@ -67,8 +84,16 @@ class WatchRecordingOverlay(
             canvas.drawLine(cx, micY + 6 * density, cx, micY + 10 * density, paint)
             canvas.drawLine(cx - 4 * density, micY + 10 * density, cx + 4 * density, micY + 10 * density, paint)
         }
-        drawText(canvas, text(if (cancelling) "松开取消录音" else "正在录音"), cx,
-            top + 66 * density, 13f, foreground, true)
+        drawTarget(canvas, cx - 61 * density, top + 28 * density, "↖", "取消",
+            releaseAction == WatchReleaseAction.CANCEL, Color.rgb(255, 69, 58), secondary)
+        drawTarget(canvas, cx + 61 * density, top + 28 * density, "↗", "转文字",
+            releaseAction == WatchReleaseAction.REVIEW, Color.rgb(48, 176, 89), secondary)
+        val title = when (releaseAction) {
+            WatchReleaseAction.CANCEL -> "松开取消录音"
+            WatchReleaseAction.REVIEW -> "松开转文字"
+            WatchReleaseAction.SEND -> "正在录音"
+        }
+        drawText(canvas, text(title), cx, top + 66 * density, 13f, foreground, true)
 
         smoothedLevel += (level - smoothedLevel) * .22f
         paint.style = Paint.Style.FILL
@@ -85,10 +110,26 @@ class WatchRecordingOverlay(
         val seconds = elapsed / 1000
         val time = "%02d:%02d.%d".format(java.util.Locale.ROOT, seconds / 60, seconds % 60, elapsed % 1000 / 100)
         drawText(canvas, time, cx, top + 136 * density, 22f, foreground, true)
-        drawText(canvas, text(if (cancelling) "松开取消" else "松开转写"), cx,
-            top + 158 * density, 11f, if (cancelling) accent else secondary)
-        if (!cancelling) drawText(canvas, text("上滑取消"), cx, top + 177 * density, 10f, secondary)
+        val hint = when (releaseAction) {
+            WatchReleaseAction.CANCEL -> "松开取消"
+            WatchReleaseAction.REVIEW -> "识别后确认发送"
+            WatchReleaseAction.SEND -> "松开发送"
+        }
+        drawText(canvas, text(hint), cx, top + 158 * density, 11f,
+            if (releaseAction == WatchReleaseAction.SEND) secondary else accent)
+        drawText(canvas, text("左上取消 · 右上确认"), cx, top + 177 * density, 10f, secondary)
         if (visibility == VISIBLE) postInvalidateOnAnimation()
+    }
+
+    private fun drawTarget(canvas: Canvas, x: Float, y: Float, arrow: String, label: String,
+                           selected: Boolean, accent: Int, secondary: Int) {
+        if (selected) {
+            paint.style = Paint.Style.FILL
+            paint.color = accent
+            canvas.drawCircle(x, y, 16 * density, paint)
+        }
+        drawText(canvas, arrow, x, y + 5 * density, 16f, if (selected) Color.WHITE else secondary, true)
+        drawText(canvas, text(label), x, y + 30 * density, 9f, if (selected) accent else secondary)
     }
 
     private fun drawText(canvas: Canvas, value: String, x: Float, y: Float,

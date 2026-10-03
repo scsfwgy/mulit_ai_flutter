@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
@@ -30,10 +29,8 @@ import 'settings_screen.dart';
 import 'topic_screen.dart';
 import 'voice_client.dart';
 import 'voice_settings_screen.dart';
-import 'voice_send_preference.dart';
 import 'voice_recording_overlay.dart';
 import 'watch_chat.dart';
-import 'watch_settings_screen.dart';
 
 enum _ChatErrorAction { none, configure, model, request, retry }
 
@@ -144,9 +141,6 @@ class ChatHome extends StatefulWidget {
 
 class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   static const _watchUpdates = MethodChannel('between_models/watch_updates');
-  static const _companionInstall = MethodChannel(
-    'between_models/companion_install',
-  );
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _input = TextEditingController();
   final _inputFocus = FocusNode();
@@ -157,12 +151,14 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   bool _recording = false;
   bool _voiceMode = false;
   bool _voicePointerDown = false;
-  bool _voiceCancelOnRelease = false;
-  double _voiceStartY = 0;
+  int? _voicePointer;
+  double _voiceStartX = 0;
   OverlayEntry? _voiceOverlay;
   final _recordElapsedMs = ValueNotifier<int>(0);
   final _recordLevel = ValueNotifier<double>(.1);
-  final _voiceCancelling = ValueNotifier<bool>(false);
+  final _voiceReleaseAction = ValueNotifier<VoiceReleaseAction>(
+    VoiceReleaseAction.send,
+  );
   final _recordClock = Stopwatch();
   StreamSubscription<Amplitude>? _amplitudeSubscription;
   bool _transcribing = false;
@@ -188,7 +184,6 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   bool _sending = false;
   bool _watchProcessing = false;
   bool _cancelRequested = false;
-  bool _watchInstallChecked = false;
   int? _sendingTopicId;
 
   int? get _currentProviderId => _topic?.providerId ?? _draftProviderId;
@@ -240,7 +235,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     _hideVoiceOverlay();
     _recordElapsedMs.dispose();
     _recordLevel.dispose();
-    _voiceCancelling.dispose();
+    _voiceReleaseAction.dispose();
     if (_amplitudeSubscription case final subscription?) {
       unawaited(subscription.cancel());
     }
@@ -270,8 +265,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     if (state != AppLifecycleState.resumed) {
       final wasHolding = _voicePointerDown;
       _voicePointerDown = false;
-      _voiceCancelOnRelease = false;
-      _voiceCancelling.value = false;
+      _voicePointer = null;
+      _voiceReleaseAction.value = VoiceReleaseAction.send;
       _hideVoiceOverlay();
       if (wasHolding && mounted) setState(() {});
       if (_recording) unawaited(_cancelRecording());
@@ -321,12 +316,6 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         _loading = false;
       });
       _chatScroll.scrollToLatest(force: initialLoad);
-      if (initialLoad && !_watchInstallChecked) {
-        _watchInstallChecked = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) unawaited(_offerWatchInstall());
-        });
-      }
     } catch (error) {
       if (mounted) {
         setState(() {
@@ -356,66 +345,6 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       ),
     );
     await _load();
-  }
-
-  Future<void> _offerWatchInstall() async {
-    try {
-      final status = await _companionInstall.invokeMapMethod<String, dynamic>(
-        'watchStatus',
-      );
-      final missing = (status?['missing'] as List<dynamic>? ?? [])
-          .whereType<Map>()
-          .map((item) => item['id']?.toString() ?? '')
-          .where((id) => id.isNotEmpty)
-          .toSet();
-      if (missing.isEmpty || !mounted) return;
-      final rawDismissed = await ChatStore.instance.setting(
-        'watch_install_prompt_dismissed',
-      );
-      final dismissed = <String>{};
-      if (rawDismissed != null) {
-        try {
-          dismissed.addAll(
-            (jsonDecode(rawDismissed) as List<dynamic>).whereType<String>(),
-          );
-        } catch (_) {
-          // Ignore an invalid optional reminder preference.
-        }
-      }
-      if (missing.difference(dismissed).isEmpty || !mounted) return;
-      final install = await showCupertinoDialog<bool>(
-        context: context,
-        builder: (context) => CupertinoAlertDialog(
-          title: Text(tr('手表端尚未安装')),
-          content: Text(tr('检测到已配对的手表。安装手表应用后，可在手表上语音提问。')),
-          actions: [
-            CupertinoDialogAction(
-              child: Text(tr('稍后')),
-              onPressed: () => Navigator.pop(context, false),
-            ),
-            CupertinoDialogAction(
-              isDefaultAction: true,
-              child: Text(tr('去安装')),
-              onPressed: () => Navigator.pop(context, true),
-            ),
-          ],
-        ),
-      );
-      if (!mounted) return;
-      if (install == true) {
-        await Navigator.push<void>(
-          context,
-          CupertinoPageRoute(builder: (_) => const WatchSettingsScreen()),
-        );
-      } else {
-        await ChatStore.instance.saveSetting(
-          'watch_install_prompt_dismissed',
-          jsonEncode({...dismissed, ...missing}.toList()),
-        );
-      }
-    } catch (_) {
-      // Companion discovery should never interrupt chat startup.
-    }
   }
 
   void _openTopics() => _scaffoldKey.currentState?.openDrawer();
@@ -667,8 +596,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         if (!mounted) return;
         _recordElapsedMs.value = _recordClock.elapsedMilliseconds;
         if (_recordElapsedMs.value >= 60000) {
-          _endVoicePress();
-          unawaited(_finishRecording());
+          _completeVoiceRecording();
         }
       });
     } catch (_) {
@@ -696,7 +624,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     if (path != null) await File(path).delete().catchError((_) => File(path));
   }
 
-  Future<void> _finishRecording() async {
+  Future<void> _finishRecording({required bool reviewBeforeSending}) async {
     if (!_recording) return;
     if (_recordClock.elapsedMilliseconds < 600) {
       await _cancelRecording();
@@ -731,9 +659,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       client = VoiceClient(service, key);
       final transcript = await client.transcribe(data);
       if (!mounted) return;
-      sendAfterTranscription = VoiceSendPreference.autoSend(
-        await ChatStore.instance.setting(VoiceSendPreference.key),
-      );
+      sendAfterTranscription = !reviewBeforeSending;
       final old = _input.text.trim();
       _input.text = old.isEmpty ? transcript : '$old\n$transcript';
       _input.selection = TextSelection.collapsed(offset: _input.text.length);
@@ -765,32 +691,46 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       return;
     }
     _voicePointerDown = true;
-    _voiceCancelOnRelease = false;
-    _voiceCancelling.value = false;
-    _voiceStartY = event.position.dy;
+    _voicePointer = event.pointer;
+    _voiceReleaseAction.value = VoiceReleaseAction.send;
+    _voiceStartX = event.position.dx;
     setState(() {});
     _showVoiceOverlay();
     unawaited(_startRecording());
   }
 
   void _voiceMove(PointerMoveEvent event) {
+    if (!_voicePointerDown || event.pointer != _voicePointer) return;
+    _voiceReleaseAction.value = VoiceReleaseAction.fromDrag(
+      event.position.dx - _voiceStartX,
+    );
+  }
+
+  void _voiceUp(PointerUpEvent event) {
+    if (!_voicePointerDown || event.pointer != _voicePointer) return;
+    _voiceReleaseAction.value = VoiceReleaseAction.fromDrag(
+      event.position.dx - _voiceStartX,
+    );
+    _completeVoiceRecording();
+  }
+
+  void _completeVoiceRecording() {
     if (!_voicePointerDown) return;
-    final cancel = event.position.dy < _voiceStartY - 60;
-    if (cancel != _voiceCancelOnRelease) {
-      _voiceCancelling.value = cancel;
-      setState(() => _voiceCancelOnRelease = cancel);
+    final action = _voiceReleaseAction.value;
+    _endVoicePress();
+    if (_recording) {
+      unawaited(
+        action == VoiceReleaseAction.cancel
+            ? _cancelRecording()
+            : _finishRecording(
+                reviewBeforeSending: action == VoiceReleaseAction.review,
+              ),
+      );
     }
   }
 
-  void _voiceUp() {
-    if (!_voicePointerDown) return;
-    _voicePointerDown = false;
-    final cancel = _voiceCancelOnRelease;
-    _endVoicePress();
-    if (_recording) unawaited(cancel ? _cancelRecording() : _finishRecording());
-  }
-
-  void _voiceCancel() {
+  void _voiceCancel(PointerCancelEvent event) {
+    if (event.pointer != _voicePointer) return;
     _endVoicePress();
     if (_recording) unawaited(_cancelRecording());
   }
@@ -801,7 +741,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       builder: (_) => VoiceRecordingOverlay(
         elapsedMs: _recordElapsedMs,
         level: _recordLevel,
-        cancelling: _voiceCancelling,
+        releaseAction: _voiceReleaseAction,
       ),
     );
     Overlay.of(context, rootOverlay: true).insert(_voiceOverlay!);
@@ -815,8 +755,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
 
   void _endVoicePress() {
     _voicePointerDown = false;
-    _voiceCancelOnRelease = false;
-    _voiceCancelling.value = false;
+    _voicePointer = null;
+    _voiceReleaseAction.value = VoiceReleaseAction.send;
     _hideVoiceOverlay();
     if (mounted) setState(() {});
   }
@@ -1272,9 +1212,13 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           : Column(
               children: [
                 Expanded(
-                  child: _topic == null && !_hasDraft
-                      ? _welcome()
-                      : _chatList(),
+                  child: Listener(
+                    behavior: HitTestBehavior.opaque,
+                    onPointerDown: (_) => _inputFocus.unfocus(),
+                    child: _topic == null && !_hasDraft
+                        ? _welcome()
+                        : _chatList(),
+                  ),
                 ),
                 if (_error != null) _errorCard(),
                 _composer(),
@@ -1608,13 +1552,13 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                 child: _voiceMode
                     ? Semantics(
                         button: true,
-                        label: tr('按住说话，松开识别'),
+                        label: tr('按住说话，松开发送，左滑取消，右滑转文字'),
                         child: Listener(
                           behavior: HitTestBehavior.opaque,
                           onPointerDown: _voiceDown,
                           onPointerMove: _voiceMove,
-                          onPointerUp: (_) => _voiceUp(),
-                          onPointerCancel: (_) => _voiceCancel(),
+                          onPointerUp: _voiceUp,
+                          onPointerCancel: _voiceCancel,
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 120),
                             height: 44,

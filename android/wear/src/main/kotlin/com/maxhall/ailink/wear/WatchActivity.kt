@@ -19,7 +19,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.net.Uri
-import android.text.TextUtils
+import android.view.GestureDetector
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -68,23 +68,25 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
     private lateinit var status: TextView
     private lateinit var transcript: TextView
     private lateinit var answer: TextView
-    private lateinit var action: TextView
+    private lateinit var confirmation: TextView
     private lateinit var retry: TextView
     private lateinit var sound: TextView
     private lateinit var companion: TextView
+    private lateinit var emptyChat: TextView
     private lateinit var history: LinearLayout
-    private lateinit var historyHint: TextView
     private lateinit var historyScroll: ScrollView
     private lateinit var pages: FrameLayout
     private lateinit var settingsStatus: TextView
     private lateinit var configSummary: TextView
-    private lateinit var autoSendSwitch: Switch
     private lateinit var speakSwitch: Switch
     private lateinit var recordingOverlay: WatchRecordingOverlay
     private val localizedLabels = mutableMapOf<TextView, String>()
     private var page = 0
-    private var swipeStartX = 0f
-    private var swipeStartY = 0f
+    private var consumeDoubleTap = false
+    private var holdingChat = false
+    private var chatBusy = false
+    private var showingGuide = false
+    private lateinit var chatGestures: GestureDetector
     private var updatingSettings = false
     private var backCallback: OnBackInvokedCallback? = null
     private var phoneNodeId: String? = null
@@ -101,7 +103,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
     private var requestId: String? = null
     private var pendingTranscript: String? = null
     private var awaitingConfirmation = false
-    private var cancelOnRelease = false
+    private var pressStartX = 0f
     private var pressStartY = 0f
     private var player: MediaPlayer? = null
     private var playingFile: File? = null
@@ -130,20 +132,14 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         renderHistory()
         refreshSettings()
         showPage(savedInstanceState?.getInt("page") ?: 0)
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            if (getPreferences(MODE_PRIVATE).getBoolean("pending", false)) {
-                status.text = watchText("正在等待手机回复…")
-                action.text = watchText("请稍候")
-                action.isEnabled = false
-                val sentAt = getPreferences(MODE_PRIVATE).getLong("sentAt", 0)
-                handler.postDelayed(
-                    requestTimeout,
-                    (250_000 - (System.currentTimeMillis() - sentAt)).coerceAtLeast(0),
-                )
-            }
-        } else {
-            status.text = watchText("请允许手表使用麦克风")
-            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 10)
+        if (getPreferences(MODE_PRIVATE).getBoolean("pending", false)) {
+            status.text = watchText("正在等待手机回复…")
+            chatBusy = true
+            val sentAt = getPreferences(MODE_PRIVATE).getLong("sentAt", 0)
+            handler.postDelayed(
+                requestTimeout,
+                (250_000 - (System.currentTimeMillis() - sentAt)).coerceAtLeast(0),
+            )
         }
     }
 
@@ -195,8 +191,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
                         val issue = configStore.recordingIssue()
                         status.text = issue?.let(::watchText) ?: ""
                         settingsStatus.text = issue?.let(::watchText) ?: watchText("配置已同步，可以提问")
-                        action.text = watchText(if (issue == null) "按住说话" else "配置服务")
-                        action.isEnabled = true
+                        chatBusy = false
                         companion.visibility = if (phoneNodeId == null) View.GONE else View.VISIBLE
                         companion.text = watchText("同步手机配置")
                     }
@@ -227,13 +222,11 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
                             companion.text = if (phoneNodeId == null) watchText("重新检查连接") else watchText("在手机安装应用")
                             status.text = if (phoneNodeId == null)
                                 watchText("尚未连接手机数据通道，请完成 Wear OS 配套应用设置") else watchText("请在手机安装应用并配置模型")
-                            action.isEnabled = false
-                            action.text = watchText("等待手机配置")
+                            chatBusy = false
                         } else if (!directBusy && !recording) {
                             companion.visibility = View.GONE
                             status.text = watchText("手机未连接，可用手表 Wi-Fi 或蜂窝网络提问")
-                            action.isEnabled = true
-                            action.text = watchText("按住说话")
+                            chatBusy = false
                         }
                     } else {
                         phoneNodeId = phone.id
@@ -242,8 +235,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
                         if (companionWarning && !recording && !directBusy &&
                             !getPreferences(MODE_PRIVATE).getBoolean("pending", false)) {
                             status.text = configStore.recordingIssue()?.let(::watchText) ?: ""
-                            action.text = watchText(if (ready) "按住说话" else "配置服务")
-                            action.isEnabled = true
+                            chatBusy = false
                         }
                         companionWarning = false
                     }
@@ -381,13 +373,8 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
                     else -> watchText("正在处理…")
                 }
                 awaitingConfirmation = stage == "awaiting_confirmation"
-                action.text = when (stage) {
-                    "awaiting_confirmation" -> watchText("确认发送")
-                    "complete", "error" -> watchText("按住再说")
-                    else -> watchText("请稍候")
-                }
-                action.isEnabled = stage == "awaiting_confirmation" || stage == "complete" || stage == "error"
-                retry.visibility = if (awaitingConfirmation) View.VISIBLE else View.GONE
+                chatBusy = stage != "awaiting_confirmation" && stage != "complete" && stage != "error"
+                setConfirmationVisible(awaitingConfirmation)
                 if (stage == "complete" || stage == "error" || awaitingConfirmation) {
                     handler.removeCallbacks(requestTimeout)
                     getPreferences(MODE_PRIVATE).edit().putBoolean("pending", false).apply()
@@ -427,7 +414,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         stopPlayback()
         awaitingConfirmation = false
         pendingTranscript = null
-        retry.visibility = View.GONE
+        setConfirmationVisible(false)
         pendingPcm = null
         val previousId = requestId
         requestId = null
@@ -472,7 +459,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             status.text = ""
             transcript.text = ""
             answer.text = ""
-            action.isEnabled = true
+            chatBusy = false
             audio.startRecording()
             recordingStartedAtMs = SystemClock.elapsedRealtime()
             recordingOverlay.start()
@@ -505,6 +492,11 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
 
     private fun finishRecording() {
         if (!recording) return
+        val releaseAction = recordingOverlay.releaseAction
+        if (releaseAction == WatchReleaseAction.CANCEL) {
+            cancelRecording()
+            return
+        }
         val durationMs = SystemClock.elapsedRealtime() - recordingStartedAtMs
         recording = false
         recordingOverlay.visibility = View.GONE
@@ -524,8 +516,8 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             return
         }
         status.text = watchText("正在选择网络并识别语音…")
-        action.text = watchText("请稍候")
-        action.isEnabled = false
+        historyScroll.post { historyScroll.fullScroll(View.FOCUS_UP) }
+        chatBusy = true
         val id = UUID.randomUUID().toString()
         requestId = id
         lastAudioId = null
@@ -546,15 +538,14 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
                         pendingTranscript = text
                     }
                 }
-                if (!watchSettings.getBoolean("autoSend", config.optBoolean("autoSend", true))) {
+                if (releaseAction == WatchReleaseAction.REVIEW) {
                     directBusy = false
                     handler.post {
                         if (requestId == id) {
                             awaitingConfirmation = true
                             status.text = watchText("请确认识别文字")
-                            action.text = watchText("确认发送")
-                            action.isEnabled = true
-                            retry.visibility = View.VISIBLE
+                            chatBusy = false
+                            setConfirmationVisible(true)
                         }
                     }
                 } else {
@@ -582,7 +573,6 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         pendingPcm = null
         if (::status.isInitialized) {
             status.text = if (accidental) "" else watchText("录音已取消")
-            action.text = watchText("按住说话")
         }
     }
 
@@ -595,10 +585,9 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             return
         }
         awaitingConfirmation = false
-        retry.visibility = View.GONE
+        setConfirmationVisible(false)
         status.text = watchText("正在请求模型…")
-        action.text = watchText("请稍候")
-        action.isEnabled = false
+        chatBusy = true
         directBusy = true
         executor.execute {
             try {
@@ -689,8 +678,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
                 transcript.text = ""
                 answer.text = ""
                 status.text = ""
-                action.text = watchText("按住再说")
-                action.isEnabled = true
+                chatBusy = false
             }
         }
         if (watchSettings.getBoolean("speak", config.optBoolean("speak", false))) {
@@ -778,10 +766,9 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
     private fun resetForRecording() {
         awaitingConfirmation = false
         pendingTranscript = null
-        retry.visibility = View.GONE
+        setConfirmationVisible(false)
         status.text = ""
-        action.text = watchText("按住说话")
-        action.isEnabled = true
+        chatBusy = false
     }
 
     private fun wav(pcm: ByteArray): ByteArray {
@@ -832,41 +819,69 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         handler.removeCallbacks(requestTimeout)
         getPreferences(MODE_PRIVATE).edit().putBoolean("pending", false).apply()
         status.text = watchText(message)
-        action.text = watchText("按住重试")
-        action.isEnabled = true
+        chatBusy = false
         awaitingConfirmation = false
-        retry.visibility = View.GONE
+        setConfirmationVisible(false)
     }
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                swipeStartX = event.rawX
-                swipeStartY = event.rawY
+        if (consumeDoubleTap) {
+            chatGestures.onTouchEvent(event)
+            if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                consumeDoubleTap = false
             }
-            MotionEvent.ACTION_UP -> {
-                val dx = event.rawX - swipeStartX
-                val dy = event.rawY - swipeStartY
-                val threshold = 55 * resources.displayMetrics.density
-                if (!recording && kotlin.math.abs(dx) > threshold &&
-                    kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.3f) {
-                    val next = if (dx < 0) 1 else 0
-                    if (next != page) {
-                        showPage(next)
-                        return true
+            return true
+        }
+        if (page != 0 || showingGuide) return super.dispatchTouchEvent(event)
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            pressStartX = event.rawX
+            pressStartY = event.rawY
+            holdingChat = false
+            recordingOverlay.releaseAction = WatchReleaseAction.SEND
+        }
+        chatGestures.onTouchEvent(event)
+        if (consumeDoubleTap) return true
+        if (holdingChat) {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_MOVE -> {
+                    recordingOverlay.releaseAction = WatchReleaseAction.fromDrag(
+                        (event.rawX - pressStartX) / resources.displayMetrics.density,
+                        (event.rawY - pressStartY) / resources.displayMetrics.density,
+                    )
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (recording) {
+                        recordingOverlay.releaseAction = WatchReleaseAction.fromDrag(
+                            (event.rawX - pressStartX) / resources.displayMetrics.density,
+                            (event.rawY - pressStartY) / resources.displayMetrics.density,
+                        )
+                        finishRecording()
                     }
+                    holdingChat = false
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    if (recording) cancelRecording()
+                    holdingChat = false
                 }
             }
+            return true
         }
         return super.dispatchTouchEvent(event)
     }
 
     private fun showPage(index: Int) {
+        if (index != 0 && recording) cancelRecording()
         page = index
-        pages.getChildAt(0).visibility = if (index == 0) View.VISIBLE else View.GONE
+        showingGuide = index == 0 && !watchSettings.getBoolean("gestureGuideSeen", false)
+        pages.getChildAt(0).visibility = if (index == 0 && !showingGuide) View.VISIBLE else View.GONE
         pages.getChildAt(1).visibility = if (index == 1) View.VISIBLE else View.GONE
-        if (index == 0) historyScroll.post { historyScroll.fullScroll(View.FOCUS_UP) }
-        else refreshSettings()
+        pages.getChildAt(2).visibility = if (showingGuide) View.VISIBLE else View.GONE
+        if (index == 1) refreshSettings()
+    }
+
+    private fun setConfirmationVisible(visible: Boolean) {
+        confirmation.visibility = if (visible) View.VISIBLE else View.GONE
+        retry.visibility = if (visible) View.VISIBLE else View.GONE
     }
 
     private fun refreshSettings() {
@@ -874,8 +889,6 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         configSummary.text = configStore.recordingIssue(config)?.let(::watchText)
             ?: "${config?.optString("providerName")} · ${config?.optString("model")}"
         updatingSettings = true
-        autoSendSwitch.isChecked = watchSettings.getBoolean(
-            "autoSend", config?.optBoolean("autoSend", true) ?: true)
         speakSwitch.isChecked = watchSettings.getBoolean(
             "speak", config?.optBoolean("speak", false) ?: false)
         updatingSettings = false
@@ -886,126 +899,100 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         val turns = try {
             JSONArray(conversation.getString("turns", "[]"))
         } catch (_: Exception) { JSONArray() }
-        if (turns.length() == 0) {
-            history.addView(label(watchText("还没有问答"), 13f, secondaryColor))
-        } else {
-            for (index in turns.length() - 1 downTo 0) {
-                val turn = turns.optJSONObject(index) ?: continue
-                val latest = index == turns.length() - 1
-                val question = label(
-                    if (latest) "${watchText("我")} · ${turn.optString("transcript")}"
-                    else "${turn.optString("transcript")} → ${readable(turn.optString("answer"))}",
-                    12f, secondaryColor,
-                ).apply {
-                    gravity = Gravity.START
-                    if (!latest) {
-                        isSingleLine = true
-                        ellipsize = TextUtils.TruncateAt.END
-                    }
-                }
-                val response = label(
-                    readable(turn.optString("answer")), 15f, primaryColor,
-                ).apply {
-                    gravity = Gravity.START
-                    setPadding(0, 4, 0, if (latest) 40 else 14)
-                    if (!latest) visibility = View.GONE
-                }
-                if (!latest) question.setOnClickListener {
-                    response.visibility = if (response.visibility == View.VISIBLE) View.GONE else View.VISIBLE
-                }
-                history.addView(question)
-                history.addView(response)
-            }
+        for (index in turns.length() - 1 downTo 0) {
+            val turn = turns.optJSONObject(index) ?: continue
+            history.addView(label("${watchText("我")} · ${turn.optString("transcript")}",
+                12f, secondaryColor).apply {
+                gravity = Gravity.START
+            })
+            history.addView(label(readable(turn.optString("answer")), 15f, primaryColor).apply {
+                gravity = Gravity.START
+                setPadding(0, 4, 0, 18)
+            })
         }
-        historyHint.visibility = if (turns.length() > 1) View.VISIBLE else View.GONE
+        updateEmptyChat()
         historyScroll.post { historyScroll.fullScroll(View.FOCUS_UP) }
+    }
+
+    private fun updateEmptyChat() {
+        if (!::emptyChat.isInitialized || !::history.isInitialized || !::answer.isInitialized) return
+        emptyChat.visibility = if (history.childCount == 0 && transcript.text.isEmpty() &&
+            answer.text.isEmpty() && status.text.isEmpty()) View.VISIBLE else View.GONE
     }
 
     private fun buildScreen() {
         pages = FrameLayout(this)
-        val chatPage = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(34, 27, 34, 49)
-            setBackgroundColor(backgroundColor)
-        }
-        chatPage.addView(uiLabel("最近问答  ›", 15f, primaryColor, true).apply {
-            setOnClickListener { showPage(1) }
+        chatGestures = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(event: MotionEvent): Boolean = true
+
+            override fun onDoubleTap(event: MotionEvent): Boolean {
+                consumeDoubleTap = true
+                showPage(1)
+                // Prevent the second tap from also activating a control below it.
+                val cancel = MotionEvent.obtain(event).apply { action = MotionEvent.ACTION_CANCEL }
+                super@WatchActivity.dispatchTouchEvent(cancel)
+                cancel.recycle()
+                return true
+            }
+
+            override fun onLongPress(event: MotionEvent) {
+                if (chatBusy || directBusy || showingGuide || page != 0) return
+                holdingChat = true
+                val cancel = MotionEvent.obtain(event).apply { action = MotionEvent.ACTION_CANCEL }
+                super@WatchActivity.dispatchTouchEvent(cancel)
+                cancel.recycle()
+                startRecording()
+            }
         })
-        status = label("", 12f, secondaryColor)
-        status.setPadding(0, 4, 0, 4)
-        chatPage.addView(status)
-        historyScroll = ScrollView(this).apply { isFillViewport = true }
+        historyScroll = ScrollView(this).apply {
+            isFillViewport = true
+            setBackgroundColor(backgroundColor)
+            isVerticalScrollBarEnabled = true
+        }
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.TOP
+            val density = resources.displayMetrics.density
+            val round = resources.configuration.isScreenRound
+            val horizontal = (if (round) 26 else 12) * density
+            val top = (if (round) 40 else 20) * density
+            val bottom = (if (round) 40 else 24) * density
+            setPadding(horizontal.toInt(), top.toInt(), horizontal.toInt(), bottom.toInt())
         }
-        transcript = label("", 13f, mutedColor)
-        transcript.gravity = Gravity.START
-        transcript.setPadding(0, 6, 0, 5)
+        status = label("", 12f, secondaryColor, hideWhenEmpty = true)
+        status.setPadding(0, 0, 0, 8)
+        content.addView(status)
+        transcript = label("", 12f, mutedColor, hideWhenEmpty = true).apply {
+            gravity = Gravity.START
+            setPadding(0, 0, 0, 5)
+        }
         content.addView(transcript)
-        answer = label("", 15f, primaryColor)
-        answer.gravity = Gravity.START
-        content.addView(answer, LinearLayout.LayoutParams(-1, -2))
-        history = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        content.addView(history)
-        historyScroll.addView(content)
-        chatPage.addView(historyScroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        historyHint = uiLabel("上滑查看更早问答", 11f, secondaryColor).apply {
-            visibility = View.GONE
-            setPadding(0, 0, 0, 7)
+        answer = label("", 15f, primaryColor, hideWhenEmpty = true).apply {
+            gravity = Gravity.START
+            setPadding(0, 0, 0, 18)
         }
-        chatPage.addView(historyHint)
-        action = label(watchText("按住说话"), 16f, Color.WHITE, true).apply {
-            gravity = Gravity.CENTER
-            setPadding(16, 12, 16, 12)
+        content.addView(answer)
+        confirmation = uiLabel("确认发送", 14f, Color.WHITE, true).apply {
+            visibility = View.GONE
+            setPadding(12, 10, 12, 10)
             background = GradientDrawable().apply {
                 setColor(Color.rgb(24, 126, 240))
                 cornerRadius = 40f
             }
-            setOnTouchListener { _, event ->
-                if (!isEnabled) return@setOnTouchListener true
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> {
-                        pressStartY = event.rawY
-                        cancelOnRelease = false
-                        if (!awaitingConfirmation) startRecording()
-                        true
-                    }
-                    MotionEvent.ACTION_MOVE -> {
-                        if (recording) {
-                            val cancel = event.rawY < pressStartY - 65 * resources.displayMetrics.density
-                            if (cancel != cancelOnRelease) {
-                                cancelOnRelease = cancel
-                                recordingOverlay.cancelling = cancel
-                            }
-                        }
-                        true
-                    }
-                    MotionEvent.ACTION_UP -> {
-                        if (awaitingConfirmation) confirmTranscript()
-                        else if (recording) {
-                            if (cancelOnRelease) cancelRecording() else finishRecording()
-                        }
-                        true
-                    }
-                    MotionEvent.ACTION_CANCEL -> {
-                        if (recording) cancelRecording()
-                        true
-                    }
-                    else -> true
-                }
-            }
+            setOnClickListener { confirmTranscript() }
         }
-        chatPage.addView(action, LinearLayout.LayoutParams(
-            (resources.displayMetrics.widthPixels * 0.66f).toInt(), -2,
-        ))
+        content.addView(confirmation)
         retry = uiLabel("重新录音", 12f, secondaryColor).apply {
             visibility = View.GONE
-            setPadding(0, 8, 0, 0)
+            setPadding(0, 8, 0, 12)
             setOnClickListener { resetForRecording() }
         }
-        chatPage.addView(retry)
+        content.addView(retry)
+        history = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        content.addView(history)
+        emptyChat = uiLabel("还没有问答", 13f, secondaryColor).apply { gravity = Gravity.START }
+        content.addView(emptyChat)
+        historyScroll.addView(content)
 
         val settingsScroll = ScrollView(this).apply {
             visibility = View.GONE
@@ -1025,15 +1012,6 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         configSummary = label(watchText("等待手机配置"), 12f, mutedColor)
         configSummary.setPadding(0, 0, 0, 8)
         settingsPage.addView(configSummary)
-        autoSendSwitch = Switch(this).apply {
-            text = watchText("识别后自动发送")
-            textSize = 13f
-            setTextColor(primaryColor)
-            setOnCheckedChangeListener { _, checked ->
-                if (!updatingSettings) watchSettings.edit().putBoolean("autoSend", checked).apply()
-            }
-        }
-        settingsPage.addView(autoSendSwitch)
         speakSwitch = Switch(this).apply {
             text = watchText("自动播报回答")
             textSize = 13f
@@ -1064,9 +1042,30 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         }
         settingsPage.addView(sound)
         settingsPage.addView(uiLabel("模型与语音服务在手机端设置", 11f, secondaryColor))
+        settingsPage.addView(uiLabel("长按屏幕说话，松手发送；左上滑取消，右上滑转文字后确认。", 11f, secondaryColor))
+        settingsPage.addView(uiLabel("双击聊天进入设置，上下滑动查看聊天。", 11f, secondaryColor))
         settingsScroll.addView(settingsPage)
-        pages.addView(chatPage)
+        val guide = ScrollView(this).apply { setBackgroundColor(backgroundColor) }
+        guide.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            val density = resources.displayMetrics.density
+            setPadding((26 * density).toInt(), (20 * density).toInt(), (26 * density).toInt(), (24 * density).toInt())
+            addView(uiLabel("开始聊天", 18f, primaryColor, true))
+            for (key in listOf("长按屏幕说话，松手发送；左上滑取消，右上滑转文字后确认。", "双击聊天进入设置，上下滑动查看聊天。")) {
+                addView(uiLabel(key, 13f, secondaryColor).apply { setPadding(0, 10, 0, 10) })
+            }
+            addView(uiLabel("知道了", 15f, accentColor, true).apply {
+                setPadding(0, 12, 0, 12)
+                setOnClickListener {
+                    watchSettings.edit().putBoolean("gestureGuideSeen", true).apply()
+                    showPage(0)
+                }
+            })
+        })
+        pages.addView(historyScroll)
         pages.addView(settingsScroll)
+        pages.addView(guide)
         recordingOverlay = WatchRecordingOverlay(this, { darkMode }, ::watchText).apply {
             visibility = View.GONE
         }
@@ -1079,10 +1078,9 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         phoneLanguage = language
         watchSettings.edit().putString("language", language).apply()
         for ((view, key) in localizedLabels) view.text = watchText(key)
-        for (view in listOf(status, action, companion, settingsStatus)) {
+        for (view in listOf(status, companion, settingsStatus)) {
             view.text = watchText(view.text.toString())
         }
-        autoSendSwitch.text = watchText("识别后自动发送")
         speakSwitch.text = watchText("自动播报回答")
         val scrollY = historyScroll.scrollY
         renderHistory()
@@ -1097,12 +1095,22 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
     private fun uiLabel(key: String, size: Float, color: Int, bold: Boolean = false) =
         label(watchText(key), size, color, bold).also { localizedLabels[it] = key }
 
-    private fun label(text: String, size: Float, color: Int, bold: Boolean = false) =
-        TextView(this).apply {
+    private fun label(text: String, size: Float, color: Int, bold: Boolean = false,
+                      hideWhenEmpty: Boolean = false) =
+        object : TextView(this) {
+            override fun onTextChanged(text: CharSequence?, start: Int, before: Int, count: Int) {
+                super.onTextChanged(text, start, before, count)
+                if (hideWhenEmpty) {
+                    visibility = if (text.isNullOrEmpty()) View.GONE else View.VISIBLE
+                    updateEmptyChat()
+                }
+            }
+        }.apply {
             this.text = text
             textSize = size
             setTextColor(color)
             gravity = Gravity.CENTER
+            if (hideWhenEmpty && text.isEmpty()) visibility = View.GONE
             if (bold) setTypeface(null, Typeface.BOLD)
         }
 }

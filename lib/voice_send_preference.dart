@@ -1,6 +1,6 @@
 class VoiceSendPreference {
   static const key = 'voice_auto_send';
 
-  // Existing installations have no stored value; immediate sending is the default.
+  // Legacy watch requests can omit this value; default to immediate sending.
   static bool autoSend(String? value) => value != '0';
 }

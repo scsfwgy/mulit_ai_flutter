@@ -2,6 +2,13 @@ package com.maxhall.ailink.wear
 
 // Phone app preferences are the source of the watch UI language.
 internal val watchTranslations = mapOf(
+    "松开发送" to "Release to send",
+    "松开转文字" to "Release to transcribe",
+    "识别后确认发送" to "Review before sending",
+    "取消" to "Cancel",
+    "转文字" to "Text",
+    "左上取消 · 右上确认" to "↖ Cancel · Review ↗",
+    "长按屏幕说话，松手发送；左上滑取消，右上滑转文字后确认。" to "Hold to speak, release to send. Slide up-left to cancel, up-right to review text.",
     "正在录音" to "Recording",
     "配置服务" to "Set up services",
     "需要配置服务" to "Services required",
@@ -38,7 +45,9 @@ internal val watchTranslations = mapOf(
     "无法打开手机商店，请手动安装手机应用" to "Cannot open phone store. Install the phone app manually",
     "无法打开手表麦克风" to "Cannot open watch microphone",
     "暂时无法检查手机连接" to "Cannot check phone connection",
-    "最近问答  ›" to "Recent chats  ›",
+    "开始聊天" to "Start chatting",
+    "长按屏幕说话，松开转写；上滑松开取消。" to "Hold the screen to speak. Release to transcribe; slide up and release to cancel.",
+    "双击聊天进入设置，上下滑动查看聊天。" to "Double-tap the chat for settings. Swipe up or down to read.",
     "松开取消录音" to "Release to cancel",
     "松开后转写语音" to "Release to transcribe",
     "松开识别 · 上滑取消" to "Release to transcribe · Swipe up to cancel",

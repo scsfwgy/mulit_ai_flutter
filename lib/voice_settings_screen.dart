@@ -7,7 +7,6 @@ import 'ios_style.dart';
 import 'provider_qr_scanner.dart';
 import 'voice_catalog.dart';
 import 'voice_catalog_picker.dart';
-import 'voice_send_preference.dart';
 
 class VoiceSettingsScreen extends StatefulWidget {
   const VoiceSettingsScreen({super.key});
@@ -20,7 +19,6 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
   String? _asrId;
   String? _ttsId;
   bool _autoRead = false;
-  bool _autoSend = true;
 
   @override
   void initState() {
@@ -44,14 +42,12 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
       }
     }
     final auto = await store.setting('voice_auto_read');
-    final autoSend = await store.setting(VoiceSendPreference.key);
     if (mounted) {
       setState(() {
         _services = services;
         _asrId = asr;
         _ttsId = tts;
         _autoRead = auto == '1';
-        _autoSend = VoiceSendPreference.autoSend(autoSend);
       });
     }
   }
@@ -111,7 +107,9 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
       child: ListView(
         children: [
           IosSection(
-            footer: tr('按住录音，松开后转写。转写后是否直接发送同时适用于手机和手表；朗读声音由 AI 生成。'),
+            footer: tr(
+              '手机按住录音，左滑取消，右滑转文字后确认，直接松手发送。手表左上滑取消，右上滑确认。朗读声音由 AI 生成。',
+            ),
             children: [
               IosRow(
                 title: '语音识别服务',
@@ -124,20 +122,6 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                 subtitle: _name(_ttsId),
                 leading: Icon(CupertinoIcons.speaker_2, color: IosColors.blue),
                 onTap: () => _choose(false),
-              ),
-              IosRow(
-                title: '转写后自动发送',
-                chevron: false,
-                trailing: CupertinoSwitch(
-                  value: _autoSend,
-                  onChanged: (value) async {
-                    await ChatStore.instance.saveSetting(
-                      VoiceSendPreference.key,
-                      value ? '1' : '0',
-                    );
-                    if (mounted) setState(() => _autoSend = value);
-                  },
-                ),
               ),
               IosRow(
                 title: '回复完成后自动朗读',

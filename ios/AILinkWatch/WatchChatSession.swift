@@ -3,6 +3,17 @@ import Combine
 import Foundation
 import WatchConnectivity
 
+enum WatchReleaseAction {
+  case send, cancel, review
+
+  static func fromDrag(_ translation: CGSize) -> WatchReleaseAction {
+    guard translation.height <= -40 else { return .send }
+    if translation.width <= -30 { return .cancel }
+    if translation.width >= 30 { return .review }
+    return .send
+  }
+}
+
 struct WatchTurn: Codable, Identifiable {
   let id: String
   let question: String
@@ -22,9 +33,8 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
   @Published private(set) var elapsed = 0
   @Published private(set) var elapsedMs = 0
   @Published private(set) var level = 0.0
-  @Published var cancelling = false
+  @Published var releaseAction = WatchReleaseAction.send
   @Published private(set) var language = UserDefaults.standard.string(forKey: "ai_link_phone_language") ?? "zh"
-  @Published private(set) var autoSend = true
   @Published private(set) var speak = false
   @Published private(set) var playing = false
   @Published private(set) var syncingSettings = false
@@ -59,8 +69,6 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
       turns = Array(saved.suffix(50))
     }
     let defaults = UserDefaults.standard
-    autoSend = defaults.object(forKey: "ai_link_watch_auto_send") as? Bool
-      ?? defaults.object(forKey: "ai_link_phone_auto_send") as? Bool ?? true
     speak = defaults.object(forKey: "ai_link_watch_speak") as? Bool
       ?? defaults.object(forKey: "ai_link_phone_speak") as? Bool ?? false
     modelSummary = defaults.string(forKey: "ai_link_phone_model_summary") ?? localized("等待手机配置", "Waiting for phone settings")
@@ -100,11 +108,6 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     if phase == "error" { return localized("按住重试", "Hold to retry") }
     if phase == "complete" { return localized("按住再说", "Hold to speak again") }
     return localized("按住说话", "Hold to speak")
-  }
-
-  func setAutoSend(_ value: Bool) {
-    autoSend = value
-    UserDefaults.standard.set(value, forKey: "ai_link_watch_auto_send")
   }
 
   func setSpeak(_ value: Bool) {
@@ -177,11 +180,12 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
 
   func cancelRecording() {
     recordingPreflight = false
-    stopRecording(cancel: true)
+    stopRecording(action: .cancel)
   }
 
   func startRecording() {
     pressActive = true
+    releaseAction = .send
     guard !recording && !busy && !permissionPending && !recordingPreflight else { return }
     guard phoneAvailable else {
       setStatus("请先在 iPhone 安装并打开 AI Link", "Open AI Link on the paired iPhone")
@@ -231,7 +235,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
       elapsedMs = 0
       level = 0
       recording = true
-      setStatus("正在录音，上滑取消", "Recording · slide up to cancel")
+      setStatus("正在录音，左上取消，右上确认", "Recording · up-left cancels, up-right reviews")
       timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
         DispatchQueue.main.async {
           guard let self, self.recording else { return }
@@ -239,7 +243,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
           self.elapsed = self.elapsedMs / 1000
           self.recorder?.updateMeters()
           self.level = min(1, max(0, Double((self.recorder?.averagePower(forChannel: 0) ?? -55) + 55) / 45))
-          if self.elapsed >= 90 { self.stopRecording(cancel: false) }
+          if self.elapsed >= 90 { self.stopRecording(action: self.releaseAction) }
         }
       }
     } catch {
@@ -253,7 +257,8 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     }
   }
 
-  func stopRecording(cancel: Bool) {
+  func stopRecording(action: WatchReleaseAction) {
+    let cancel = action == .cancel
     pressActive = false
     // Keep the preflight pending until its reply so missing setup still shows guidance.
     guard recording else { return }
@@ -264,7 +269,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     timer?.invalidate()
     timer = nil
     recording = false
-    cancelling = false
+    releaseAction = .send
     defer { recordURL = nil }
     guard let url = recordURL else { return }
     if cancel || duration < 0.6 {
@@ -286,7 +291,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     phase = "transcribing"
     scrollGeneration += 1
     setStatus("正在发送录音…", "Sending recording…")
-    let transfer = WCSession.default.transferFile(url, metadata: ["kind": "audio", "id": id, "autoSend": autoSend, "speak": speak])
+    let transfer = WCSession.default.transferFile(url, metadata: ["kind": "audio", "id": id, "autoSend": action == .send, "speak": speak])
     outgoing[transfer] = url
     armRequestTimeout(id: id)
   }
@@ -333,10 +338,6 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
       if let value = update["textReady"] as? Bool { textReady = value }
       if let value = update["asrReady"] as? Bool { asrReady = value }
       let defaults = UserDefaults.standard
-      if let value = update["autoSend"] as? Bool {
-        defaults.set(value, forKey: "ai_link_phone_auto_send")
-        if defaults.object(forKey: "ai_link_watch_auto_send") == nil { autoSend = value }
-      }
       if let value = update["speak"] as? Bool {
         defaults.set(value, forKey: "ai_link_phone_speak")
         if defaults.object(forKey: "ai_link_watch_speak") == nil { speak = value }
