@@ -8,6 +8,7 @@
 - [ ] **配对设备端到端验证**：配对模拟器已验证两页界面和配置摘要同步；在 iPhone 与 Apple Watch 配对真机验证录音权限、WAV 传输、转写确认、流式回答、音频播放、手机后台唤醒、断连重试和历史入库。手表版目前通过 iPhone 执行请求，后台执行时间受系统限制。
 - [ ] **Apple Watch 独立网络**：手机只负责配置；在手表 Keychain 保存必要凭据，直接调用支持的语音和文字协议。手机可达时优先手机网络，明确网络故障再切手表网络；手机不可达时独立请求。需先解决服务能力、密钥同步、上下文和离线同步，避免重复计费。参考 [Apple WatchConnectivity 官方说明](https://developer.apple.com/documentation/WatchConnectivity/transferring-data-with-watch-connectivity) 与 [独立 watchOS 应用说明](https://developer.apple.com/documentation/watchos-apps/creating-independent-watchos-apps/)。
 - [ ] **Apple 发布准备**：核对 Apple Developer 签名、App Store Connect、手表截图及线上隐私政策对 Apple Watch 数据流的描述。细节见 [Apple 平台说明](doc/ios/README.md)。
+- [ ] **重新启用 Apple Watch 复杂功能**：2026-10-03 已实现 WidgetKit 圆形、矩形、行内入口和智能叠放矩形小组件，因本机开发者账号及扩展描述文件未就绪，按用户要求暂时关闭默认构建和嵌入。源码与 target 保留，无 App Groups 要求；账号准备好后恢复 `AILinkWatch` 的扩展构建依赖和嵌入阶段，为新扩展配置签名，再验证表盘添加和点击跳转。具体恢复位置见 [Apple 平台说明](doc/ios/README.md#后续重新启用复杂功能)。
 
 ## 优先：聊天核心体验
 

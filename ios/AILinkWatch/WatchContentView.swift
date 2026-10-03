@@ -36,6 +36,10 @@ struct WatchContentView: View {
       Text(session.configurationGuidance)
     }
     .onAppear { session.refreshPhoneSettings() }
+    .onOpenURL { url in
+      guard WatchChatShortcut.opensChat(url) else { return }
+      page = 0
+    }
     .onChange(of: page) { _, value in
       if value != 0 { session.cancelRecording() }
     }

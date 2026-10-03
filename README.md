@@ -78,6 +78,8 @@ adb -s <手表序列号> install -r build/wear/outputs/apk/debug/wear-debug.apk
 
 在 iPhone 上安装 AI Link，进入「设置 → 语音服务」选择识别服务，再到「设置 → 手表」选择文字模型和可选朗读。通过 iPhone 的 Watch 应用安装配套手表版；Apple Watch 与 Wear OS 使用相同操作：全屏聊天可上下滚动，长按屏幕说话、松手发送，左上滑取消，右上滑转文字后确认，双击聊天进入设置，首次打开显示操作引导。回答会出现在手表和 iPhone 的会话列表中。此版经 WatchConnectivity 把临时 WAV 录音交给 iPhone 处理；手表不使用系统语音识别或系统朗读，也不接收模型密钥。iPhone 不可达、未运行服务或后台执行时间不足时，手表会提示失败或等待；后续独立网络版见 [产品待办](TODO.md)。
 
+表盘复杂功能的源码已实现圆形、矩形和行内入口，以及智能叠放的矩形小组件；**目前暂时关闭默认构建和嵌入**，避免新的扩展描述文件阻断真机调试。开发者账号和扩展签名准备好后再启用，步骤见 [Apple 平台说明](doc/ios/README.md)。
+
 工程、安装与验证步骤见 [Apple 平台说明](doc/ios/README.md)。已获得 iOS/watchOS Debug 完整 Xcode 构建、配对模拟器启动与配置同步证据；录音及合成音频使用的 WatchConnectivity 文件传输仍需配对真机验证。
 
 #### 没有真机手表时的模拟测试
