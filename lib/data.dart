@@ -384,6 +384,26 @@ class ChatSelection {
   }
 }
 
+/// Phone model changes and explicit watch model choices update the same
+/// selection. Before the first update, prefer the phone's current selection
+/// over the separate watch settings left by older app versions.
+Future<ChatSelection?> loadWatchChatSelection(ChatStore store) async {
+  final selection = ChatSelection.tryParse(
+    await store.setting('watch_chat_selection'),
+  );
+  if (selection != null) return selection;
+  final phone = ChatSelection.tryParse(
+    await store.setting('last_chat_selection'),
+  );
+  if (phone != null) return phone;
+  final providerId = int.tryParse(
+    await store.setting('watch_provider_id') ?? '',
+  );
+  final model = await store.setting('watch_model_id');
+  if (providerId == null || model == null || model.trim().isEmpty) return null;
+  return ChatSelection(providerId, model);
+}
+
 ChatSelection? initialChatSelection(
   List<ProviderConfig> providers,
   List<ChatTopic> topics,
@@ -805,8 +825,30 @@ class ChatStore {
   Future<ChatSelection?> lastChatSelection() async =>
       ChatSelection.tryParse(await setting('last_chat_selection'));
 
-  Future<void> saveLastChatSelection(ChatSelection selection) async =>
-      saveSetting('last_chat_selection', selection.toJson());
+  Future<void> saveLastChatSelection(ChatSelection selection) async {
+    // A background watch worker must never see a new provider with an old model.
+    await (await db).transaction((txn) async {
+      for (final key in ['last_chat_selection', 'watch_chat_selection']) {
+        await txn.insert('settings', {
+          'key': key,
+          'value': selection.toJson(),
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+    });
+  }
+
+  Future<void> saveWatchChatSelection(ChatSelection selection) async {
+    await (await db).transaction((txn) async {
+      await txn.insert('settings', {
+        'key': 'watch_chat_selection',
+        'value': selection.toJson(),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      await txn.insert('settings', {
+        'key': 'watch_topic_id',
+        'value': '',
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+    });
+  }
 
   static String _modelCacheKey(int providerId) => 'model_cache_$providerId';
 

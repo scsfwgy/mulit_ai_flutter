@@ -230,17 +230,15 @@ class WatchChatProcessor {
 
   Future<Map<String, Object?>> configuration({bool includeKeys = true}) async {
     final providers = await store.providers();
-    final selectedId = int.tryParse(
-      await store.setting('watch_provider_id') ?? '',
-    );
+    final selection = await loadWatchChatSelection(store);
     final provider =
-        providers.where((p) => p.id == selectedId).firstOrNull ??
+        providers.where((p) => p.id == selection?.providerId).firstOrNull ??
         providers.firstOrNull;
     final key = provider == null ? null : await store.apiKey(provider.id);
     final model = provider == null
         ? ''
-        : provider.id == selectedId
-        ? await store.setting('watch_model_id') ?? provider.model
+        : provider.id == selection?.providerId
+        ? selection!.model
         : provider.model;
     Future<Map<String, Object?>?> voice(String settingKey) async {
       final selected = await _selectedVoice(settingKey);
@@ -378,17 +376,15 @@ class WatchChatProcessor {
     await _requireRecordingSetup();
 
     final providers = await store.providers();
-    final selectedId = int.tryParse(
-      await store.setting('watch_provider_id') ?? '',
-    );
+    final selection = await loadWatchChatSelection(store);
     final provider =
-        providers.where((p) => p.id == selectedId).firstOrNull ??
+        providers.where((p) => p.id == selection?.providerId).firstOrNull ??
         providers.firstOrNull;
     if (provider == null) {
       throw const WatchChatException('请先在手机端配置文字模型服务');
     }
-    final model = provider.id == selectedId
-        ? (await store.setting('watch_model_id') ?? provider.model)
+    final model = provider.id == selection?.providerId
+        ? selection!.model
         : provider.model;
     final key = await store.apiKey(provider.id);
     if (key == null || key.isEmpty) {

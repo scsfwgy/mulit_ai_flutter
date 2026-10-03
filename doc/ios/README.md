@@ -4,17 +4,25 @@
 
 - iPhone 沿用 Flutter 的同一套聊天、服务配置、语音和本地 SQLite；`ios/Runner/AppleWatchBridge.swift` 在后台 Flutter engine 中复用 `WatchChatProcessor`。
 - Xcode 工程增加 `AILinkWatch` SwiftUI watchOS target，并嵌入 iPhone Runner；bundle ID 为 `com.maxhall.ailink.watchkitapp`，配套 iPhone ID 为 `com.maxhall.ailink`，最低 watchOS 10。Debug 的 iPhone ID 为 `com.maxhall.ailink.debug`，watchOS ID 为 `com.maxhall.ailink.debug.watchkitapp`，名称均为「AI Link Debug」，与 Release 使用独立标识；Debug 已通过完整 Xcode 构建与配对模拟器启动；Release 签名与真机验证仍待完成。
-- Apple Watch 按住录制 16 kHz、16 位、单声道 WAV，松开发往配对 iPhone，上滑取消。iPhone 使用用户选择的云端语音识别与文字模型；关闭自动发送时，手表先显示转写文字并等待确认。回复进入 iPhone SQLite，会话在侧栏显示手表标记；可选云端语音合成通过文件传回手表播放。
-- Apple Watch 仅保存最近 50 条显示用问答，不接收模型或语音 API Key。录音与合成音频使用临时文件。界面语言通过 WatchConnectivity 同步 iPhone App 的语言设置，外观跟随手表系统；按住录音显示实时波形与计时，上滑松开取消。
+- Apple Watch 按住录制 16 kHz、16 位、单声道 WAV，原位松手后经配对 iPhone 转写并发送，左上滑松手取消，右上滑松手转文字并等待确认。iPhone 使用用户选择的云端语音识别与文字模型。回复进入 iPhone SQLite，会话在侧栏显示手表标记；可选云端语音合成通过文件传回手表播放。
+- Apple Watch 仅保存最近 50 条显示用问答，不接收模型或语音 API Key。录音与合成音频使用临时文件。界面语言通过 WatchConnectivity 同步 iPhone App 的语言设置，外观跟随手表系统；按住录音显示实时波形与计时，并高亮当前选中的取消或转文字动作。
 
-- 界面对齐 Wear OS：最近问答与设置两页、固定蓝色录音按钮、旧问答点击展开、确认发送与重新录音、停止播放。自动发送与自动播报可在手表独立设置，覆盖单次请求选项，不修改手机默认设置；同步仅包含语言、服务名称、模型 ID、默认开关与配置就绪状态；iPhone 检查密钥是否配置，不向手表发送密钥。离开前台或录音页取消录音，不足 0.6 秒静默忽略。
+- 界面对齐 Wear OS：首页全屏显示可上下滚动的聊天，旧问答直接展开；长按屏幕录音，双击聊天进入设置。首次打开显示操作引导，确认后不再重复，设置页保留操作说明。右上滑转文字后，在聊天内容中显示确认发送与重新录音；设置页保留停止播放。自动播报可在手表独立设置，覆盖单次请求选项，不修改手机默认设置；同步仅包含语言、服务名称、模型 ID、默认开关与配置就绪状态；iPhone 检查密钥是否配置，不向手表发送密钥。离开前台或录音页取消录音，不足 0.6 秒静默忽略。
 
 ## 当前限制
 
 - Apple Watch 第一版需要配对 iPhone 可达，由 iPhone 网络和后台执行完成模型请求；手表自有 Wi-Fi 或蜂窝网络还不能独立提问。WatchConnectivity 文件传输可能延迟，系统也可能结束长时间后台请求。
 - 2026-10-03 已在 Xcode 27.0 构建 iOS/watchOS Debug，安装到配对的 iPhone 17 与 Apple Watch Ultra 4 模拟器，并验证页面导航、连接与配置摘要同步。真实语音服务、后台长请求、音频播放及配对真机尚未验证。Apple 官方说明模拟器不支持 `transferFile(_:metadata:)`，录音与合成音频的文件传输需用配对真机验证。
 - 公开隐私政策页面目前仍以 Wear OS 数据流为主。Apple 版发布前，需要补充：手表仅保存最近问答、录音经 WatchConnectivity 传至 iPhone、识别/模型/合成请求从 iPhone 直发用户配置的第三方服务、Apple Watch 不接收 API Key、清空 iPhone 数据不会自动删除手表最近问答。应用内“数据与隐私”已按两类手表分别说明；线上正文需同步。
-- watchOS target 当前版本号固定为 `1.0.0 (1)`；每次 iPhone 版本提升时应一并更新 watchOS target 的 `MARKETING_VERSION` 与 `CURRENT_PROJECT_VERSION`。签名团队和 App Store Connect 尚未配置。
+- watchOS target 当前版本号固定为 `1.0.0 (1)`；每次 iPhone 版本提升时应一并更新 watchOS target 的 `MARKETING_VERSION` 与 `CURRENT_PROJECT_VERSION`。Debug 已配置本机开发团队，Release 签名与 App Store Connect 仍待配置。
+
+## 真机开发安装脚本
+
+运行 `./install-dev.sh --platform ios`，按序号选择真实 iPhone/iPad、Apple Watch，多个序号用逗号或空格分隔；`--all` 安装到全部 Apple 真机，`--target phone` / `--target watch` 只选择手机或手表。设备须先通过 Device Hub 配对、信任 Mac 并开启开发者模式。
+
+默认构建 Profile 版，手机可脱离调试器从桌面启动。Profile 与 Debug 共用开发标识 `com.maxhall.ailink.debug` / `com.maxhall.ailink.debug.watchkitapp`、名称「AI Link Debug」与同一开发团队，覆盖安装保留应用数据；Release 仍使用正式标识。需要 Flutter 断点或热重载时传 `--ios-mode debug`，再通过 `flutter run` 或 Xcode 启动手机应用。
+
+脚本读取 Xcode Debug 配置的开发团队，也可用 `--team <TeamID>` 或 `IOS_DEVELOPMENT_TEAM` 指定；通过临时 xcconfig 对手机与手表统一签名，不改写项目中的团队设置。两端由同一次 Flutter iOS 构建生成，脚本校验标识、配套关系与签名后分别覆盖安装。只安装手表时也会准备配套 iPhone 的构建依赖，避免直接构建 Watch Scheme 时缺少 Flutter framework。
 
 ## 在具备完整 Xcode 的机器验证
 

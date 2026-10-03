@@ -80,6 +80,51 @@ _Store _configuredStore([String voiceUrl = 'https://example.com']) {
 }
 
 void main() {
+  test(
+    'sync uses the phone model instead of stale legacy watch settings',
+    () async {
+      final store = _configuredStore();
+      store.services.add(
+        const ProviderConfig(
+          id: 2,
+          name: 'DeepSeek',
+          baseUrl: 'https://example.org',
+          model: 'default-model',
+          protocol: ApiProtocol.openAi,
+        ),
+      );
+      store.values.addAll({
+        'watch_provider_id': '1',
+        'watch_model_id': 'old-model',
+        'last_chat_selection': const ChatSelection(
+          2,
+          'deepseek-flash',
+        ).toJson(),
+      });
+      final processor = WatchChatProcessor(store: store);
+      final preferences = await processor.preferences();
+      expect(preferences['providerName'], 'DeepSeek');
+      expect(preferences['model'], 'deepseek-flash');
+      expect(preferences.keys, isNot(contains('apiKey')));
+      final config = await processor.configuration();
+      expect(config['providerId'], 2);
+      expect(config['model'], 'deepseek-flash');
+      expect(config['baseUrl'], 'https://example.org');
+
+      store.values['watch_chat_selection'] = const ChatSelection(
+        2,
+        'custom/model-id',
+      ).toJson();
+      expect((await processor.preferences())['model'], 'custom/model-id');
+      store.values['watch_chat_selection'] = const ChatSelection(
+        1,
+        'another-model',
+      ).toJson();
+      expect((await processor.configuration())['providerId'], 1);
+      expect((await processor.preferences())['model'], 'another-model');
+    },
+  );
+
   test('Apple Watch metadata checks readiness without sending keys', () async {
     final store = _Store();
     store.services.addAll([

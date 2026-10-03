@@ -141,11 +141,12 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
   Future<void> _load() async {
     final store = ChatStore.instance;
     final providers = await store.providers();
-    final id = int.tryParse(await store.setting('watch_provider_id') ?? '');
+    final selection = await loadWatchChatSelection(store);
     final selected =
-        providers.where((p) => p.id == id).firstOrNull ?? providers.firstOrNull;
-    final model = selected?.id == id
-        ? await store.setting('watch_model_id') ?? selected?.model
+        providers.where((p) => p.id == selection?.providerId).firstOrNull ??
+        providers.firstOrNull;
+    final model = selected != null && selected.id == selection?.providerId
+        ? selection!.model
         : selected?.model;
     final speak = await store.setting('watch_tts_enabled') == '1';
     if (!mounted) return;
@@ -184,9 +185,9 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
     );
     if (selected == null) return;
     final store = ChatStore.instance;
-    await store.saveSetting('watch_provider_id', '${selected.providerId}');
-    await store.saveSetting('watch_model_id', selected.model);
-    await store.saveSetting('watch_topic_id', '');
+    await store.saveWatchChatSelection(
+      ChatSelection(selected.providerId, selected.model),
+    );
     await _load();
   }
 
