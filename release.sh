@@ -71,13 +71,25 @@ if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+$ ]]; then
   echo "pubspec.yaml version must use x.y.z+buildNumber" >&2
   exit 2
 fi
-name="${version%%+*}"
-code="$((10#${version##*+}))"
-watch_code="$((1000000 + code))"
-if (( code < 1 || watch_code > 2100000000 )); then
-  echo "versionCode 超出 Google Play 可用范围" >&2
+if [[ "$(git rev-parse --is-shallow-repository)" == "true" ]]; then
+  echo "浅克隆的提交次数不完整，请获取完整历史后再发布。" >&2
   exit 2
 fi
+base_name="${version%%+*}"
+git_hash="$(git rev-parse --short=8 HEAD)"
+name="$base_name-$git_hash"
+code="$(git rev-list --count HEAD)"
+watch_code="$((1000000 + code))"
+if [[ ! "$code" =~ ^[1-9][0-9]*$ ]] || (( code >= 1000000 || watch_code > 2100000000 )); then
+  echo "versionCode 超出手机与手表的独立编号范围" >&2
+  exit 2
+fi
+version="$name+$code"
+if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
+  echo "警告：工作区存在未提交修改；版本哈希仅标识 HEAD。" >&2
+fi
+channel="google_play"
+if [[ "$profile" == "test" ]]; then channel="unknown"; fi
 
 if (( push_release )); then
   resolve_http_proxy() {
@@ -160,7 +172,7 @@ flutter test
 
 if [[ "$profile" == "test" ]]; then
   echo "构建测试签名手机与 Wear OS APK..."
-  flutter build apk --release --build-name="$name" --build-number="$code"
+  flutter build apk --release --build-name="$name" --build-number="$code" --dart-define="APP_CHANNEL=$channel" --obfuscate --split-debug-info="$output/dart-symbols"
   (cd android && ./gradlew :wear:assembleRelease "-PwatchVersionCode=$watch_code" "-PwatchVersionName=$name")
   phone="$output/AI-Link-phone-test-$version.apk"
   wear="$output/AI-Link-wear-test-$version.apk"
@@ -171,7 +183,7 @@ if [[ "$profile" == "test" ]]; then
   expected_cert="F539897F7B786486EBC44F1383AF434DCE6AE6BB3ED12DCF363F6F4633B8596F"
 else
   echo "构建正式签名手机与 Wear OS AAB..."
-  flutter build appbundle --release --build-name="$name" --build-number="$code"
+  flutter build appbundle --release --build-name="$name" --build-number="$code" --dart-define="APP_CHANNEL=$channel" --obfuscate --split-debug-info="$output/dart-symbols"
   (cd android && ./gradlew :wear:bundleRelease "-PwatchVersionCode=$watch_code" "-PwatchVersionName=$name")
   phone="$output/AI-Link-phone-$version.aab"
   wear="$output/AI-Link-wear-$version.aab"
@@ -186,6 +198,16 @@ if [[ "$phone_cert" != "$wear_cert" || "$phone_cert" != "$expected_cert" ]]; the
   echo "手机和手表签名不一致，或与已记录的 $profile 证书不一致；已停止。" >&2
   exit 1
 fi
+# 缺失映射或符号时停止归档，确保后续可还原崩溃堆栈。
+for module in app wear; do
+  mapping="$repo_root/build/$module/outputs/mapping/release/mapping.txt"
+  [[ -s "$mapping" ]] || { echo "缺少 $module R8 mapping.txt" >&2; exit 1; }
+  mkdir -p "$output/$module-r8"
+  cp "$repo_root/build/$module/outputs/mapping/release/"*.txt "$output/$module-r8/"
+done
+compgen -G "$output/dart-symbols/*.symbols" >/dev/null || {
+  echo "缺少 Dart 调试符号" >&2; exit 1;
+}
 (cd "$output" && shasum -a 256 "$(basename "$phone")" "$(basename "$wear")" > SHA256SUMS)
 {
   echo "profile=$profile"

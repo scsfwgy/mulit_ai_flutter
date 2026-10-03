@@ -391,6 +391,7 @@ class AboutScreen extends StatefulWidget {
 
 class _AboutScreenState extends State<AboutScreen> {
   String? _version;
+  String? _versionCode;
 
   Future<void> _openWebsite() async {
     await launchUrl(
@@ -408,9 +409,8 @@ class _AboutScreenState extends State<AboutScreen> {
     }
     await Clipboard.setData(const ClipboardData(text: address));
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(tr('邮箱已复制'))),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(tr('邮箱已复制'))));
     }
   }
 
@@ -420,7 +420,16 @@ class _AboutScreenState extends State<AboutScreen> {
     PackageInfo.fromPlatform()
         .then((info) {
           if (mounted) {
-            setState(() => _version = '${info.version} (${info.buildNumber})');
+            const channel = String.fromEnvironment('APP_CHANNEL');
+            final suffix = switch (channel) {
+              'google_play' => '(gp)',
+              'official' => '(site)',
+              _ => '',
+            };
+            setState(() {
+              _version = '${info.version}$suffix';
+              _versionCode = info.buildNumber;
+            });
           }
         })
         .catchError((Object _) {});
@@ -446,6 +455,11 @@ class _AboutScreenState extends State<AboutScreen> {
               IosRow(
                 title: tr('版本'),
                 subtitle: _version ?? '…',
+                chevron: false,
+              ),
+              IosRow(
+                title: tr('版本 Code'),
+                subtitle: _versionCode ?? '…',
                 chevron: false,
               ),
             ],

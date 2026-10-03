@@ -116,7 +116,7 @@ adb -s emulator-5554 shell cmd connectivity set-chain3-enabled false
 
 应用 ID 已改为 `com.maxhall.ailink`。旧测试包 `com.example.mulit_ai_flutter` 会与新包并存，旧包中的服务密钥与聊天记录不会自动迁移；不要为了测试新包而卸载或清空旧包。
 
-本机已配置正式上传密钥；独立测试密钥及配置已入库，测试密码视为公开信息。运行 `./release.sh` 生成正式签名的手机、手表 AAB；运行 `./release.sh --test` 生成测试签名的手机、手表 APK。脚本不会上传 Google Play。两端必须使用同一套签名；正式密钥与密码须离线备份且绝不入库，测试签名包不能覆盖安装正式包。详见 [上架清单](doc/google_play/README.md)。
+本机已配置正式上传密钥；独立测试密钥及配置已入库，测试密码视为公开信息。运行 `./release.sh` 生成正式签名的手机、手表 AAB；运行 `./release.sh --test` 生成测试签名的手机、手表 APK。默认仅本地归档，显式传入 `--push-release` 才上传 Google Play。两端必须使用同一套签名；正式密钥与密码须离线备份且绝不入库，测试签名包不能覆盖安装正式包。发布版本与 Tools24 一致：基础版本加 8 位 Git 哈希，手机 versionCode 使用 Git 提交次数，手表加 1,000,000。两端启用 R8 优化与资源裁剪，手机启用 Dart 混淆；归档同时保存映射和符号。详见 [上架清单](doc/google_play/README.md)。
 
 ## 开发验证
 

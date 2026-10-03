@@ -1,6 +1,6 @@
 # AI Link 上架资料与待办
 
-包名：`com.maxhall.ailink`。手机与 Wear OS 使用相同包名及上传签名；Wear 为单独的 AAB，`versionCode = 1000000 + pubspec 构建号`，手机使用 `pubspec` 构建号。当前手表首次配置依赖手机，因此 manifest 标为 non-standalone。
+包名：`com.maxhall.ailink`。手机与 Wear OS 使用相同包名及上传签名；Wear 为单独的 AAB，`versionCode = 1000000 + Git 提交次数`，手机使用 `git rev-list --count HEAD`。当前手表首次配置依赖手机，因此 manifest 标为 non-standalone。
 
 ## 已准备
 
@@ -21,7 +21,11 @@
 ./release.sh --push-release --play-track internal # 构建并上传到手机及 Wear OS 内部测试轨道
 ```
 
-上传脚本使用 `localConfig/google-play-service-account.json`（Git 忽略）或 `PLAY_SERVICE_ACCOUNT_JSON` 指定的现有服务账号 JSON。当前机器上的本地路径已链接到 Tools24 使用的同一 API 账号；仓库源码不依赖 Tools24 的路径，也不复制或提交账号私钥。首次在其他机器运行时需自行配置该文件。`--play-track` 支持 `internal`、`alpha`、`beta`、`production`；手机使用所选轨道，Wear OS 使用 `wear:<轨道>`。脚本在一次 Play 编辑会话中上传两端 AAB，核对版本号与 SHA-256，校验编辑后才提交；失败不会提交该编辑。版本更新日志见 `release_notes.json`。当前版本号仍由 `pubspec.yaml` 管理，手表 versionCode 为手机加 1,000,000；每次向 Play 上传新包前必须递增构建号。
+上传脚本使用 `localConfig/google-play-service-account.json`（Git 忽略）或 `PLAY_SERVICE_ACCOUNT_JSON` 指定的现有服务账号 JSON。当前机器上的本地路径已链接到 Tools24 使用的同一 API 账号；仓库源码不依赖 Tools24 的路径，也不复制或提交账号私钥。首次在其他机器运行时需自行配置该文件。`--play-track` 支持 `internal`、`alpha`、`beta`、`production`；手机使用所选轨道，Wear OS 使用 `wear:<轨道>`。脚本在一次 Play 编辑会话中上传两端 AAB，核对版本号与 SHA-256，校验编辑后才提交；失败不会提交该编辑。版本更新日志见 `release_notes.json`。基础版本由 `pubspec.yaml` 管理；发布脚本以 Git 提交次数作为手机 versionCode，手表加 1,000,000，versionName 为基础版本加 8 位 HEAD 哈希，与 Tools24 一致。浅克隆禁止发布，同一 HEAD 重打包不递增版本 Code；上传前须确保新提交次数高于已上传版本。关于页分开显示版本及版本 Code，正式 Play 包版本追加 `(gp)`，测试包不标渠道。
+
+Google [技术质量要求](https://support.google.com/googleplay/android-developer/answer/17492799?hl=en)从 2027 年 2 月起对 DEX 超过 10 MB 的普通应用要求混淆、优化及裁剪各至少 25%，覆盖所有设备形态。开启 R8 不等于已达到百分比，须在 Play Console 的 App bundle explorer 核对最终上传包。
+
+手机及手表 Release 均启用 R8 混淆、代码优化与资源裁剪；手机额外启用 Dart 混淆及调试符号拆分。每次归档保存两端 R8 映射和 Dart 符号，须与产物一起保留以还原堆栈。
 
 上传前需在 Play Console 完成 Play App Signing、Wear OS form factor 和相关应用内容设置。2026-09-30 API 已可见 `wear:internal`、`wear:beta`、`wear:production`，但尚无 `wear:alpha`；选择 `--play-track alpha` 时，脚本会在同一编辑会话中创建对应的 Wear OS 封闭测试轨道，再上传两端 AAB。其他缺失的 Wear OS 轨道仍会在构建前停止。提交成功只表示 API 编辑已提交，审核与上线状态以 Console 为准；脚本不会自动完成问卷，也不会上传 Tools24 专用的 OSS/官网发布接口。每次正式上传前更新 `release_notes.json` 的版本说明。
 

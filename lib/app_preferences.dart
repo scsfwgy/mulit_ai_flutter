@@ -393,6 +393,7 @@ const _english = <String, String>{
   '简体中文': 'Simplified Chinese',
   '关于': 'About',
   '版本': 'Version',
+  '版本 Code': 'Version Code',
   '应用信息': 'App information',
   '数据与隐私': 'Data & privacy',
   '完整隐私政策': 'Full privacy policy',
