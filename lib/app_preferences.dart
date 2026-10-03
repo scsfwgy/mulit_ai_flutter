@@ -224,7 +224,7 @@ const _english = <String, String>{
   'Apple Watch 首版由配对 iPhone 完成语音识别、模型请求和可选朗读，结果保存到手机会话。手表仅保存最近显示的问答，不接收 API Key；手机不可达时暂不能提问。': 'The first Apple Watch version uses the paired iPhone for transcription, model requests and optional speech. Replies are saved in iPhone chats. The watch keeps only recent displayed turns and receives no API keys; questions require the iPhone to be reachable.',
   '手表应用安装': 'Install watch app',
   '手表端尚未安装': 'Watch app is not installed',
-  '检测到已连接的 Wear OS 手表。安装手表应用后，可在手表上语音提问。': 'A Wear OS watch is connected. Install the watch app to ask questions by voice.',
+  '检测到已配对的手表。安装手表应用后，可在手表上语音提问。': 'A watch is paired. Install the watch app to ask questions by voice.',
   '去安装': 'Install now',
   '稍后': 'Later',
   '在手表安装': 'Install on watch',

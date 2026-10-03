@@ -387,7 +387,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         context: context,
         builder: (context) => CupertinoAlertDialog(
           title: Text(tr('手表端尚未安装')),
-          content: Text(tr('检测到已连接的 Wear OS 手表。安装手表应用后，可在手表上语音提问。')),
+          content: Text(tr('检测到已配对的手表。安装手表应用后，可在手表上语音提问。')),
           actions: [
             CupertinoDialogAction(
               child: Text(tr('稍后')),
