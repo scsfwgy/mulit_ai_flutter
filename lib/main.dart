@@ -1223,7 +1223,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         : tr('AI Link');
     return Scaffold(
       key: _scaffoldKey,
-      backgroundColor: IosColors.background,
+      // Subscribe to theme changes so the entire chat follows system appearance.
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       drawer: SizedBox(
         width:
             MediaQuery.sizeOf(context).width.clamp(0.0, 420.0).toDouble() * .86,
@@ -1244,6 +1245,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       ),
       appBar: iosAppBar(
         title: title,
+        backgroundColor: IosColors.chatChrome,
         leading: IosNavButton(
           icon: CupertinoIcons.line_horizontal_3,
           onPressed: _openTopics,
@@ -1504,17 +1506,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                     : CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.fromLTRB(14, 11, 14, 9),
-                    decoration: BoxDecoration(
-                      color: user ? IosColors.userBubble : IosColors.assistant,
-                      borderRadius: BorderRadius.only(
-                        topLeft: const Radius.circular(18),
-                        topRight: const Radius.circular(18),
-                        bottomLeft: Radius.circular(user ? 18 : 5),
-                        bottomRight: Radius.circular(user ? 5 : 18),
-                      ),
-                    ),
+                  IosChatBubble(
+                    user: user,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -1572,7 +1565,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
 
   Widget _composer() => Container(
     decoration: BoxDecoration(
-      color: IosColors.surface,
+      color: IosColors.chatChrome,
       border: Border(top: BorderSide(color: IosColors.separator, width: .5)),
     ),
     padding: const EdgeInsets.fromLTRB(12, 9, 12, 4),
@@ -1630,7 +1623,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                               color: _voicePointerDown
                                   ? IosColors.blue.withValues(alpha: .22)
                                   : IosColors.assistant,
-                              borderRadius: BorderRadius.circular(21),
+                              borderRadius: BorderRadius.circular(6),
                               border: Border.all(color: IosColors.separator),
                             ),
                             child: Text(
@@ -1661,7 +1654,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                         ),
                         decoration: BoxDecoration(
                           color: IosColors.surface,
-                          borderRadius: BorderRadius.circular(21),
+                          borderRadius: BorderRadius.circular(6),
                           border: Border.all(color: IosColors.separator),
                         ),
                       ),
@@ -1685,7 +1678,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                           : _starting
                           ? IosColors.secondary
                           : IosColors.blue,
-                      shape: BoxShape.circle,
+                      borderRadius: BorderRadius.circular(6),
                     ),
                     child: Icon(
                       _sending

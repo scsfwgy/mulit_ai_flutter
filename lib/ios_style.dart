@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
@@ -5,8 +7,10 @@ import 'app_preferences.dart';
 
 abstract final class IosColors {
   static bool get _dark => AppPreferences.instance.dark;
-  static Color get background =>
-      _dark ? const Color(0xFF000000) : const Color(0xFFF2F2F7);
+  static bool get wechat => AppPreferences.instance.skin == AppSkin.wechat;
+  static Color get background => wechat
+      ? (_dark ? const Color(0xFF111111) : const Color(0xFFEDEDED))
+      : (_dark ? const Color(0xFF000000) : const Color(0xFFF2F2F7));
   static Color get surface =>
       _dark ? const Color(0xFF1C1C1E) : const Color(0xFFFFFFFF);
   static Color get blue {
@@ -15,6 +19,7 @@ abstract final class IosColors {
     return switch (skin) {
       AppSkin.blue => const Color(0xFF0A84FF),
       AppSkin.teal => const Color(0xFF38C8B5),
+      AppSkin.wechat => const Color(0xFF07C160),
       AppSkin.violet => const Color(0xFFAF8DF5),
     };
   }
@@ -27,11 +32,19 @@ abstract final class IosColors {
       _dark ? const Color(0xFF38383A) : const Color(0xFFE5E5EA);
   static Color get assistant =>
       _dark ? const Color(0xFF2C2C2E) : const Color(0xFFE9E9EB);
-  static Color get userBubble => Color.alphaBlend(
-    blue.withValues(alpha: _dark ? .24 : .14),
-    _dark ? assistant : surface,
-  );
-  static Color get userBubbleText => label;
+  static Color get chatChrome => wechat
+      ? (_dark ? const Color(0xFF1E1E1E) : const Color(0xFFF7F7F7))
+      : surface;
+  static Color get assistantBubble => wechat ? surface : assistant;
+  static Color get userBubble => wechat
+      ? (_dark ? const Color(0xFF2C8C49) : const Color(0xFF95EC69))
+      : Color.alphaBlend(
+          blue.withValues(alpha: _dark ? .24 : .14),
+          _dark ? assistant : surface,
+        );
+  static Color get userBubbleText => wechat
+      ? (_dark ? const Color(0xFFFFFFFF) : const Color(0xFF111111))
+      : label;
   static Color get destructive =>
       _dark ? const Color(0xFFFF453A) : const Color(0xFFFF3B30);
   static Color get onAccent =>
@@ -45,6 +58,7 @@ AppBar iosAppBar({
   Widget? titleWidget,
   Widget? leading,
   List<Widget>? actions,
+  Color? backgroundColor,
 }) => AppBar(
   title:
       titleWidget ??
@@ -53,7 +67,7 @@ AppBar iosAppBar({
   leading: leading,
   leadingWidth: leading == null ? null : 90,
   actions: actions,
-  backgroundColor: IosColors.surface,
+  backgroundColor: backgroundColor ?? IosColors.surface,
   foregroundColor: IosColors.label,
   elevation: 0,
   scrolledUnderElevation: 0,
@@ -65,6 +79,43 @@ AppBar iosAppBar({
   ),
   shape: Border(bottom: BorderSide(color: IosColors.separator, width: .5)),
 );
+
+class IosChatBubble extends StatelessWidget {
+  const IosChatBubble({super.key, required this.user, required this.child});
+
+  final bool user;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = user ? IosColors.userBubble : IosColors.assistantBubble;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Positioned(
+          top: 16,
+          left: user ? null : -3,
+          right: user ? -3 : null,
+          child: Transform.rotate(
+            angle: math.pi / 4,
+            child: ColoredBox(
+              color: color,
+              child: const SizedBox(width: 8, height: 8),
+            ),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.fromLTRB(14, 11, 14, 9),
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: child,
+        ),
+      ],
+    );
+  }
+}
 
 class IosNavButton extends StatelessWidget {
   const IosNavButton({
