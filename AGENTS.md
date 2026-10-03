@@ -51,7 +51,7 @@
 - `lib/voice_catalog.dart` 与 `lib/voice_catalog_picker.dart`：语音模型/音色候选、兼容服务 `/models` 查询和选择界面；候选不表示账号权限。
 - `test/`：协议、配置、Markdown 和界面行为测试。
 - `android/app/src/main/AndroidManifest.xml` 与 `res/xml/network_security_config.xml`：网络权限与明文连接范围。
-- `release.sh`、`android/key.properties.example`、`android/key.test.properties`、`localConfig/ai-link-test.jks`、`doc/google_play/`：本地正式/测试签名打包和 Google Play 上架资料。测试签名及配置允许入库，其密码视为公开信息；正式 `android/key.properties`、`localConfig/ai-link-upload.jks`、正式密码和构建产物绝对不得提交。手机和手表使用包名 `com.maxhall.ailink`，同一套包必须共用签名；`./release.sh` 出正式 AAB，`./release.sh --test` 出测试 APK。
+- `release.sh`、`android/key.properties.example`、`android/key.test.properties`、`localConfig/ai-link-test.jks`、`doc/google_play/`：本地正式/测试签名打包和 Google Play 上架资料。测试签名及配置允许入库，其密码视为公开信息；正式 `android/key.properties`、`localConfig/ai-link-upload.jks`、正式密码和构建产物绝对不得提交。正式手机和手表使用包名 `com.maxhall.ailink`；普通 Debug 与 `--test` 包使用 `com.maxhall.ailink.debug`、名称「AI Link Debug」和同一测试签名，可与正式包并存；同一套手机与手表包必须共用包名和签名；`./release.sh` 出正式 AAB，`./release.sh --test` 出测试 APK。
 - 官方网站为 `https://www.tools24.uk/app/ai-link`，公开隐私政策为 `https://www.tools24.uk/app/ai-link/privacy`；上架前核对线上政策与最终安装包行为一致。
 
 ## UI 约定
@@ -101,9 +101,9 @@ cd android && ./gradlew :wear:assembleDebug
 
 有 Android 模拟器时可用 `adb install -r build/app/outputs/flutter-apk/app-debug.apk` 安装；重装不会清空应用数据。真实平台 API 请求必须区分于本地模拟接口验证，不要在没有真实密钥测试时宣称平台实测通过。
 
-iOS/watchOS 编译和设备验证需要完整 Xcode 与 Apple 平台 SDK，并完成 Flutter 插件依赖集成；如果当前开发机只有 Xcode Command Line Tools，明确记录该限制，不要用 Swift 语法检查或 Android 构建结果代替 Apple 平台验证。
+iOS Debug 使用 `com.maxhall.ailink.debug` 和「AI Link Debug」，watchOS Debug 使用 `com.maxhall.ailink.debug.watchkitapp` 并关联 Debug iPhone；Release 保留正式标识。iOS/watchOS 编译和设备验证需要完整 Xcode 与 Apple 平台 SDK，并完成 Flutter 插件依赖集成；如果当前开发机只有 Xcode Command Line Tools，明确记录该限制，不要用 Swift 语法检查或 Android 构建结果代替 Apple 平台验证。
 
-发布构建运行 `./release.sh`，会先分析和测试，再从未入库的 `android/key.properties` 使用同一个上传密钥生成手机和手表 AAB；本地测试运行 `./release.sh --test`，用 `android/key.test.properties` 生成两端 APK。两套签名不同，不能在同一设备上互相覆盖安装；不得通过卸载或清空用户数据强行切换。密钥和密码必须离线备份，不使用 debug 签名冒充发布包。Google Play 隐私政策、Data safety、AI 内容举报流程、真实截图和设备测试见 `doc/google_play/README.md`，未完成项不能写成已上架。
+发布构建运行 `./release.sh`，会先分析和测试，再从未入库的 `android/key.properties` 使用同一个上传密钥生成手机和手表 AAB；本地测试运行 `./release.sh --test`，用 `android/key.test.properties` 生成两端 APK。正式版与测试版使用不同包名和签名，可同时安装且数据独立；普通 Debug 与 `--test` 共用测试包名和签名，可覆盖更新。旧包数据不自动迁移，不得通过卸载或清空用户数据强行切换。密钥和密码必须离线备份，不使用 debug 签名冒充发布包。Google Play 隐私政策、Data safety、AI 内容举报流程、真实截图和设备测试见 `doc/google_play/README.md`，未完成项不能写成已上架。
 
 提交代码前先检查 `git status`、变更范围和 `git diff --check`。只提交本次工作涉及的文件；`build/`、`.dart_tool/` 等构建产物由 `.gitignore` 排除。
 

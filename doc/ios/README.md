@@ -3,7 +3,7 @@
 ## 已接入的代码
 
 - iPhone 沿用 Flutter 的同一套聊天、服务配置、语音和本地 SQLite；`ios/Runner/AppleWatchBridge.swift` 在后台 Flutter engine 中复用 `WatchChatProcessor`。
-- Xcode 工程增加 `AILinkWatch` SwiftUI watchOS target，并嵌入 iPhone Runner；bundle ID 为 `com.maxhall.ailink.watchkitapp`，配套 iPhone ID 为 `com.maxhall.ailink`，最低 watchOS 10。
+- Xcode 工程增加 `AILinkWatch` SwiftUI watchOS target，并嵌入 iPhone Runner；bundle ID 为 `com.maxhall.ailink.watchkitapp`，配套 iPhone ID 为 `com.maxhall.ailink`，最低 watchOS 10。Debug 的 iPhone ID 为 `com.maxhall.ailink.debug`，watchOS ID 为 `com.maxhall.ailink.debug.watchkitapp`，名称均为「AI Link Debug」，与 Release 使用独立标识；这些配置尚待完整 Xcode 构建及配对设备验证。
 - Apple Watch 按住录制 16 kHz、16 位、单声道 WAV，松开发往配对 iPhone，上滑取消。iPhone 使用用户选择的云端语音识别与文字模型；关闭自动发送时，手表先显示转写文字并等待确认。回复进入 iPhone SQLite，会话在侧栏显示手表标记；可选云端语音合成通过文件传回手表播放。
 - Apple Watch 仅保存最近 20 条显示用问答，不接收模型或语音 API Key。录音与合成音频使用临时文件。界面语言通过 WatchConnectivity 同步 iPhone App 的语言设置，外观跟随手表系统；按住录音显示实时波形与计时，上滑松开取消。
 

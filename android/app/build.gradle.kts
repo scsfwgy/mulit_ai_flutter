@@ -22,6 +22,18 @@ if (releaseRequested && !releaseCredentials) {
     error("$signingProfile signing requires android/$signingConfigFile (see its .example file)")
 }
 
+// Development and distributed test builds share a certificate so they can
+// update each other and communicate across phone and watch installations.
+val testProperties = Properties().apply {
+    val config = rootProject.file("key.test.properties")
+    if (config.isFile) config.inputStream().use(::load)
+}
+val testCredentials = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+    .all { !testProperties.getProperty(it).isNullOrBlank() }
+if (gradle.startParameter.taskNames.any { it.contains("Debug", ignoreCase = true) } && !testCredentials) {
+    error("Debug signing requires android/key.test.properties (see its .example file)")
+}
+
 android {
     namespace = "com.maxhall.ailink"
     compileSdk = flutter.compileSdkVersion
@@ -34,6 +46,7 @@ android {
 
     defaultConfig {
         applicationId = "com.maxhall.ailink"
+        manifestPlaceholders["appLabel"] = "AI Link"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
@@ -45,6 +58,12 @@ android {
     }
 
     signingConfigs {
+        if (testCredentials) create("test") {
+            storeFile = rootProject.file(testProperties.getProperty("storeFile"))
+            storePassword = testProperties.getProperty("storePassword")
+            keyAlias = testProperties.getProperty("keyAlias")
+            keyPassword = testProperties.getProperty("keyPassword")
+        }
         if (releaseCredentials) create("release") {
             storeFile = rootProject.file(releaseProperties.getProperty("storeFile"))
             storePassword = releaseProperties.getProperty("storePassword")
@@ -54,7 +73,16 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            manifestPlaceholders["appLabel"] = "AI Link Debug"
+            if (testCredentials) signingConfig = signingConfigs.getByName("test")
+        }
         release {
+            if (signingProfile == "test") {
+                applicationIdSuffix = ".debug"
+                manifestPlaceholders["appLabel"] = "AI Link Debug"
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

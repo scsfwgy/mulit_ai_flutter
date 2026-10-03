@@ -29,7 +29,7 @@ Google [技术质量要求](https://support.google.com/googleplay/android-develo
 
 上传前需在 Play Console 完成 Play App Signing、Wear OS form factor 和相关应用内容设置。2026-09-30 API 已可见 `wear:internal`、`wear:beta`、`wear:production`，但尚无 `wear:alpha`；选择 `--play-track alpha` 时，脚本会在同一编辑会话中创建对应的 Wear OS 封闭测试轨道，再上传两端 AAB。其他缺失的 Wear OS 轨道仍会在构建前停止。提交成功只表示 API 编辑已提交，审核与上线状态以 Console 为准；脚本不会自动完成问卷，也不会上传 Tools24 专用的 OSS/官网发布接口。每次正式上传前更新 `release_notes.json` 的版本说明。
 
-两种包使用同一个应用 ID `com.maxhall.ailink`，但证书不同，无法在同一设备上互相覆盖安装。测试前先确认设备中是否有需要保留的聊天和密钥；**不要通过卸载或清除数据来强行切换签名**。普通 `flutter run`/Debug APK 仍使用 Android SDK 默认调试证书，与这里的测试签名也不同。
+正式包「AI Link」使用 `com.maxhall.ailink`；普通 `flutter run`/Debug APK 和 `./release.sh --test` 均为「AI Link Debug」，使用 `com.maxhall.ailink.debug` 及仓库中的测试签名，彼此可覆盖更新，并可与正式包同时安装。手机与 Wear OS 必须安装同一类型的包，才能满足 Data Layer 的包名与签名匹配要求。正式版与测试版的本地数据、密钥和手表同步各自独立。旧测试包仍保留原包名及数据，不会迁移到新测试包；**不要通过卸载或清除数据来强行切换签名**。
 
 本机新建证书的公开 SHA-256 指纹如下（不含私钥或密码）。两端同档产物已验签一致；在 Play Console 首次登记上传证书前再次核对，已有应用则先核对原上传证书，不能直接替换。
 

@@ -57,7 +57,7 @@ adb -s <手机序列号> install -r build/app/outputs/flutter-apk/app-debug.apk
 adb -s <手表序列号> install -r build/wear/outputs/apk/debug/wear-debug.apk
 ```
 
-两端须以同一个应用 ID 和签名安装。首次配置仍需与手机配对；随后手表可独立请求模型。模拟器编译与界面检查不等于配对真机的录音、后台唤醒、断连恢复、Data Layer 或真实语音平台验证。
+调试版名称为「AI Link Debug」，手机与手表均使用 `com.maxhall.ailink.debug` 和仓库中的测试签名，可与正式版并存；两端须安装同一类型的包。首次配置仍需与手机配对；随后手表可独立请求模型。模拟器编译与界面检查不等于配对真机的录音、后台唤醒、断连恢复、Data Layer 或真实语音平台验证。
 
 ### Apple Watch
 
@@ -78,9 +78,9 @@ adb -s <手表序列号> install -r build/wear/outputs/apk/debug/wear-debug.apk
 
 ```bash
 adb -s emulator-5554 shell cmd connectivity set-chain3-enabled true
-adb -s emulator-5554 shell cmd connectivity set-package-networking-enabled false com.maxhall.ailink
+adb -s emulator-5554 shell cmd connectivity set-package-networking-enabled false com.maxhall.ailink.debug
 # 测试手机故障 → 手表网络接管后恢复：
-adb -s emulator-5554 shell cmd connectivity set-package-networking-enabled true com.maxhall.ailink
+adb -s emulator-5554 shell cmd connectivity set-package-networking-enabled true com.maxhall.ailink.debug
 adb -s emulator-5554 shell cmd connectivity set-chain3-enabled false
 ```
 
@@ -114,9 +114,9 @@ adb -s emulator-5554 shell cmd connectivity set-chain3-enabled false
 
 当前聊天请求仍发送文字消息；语音输入先经所选语音模型转写为文字。模型回复可以显示 Markdown，但尚不支持公式、HTML、图片上传或文件上传。工具调用、历史导入导出及跨账户同步尚未实现；Token 用量仅在服务端报告时展示。Apple 平台尚未构建或设备测试。Android 正式和测试签名已在本机配置，公开隐私政策已上线；发布 Apple 版前须更新线上隐私政策的 Apple Watch 数据说明，详见 [Apple 平台说明](doc/ios/README.md)。密钥离线备份、真实截图和 Play Console 审核详见 [Android 上架清单](doc/google_play/README.md)。
 
-应用 ID 已改为 `com.maxhall.ailink`。旧测试包 `com.example.mulit_ai_flutter` 会与新包并存，旧包中的服务密钥与聊天记录不会自动迁移；不要为了测试新包而卸载或清空旧包。
+正式版「AI Link」使用 `com.maxhall.ailink`；普通 Debug 与 `./release.sh --test` 均为「AI Link Debug」，使用 `com.maxhall.ailink.debug`，可与正式版同时安装。两者的服务、密钥与聊天记录各自独立，不自动迁移。旧测试包 `com.example.mulit_ai_flutter` 和此前占用正式包名的测试包也不会自动迁移；不要为了测试新包而卸载或清空旧包。iOS Debug 同样使用 `com.maxhall.ailink.debug` 与「AI Link Debug」，配套 watchOS Debug 使用 `com.maxhall.ailink.debug.watchkitapp`；Apple 平台尚待完整 Xcode 构建和设备验证。
 
-本机已配置正式上传密钥；独立测试密钥及配置已入库，测试密码视为公开信息。运行 `./release.sh` 生成正式签名的手机、手表 AAB；运行 `./release.sh --test` 生成测试签名的手机、手表 APK。默认仅本地归档，显式传入 `--push-release` 才上传 Google Play。两端必须使用同一套签名；正式密钥与密码须离线备份且绝不入库，测试签名包不能覆盖安装正式包。发布版本与 Tools24 一致：基础版本加 8 位 Git 哈希，手机 versionCode 使用 Git 提交次数，手表加 1,000,000。两端启用 R8 优化与资源裁剪，手机启用 Dart 混淆；归档同时保存映射和符号。详见 [上架清单](doc/google_play/README.md)。
+本机已配置正式上传密钥；独立测试密钥及配置已入库，测试密码视为公开信息。运行 `./release.sh` 生成正式签名的手机、手表 AAB；运行 `./release.sh --test` 生成测试签名的手机、手表 APK。默认仅本地归档，显式传入 `--push-release` 才上传 Google Play。两端必须使用同一套签名；正式密钥与密码须离线备份且绝不入库，测试签名包与正式包独立安装；普通 Debug 与 `--test` 包共用测试签名，可以相互覆盖更新并保留测试数据。发布版本与 Tools24 一致：基础版本加 8 位 Git 哈希，手机 versionCode 使用 Git 提交次数，手表加 1,000,000。两端启用 R8 优化与资源裁剪，手机启用 Dart 混淆；归档同时保存映射和符号。详见 [上架清单](doc/google_play/README.md)。
 
 ## 开发验证
 
