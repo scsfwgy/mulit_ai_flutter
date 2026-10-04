@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 默认只打包归档；--push-release 才上传手机和 Wear OS AAB 到 Google Play。
+# 默认本地归档正式 APK/AAB；显式开关才发布到官网或 Google Play。
 set -Eeuo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -7,14 +7,16 @@ cd "$repo_root"
 
 profile="release"
 push_release=0
+push_website=0
 play_track="internal"
 json_key="${PLAY_SERVICE_ACCOUNT_JSON:-$repo_root/localConfig/google-play-service-account.json}"
 
 usage() {
-  echo "用法：./release.sh [--test] [--push-release] [--play-track internal|alpha|beta|production] [--json-key 路径]"
-  echo "  （无参数）        分析、测试并构建正式签名的手机和 Wear OS AAB；仅本地归档"
+  echo "用法：./release.sh [--test] [--push-release|--push-website] [--play-track internal|alpha|beta|production] [--json-key 路径]"
+  echo "  （无参数）        构建正式签名的手机和 Wear OS APK/AAB；仅本地归档"
   echo "  --test          构建本地测试签名的手机和 Wear OS APK；不上传"
-  echo "  --push-release  构建并通过 Google Play API 上传两个正式 AAB（默认内部测试）"
+  echo "  --push-release  APK 上传 OSS 并同步官网，同时上传两个 AAB 到 Google Play"
+  echo "  --push-website  APK 上传 OSS 并同步 AI Link 官网；不上传 Google Play"
   echo "  --play-track    手机轨道；Wear OS 自动使用 wear:<轨道>"
   echo "  --json-key      服务账号 JSON 路径；也可设 PLAY_SERVICE_ACCOUNT_JSON"
 }
@@ -22,7 +24,8 @@ usage() {
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --test) profile="test"; shift ;;
-    --push-release) push_release=1; shift ;;
+    --push-release) push_release=1; push_website=1; shift ;;
+    --push-website) push_website=1; shift ;;
     --play-track)
       [[ $# -ge 2 ]] || { echo "--play-track 缺少轨道" >&2; exit 2; }
       play_track="$2"; shift 2 ;;
@@ -38,8 +41,8 @@ case "$play_track" in
   internal|alpha|beta|production) ;;
   *) echo "不支持的 Play 轨道：$play_track" >&2; exit 2 ;;
 esac
-if (( push_release )) && [[ "$profile" == "test" ]]; then
-  echo "测试签名 APK 不可上传到 Google Play；请去掉 --test。" >&2
+if (( push_release || push_website )) && [[ "$profile" == "test" ]]; then
+  echo "测试签名 APK 不可发布到官网或 Google Play；请去掉 --test。" >&2
   exit 2
 fi
 export AI_LINK_SIGNING_PROFILE="$profile"
@@ -94,6 +97,16 @@ if [[ "$profile" == "test" ]]; then channel="unknown"; fi
 # Keep the Play proxy scoped to Python commands so local Flutter HTTP tests
 # continue to connect directly to their loopback servers.
 play_env=(env)
+python_bin="$repo_root/scripts/.venv/bin/python"
+ensure_publish_dependencies() {
+  if [[ ! -x "$python_bin" ]]; then
+    python3 -m venv "$repo_root/scripts/.venv"
+  fi
+  if ! "$python_bin" -c 'import oss2, googleapiclient, google.oauth2, google_auth_httplib2, httplib2' >/dev/null 2>&1; then
+    "${play_env[@]}" "$python_bin" -m pip install -r "$repo_root/scripts/requirements.txt"
+  fi
+  "$python_bin" scripts/website_release.py --check
+}
 if (( push_release )); then
   resolve_http_proxy() {
     local configured="${http_proxy:-${HTTP_PROXY:-${https_proxy:-${HTTPS_PROXY:-}}}}" candidate
@@ -122,16 +135,11 @@ if (( push_release )); then
   if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
     echo "警告：工作区有未提交文件，本次上传产物可能无法由 HEAD 精确复现。" >&2
   fi
-  python_bin="$repo_root/scripts/.venv/bin/python"
-  if [[ ! -x "$python_bin" ]]; then
-    python3 -m venv "$repo_root/scripts/.venv"
-  fi
-  if ! "$python_bin" -c 'import googleapiclient, google.oauth2, google_auth_httplib2, httplib2' >/dev/null 2>&1; then
-    "${play_env[@]}" "$python_bin" -m pip install -r "$repo_root/scripts/requirements.txt"
-  fi
+  ensure_publish_dependencies
   "${play_env[@]}" "$python_bin" scripts/play_upload.py \
     --json-key "$json_key" --track "$play_track" --check-tracks
 fi
+if (( push_website && ! push_release )); then ensure_publish_dependencies; fi
 
 normalize_fingerprint() {
   tr -d ':[:space:]' | tr '[:lower:]' '[:upper:]'
@@ -163,7 +171,7 @@ aab_cert_sha256() {
 }
 
 history="release-history"
-if (( push_release )); then history="release-publish-history"; fi
+if (( push_release || push_website )); then history="release-publish-history"; fi
 stamp="$(date +%Y%m%d%H%M%S)-$$"
 output="$repo_root/release-artifacts/$history/$version/$stamp"
 mkdir -p "$output"
@@ -173,20 +181,48 @@ flutter pub get
 flutter analyze
 flutter test
 
+archive_build() {
+  local format="$1" module mapping
+  if [[ "$phone_cert" != "$wear_cert" || "$phone_cert" != "$expected_cert" ]]; then
+    echo "手机和手表 $format 签名与已记录的 $profile 证书不一致；已停止。" >&2
+    exit 1
+  fi
+  # 每种格式构建后立即保存，避免后续构建覆盖对应的 R8 映射。
+  for module in app wear; do
+    mapping="$repo_root/build/$module/outputs/mapping/release/mapping.txt"
+    [[ -s "$mapping" ]] || { echo "缺少 $module R8 mapping.txt" >&2; exit 1; }
+    mkdir -p "$output/$format/$module-r8"
+    cp "$repo_root/build/$module/outputs/mapping/release/"*.txt "$output/$format/$module-r8/"
+  done
+  compgen -G "$output/$format/dart-symbols/*.symbols" >/dev/null || {
+    echo "缺少 $format Dart 调试符号" >&2; exit 1;
+  }
+}
+
+apk_channel="official"
+apk_suffix=""
+expected_cert="7D40427292830784C3DB74560D3F1368B9A0B8E5DACD6D73FFBBD4A771D211DE"
 if [[ "$profile" == "test" ]]; then
-  echo "构建测试签名手机与 Wear OS APK..."
-  flutter build apk --release --build-name="$name" --build-number="$code" --dart-define="APP_CHANNEL=$channel" --obfuscate --split-debug-info="$output/dart-symbols"
-  (cd android && ./gradlew :wear:assembleRelease "-PwatchVersionCode=$watch_code" "-PwatchVersionName=$name")
-  phone="$output/AI-Link-phone-test-$version.apk"
-  wear="$output/AI-Link-wear-test-$version.apk"
-  cp build/app/outputs/flutter-apk/app-release.apk "$phone"
-  cp build/wear/outputs/apk/release/wear-release.apk "$wear"
-  phone_cert="$(apk_cert_sha256 "$phone")"
-  wear_cert="$(apk_cert_sha256 "$wear")"
+  apk_channel="unknown"
+  apk_suffix="-test"
   expected_cert="F539897F7B786486EBC44F1383AF434DCE6AE6BB3ED12DCF363F6F4633B8596F"
-else
+fi
+echo "构建 $profile 签名手机与 Wear OS APK..."
+flutter build apk --release --build-name="$name" --build-number="$code" --dart-define="APP_CHANNEL=$apk_channel" --obfuscate --split-debug-info="$output/apk/dart-symbols"
+(cd android && ./gradlew :wear:assembleRelease "-PwatchVersionCode=$watch_code" "-PwatchVersionName=$name")
+phone_apk="$output/AI-Link-phone$apk_suffix-$version.apk"
+wear_apk="$output/AI-Link-wear$apk_suffix-$version.apk"
+cp build/app/outputs/flutter-apk/app-release.apk "$phone_apk"
+cp build/wear/outputs/apk/release/wear-release.apk "$wear_apk"
+phone_cert="$(apk_cert_sha256 "$phone_apk")"
+wear_cert="$(apk_cert_sha256 "$wear_apk")"
+archive_build apk
+phone="$phone_apk"
+wear="$wear_apk"
+artifacts=("$(basename "$phone_apk")" "$(basename "$wear_apk")")
+if [[ "$profile" != "test" ]]; then
   echo "构建正式签名手机与 Wear OS AAB..."
-  flutter build appbundle --release --build-name="$name" --build-number="$code" --dart-define="APP_CHANNEL=$channel" --obfuscate --split-debug-info="$output/dart-symbols"
+  flutter build appbundle --release --build-name="$name" --build-number="$code" --dart-define="APP_CHANNEL=$channel" --obfuscate --split-debug-info="$output/aab/dart-symbols"
   (cd android && ./gradlew :wear:bundleRelease "-PwatchVersionCode=$watch_code" "-PwatchVersionName=$name")
   phone="$output/AI-Link-phone-$version.aab"
   wear="$output/AI-Link-wear-$version.aab"
@@ -194,24 +230,10 @@ else
   cp build/wear/outputs/bundle/release/wear-release.aab "$wear"
   phone_cert="$(aab_cert_sha256 "$phone")"
   wear_cert="$(aab_cert_sha256 "$wear")"
-  expected_cert="7D40427292830784C3DB74560D3F1368B9A0B8E5DACD6D73FFBBD4A771D211DE"
+  archive_build aab
+  artifacts+=("$(basename "$phone")" "$(basename "$wear")")
 fi
-
-if [[ "$phone_cert" != "$wear_cert" || "$phone_cert" != "$expected_cert" ]]; then
-  echo "手机和手表签名不一致，或与已记录的 $profile 证书不一致；已停止。" >&2
-  exit 1
-fi
-# 缺失映射或符号时停止归档，确保后续可还原崩溃堆栈。
-for module in app wear; do
-  mapping="$repo_root/build/$module/outputs/mapping/release/mapping.txt"
-  [[ -s "$mapping" ]] || { echo "缺少 $module R8 mapping.txt" >&2; exit 1; }
-  mkdir -p "$output/$module-r8"
-  cp "$repo_root/build/$module/outputs/mapping/release/"*.txt "$output/$module-r8/"
-done
-compgen -G "$output/dart-symbols/*.symbols" >/dev/null || {
-  echo "缺少 Dart 调试符号" >&2; exit 1;
-}
-(cd "$output" && shasum -a 256 "$(basename "$phone")" "$(basename "$wear")" > SHA256SUMS)
+(cd "$output" && shasum -a 256 "${artifacts[@]}" > SHA256SUMS)
 {
   echo "profile=$profile"
   echo "versionName=$name"
@@ -221,10 +243,27 @@ compgen -G "$output/dart-symbols/*.symbols" >/dev/null || {
   echo "certificateSHA256=$phone_cert"
   echo "phone=$phone"
   echo "wear=$wear"
+  echo "phoneApk=$phone_apk"
+  echo "wearApk=$wear_apk"
   echo "playTrack=$play_track"
 } > "$output/release-info.txt"
 echo "本地产物：$output"
 echo "签名证书 SHA-256：$phone_cert"
+
+if (( push_website )); then
+  echo "上传手机与 Wear OS APK 到 OSS 并同步 AI Link 官网..."
+  if ! "$python_bin" scripts/website_release.py \
+    --phone-apk "$phone_apk" --wear-apk "$wear_apk" \
+    --version "$name" --version-code "$code" --wear-version-code "$watch_code" \
+    --manifest-out "$output/website-release.json"; then
+    echo "websiteStatus=FAILED" >> "$output/release-info.txt"
+    echo "官网下载同步未完成；Google Play 未上传。" >&2
+    exit 1
+  fi
+  echo "websiteStatus=CONFIRMED" >> "$output/release-info.txt"
+else
+  echo "websiteStatus=NOT_UPLOADED" >> "$output/release-info.txt"
+fi
 
 if (( push_release )); then
   echo "上传手机到 ${play_track}，Wear OS 到 wear:${play_track} ..."

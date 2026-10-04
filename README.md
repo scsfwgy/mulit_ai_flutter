@@ -137,7 +137,7 @@ adb -s emulator-5554 shell cmd connectivity set-chain3-enabled false
 
 正式版「AI Link」使用 `com.maxhall.ailink`；普通 Debug 与 `./release.sh --test` 均为「AI Link Debug」，使用 `com.maxhall.ailink.debug`，可与正式版同时安装。两者的服务、密钥与聊天记录各自独立，不自动迁移。旧测试包 `com.example.mulit_ai_flutter` 和此前占用正式包名的测试包也不会自动迁移；不要为了测试新包而卸载或清空旧包。iOS Debug 同样使用 `com.maxhall.ailink.debug` 与「AI Link Debug」，配套 watchOS Debug 使用 `com.maxhall.ailink.debug.watchkitapp`；Apple 平台仍待发布签名及配对真机端到端验证。
 
-本机已配置正式上传密钥；独立测试密钥及配置已入库，测试密码视为公开信息。运行 `./release.sh` 生成正式签名的手机、手表 AAB；运行 `./release.sh --test` 生成测试签名的手机、手表 APK。默认仅本地归档，显式传入 `--push-release` 才上传 Google Play。两端必须使用同一套签名；正式密钥与密码须离线备份且绝不入库，测试签名包与正式包独立安装；普通 Debug 与 `--test` 包共用测试签名，可以相互覆盖更新并保留测试数据。发布版本与 Tools24 一致：基础版本加 8 位 Git 哈希，手机 versionCode 使用 Git 提交次数，手表加 1,000,000。两端启用 R8 优化与资源裁剪，手机启用 Dart 混淆；归档同时保存映射和符号。详见 [上架清单](doc/google_play/README.md)。
+本机已配置正式上传密钥；独立测试密钥及配置已入库，测试密码视为公开信息。运行 `./release.sh` 生成正式签名的手机、手表 APK 和 AAB；运行 `./release.sh --test` 生成测试签名的手机、手表 APK。默认仅本地归档，`--push-website` 上传两端 APK 到 OSS 并同步 AI Link 官网，`--push-release` 同时同步官网和 Google Play。官网发布需先部署同级 HomeTools 的 `/api/v1/ai-link/release` 接口，并在 `localConfig/.env.local` 配置发布密钥和 OSS 配置路径，示例见 `scripts/website_release.env.example` 与 `scripts/oss_config.example.json`。两端必须使用同一套签名；正式密钥与密码须离线备份且绝不入库，测试签名包与正式包独立安装；普通 Debug 与 `--test` 包共用测试签名，可以相互覆盖更新并保留测试数据。发布版本与 Tools24 一致：基础版本加 8 位 Git 哈希，手机 versionCode 使用 Git 提交次数，手表加 1,000,000。两端启用 R8 优化与资源裁剪，手机启用 Dart 混淆；APK/AAB 分别保存映射和符号。详见 [上架清单](doc/google_play/README.md)。
 
 ## 开发验证
 

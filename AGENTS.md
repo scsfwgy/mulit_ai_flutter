@@ -105,7 +105,7 @@ cd android && ./gradlew :wear:assembleDebug
 
 iOS Debug 使用 `com.maxhall.ailink.debug` 和「AI Link Debug」，watchOS Debug 使用 `com.maxhall.ailink.debug.watchkitapp` 并关联 Debug iPhone；Release 保留正式标识。iOS/watchOS 编译和设备验证需要完整 Xcode 与 Apple 平台 SDK，并完成 Flutter 插件依赖集成；如果当前开发机只有 Xcode Command Line Tools，明确记录该限制，不要用 Swift 语法检查或 Android 构建结果代替 Apple 平台验证。
 
-发布构建运行 `./release.sh`，会先分析和测试，再从未入库的 `android/key.properties` 使用同一个上传密钥生成手机和手表 AAB；本地测试运行 `./release.sh --test`，用 `android/key.test.properties` 生成两端 APK。正式版与测试版使用不同包名和签名，可同时安装且数据独立；普通 Debug 与 `--test` 共用测试包名和签名，可覆盖更新。旧包数据不自动迁移，不得通过卸载或清空用户数据强行切换。密钥和密码必须离线备份，不使用 debug 签名冒充发布包。Google Play 隐私政策、Data safety、AI 内容举报流程、真实截图和设备测试见 `doc/google_play/README.md`，未完成项不能写成已上架。
+发布构建运行 `./release.sh`，会先分析和测试，再从未入库的 `android/key.properties` 使用同一个上传密钥生成手机和手表 APK/AAB；本地测试运行 `./release.sh --test`，用 `android/key.test.properties` 生成两端 APK。默认仅本地归档；`--push-website` 上传正式 APK 到 OSS 并同步 HomeTools 的 `/api/v1/ai-link/release`，`--push-release` 同时同步官网和 Google Play。AI Link 发布信息使用独立 Redis key，不覆盖 Tools24；发布 Token 与 OSS 凭据保存在忽略的 `localConfig` 中。APK/AAB 分别保存签名校验、R8 映射和 Dart 符号。正式版与测试版使用不同包名和签名，可同时安装且数据独立；普通 Debug 与 `--test` 共用测试包名和签名，可覆盖更新。旧包数据不自动迁移，不得通过卸载或清空用户数据强行切换。密钥和密码必须离线备份，不使用 debug 签名冒充发布包。Google Play 隐私政策、Data safety、AI 内容举报流程、真实截图和设备测试见 `doc/google_play/README.md`，未完成项不能写成已上架。
 
 提交代码前先检查 `git status`、变更范围和 `git diff --check`。只提交本次工作涉及的文件；`build/`、`.dart_tool/` 等构建产物由 `.gitignore` 排除。
 

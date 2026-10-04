@@ -9,19 +9,28 @@
 - `zh-CN/LISTING.md`、`en-US/LISTING.md`：商店文案草稿；上线前按实际功能复核。
 - `wear/`：Wear OS 480×480 模拟器真实界面截图（中英、明暗及设置页），作为审核素材候选；最终上架前仍需核对签名版和实际配置。
 - `zh-CN/phone/`、`en-US/phone/`：各 4 张 1080×1920 的真实手机模拟器截图，已转换为无透明通道的 JPEG。截图来自隔离的 Pixel 10 Pro 模拟器和本地测试签名包，作为商店详情草稿；发布前仍需用最终上传签名版本复核应用界面，并补充真实聊天画面。
-- `../../release.sh`：先运行分析、测试；默认只构建并归档正式上传签名的手机与 Wear OS AAB，`--test` 只构建本地测试签名的两端 APK。仅显式传入 `--push-release` 才通过 Google Play API 上传两个 AAB，默认进入内部测试轨道。每次归档记录 SHA-256、签名证书、版本号和上传状态。
+- `../../release.sh`：先运行分析、测试；默认构建并归档正式签名的手机与 Wear OS APK/AAB，`--test` 只构建本地测试签名的两端 APK。`--push-website` 将正式 APK 上传 OSS 并更新 AI Link 官网，`--push-release` 再通过 Google Play API 上传两个 AAB，默认进入内部测试轨道。每次归档记录 SHA-256、签名证书、版本号与官网/Play 状态；APK/AAB 分别保存 R8 映射和 Dart 符号。
 - `../../android/key.properties.example` 和 `../../android/key.test.properties.example`：两套签名配置模板。测试密钥 `localConfig/ai-link-test.jks` 与实际配置 `android/key.test.properties` 已入库，便于共同测试；正式密钥 `localConfig/ai-link-upload.jks` 和实际配置 `android/key.properties` 仅在本机，始终被 Git 忽略。同一套构建中的手机与手表必须使用同一密钥。
 - 官方网站：<https://www.tools24.uk/app/ai-link>；中英文隐私政策：<https://www.tools24.uk/app/ai-link/privacy>。两页已公开可访问；应用内“数据与隐私”和“关于”分别提供入口。
 
 首次配置时已在本机生成两套独立 RSA 4096 / PKCS12 密钥。**正式密钥、`android/key.properties` 和密码必须一起离线备份**；仅备份 keystore 而丢失密码仍无法继续签包。正式密钥、配置、密码及其备份绝对不能提交到 Git、上传到公开网盘或放进截图。测试签名及配置在仓库中，测试密码是公开信息，不能作为正式上传密钥或保护真实用户数据。Google Play 的 Play App Signing 以正式上传证书识别上传包；测试签名只用于本地安装，不可用于 Play 上传。若已有 Play Console 上传证书，必须先比对指纹，不能擅自换钥。
 
 ```bash
-./release.sh                                      # 只构建正式手机与手表 AAB
+./release.sh                                      # 本地构建正式手机与手表 APK/AAB
 ./release.sh --test                               # 只构建测试手机与手表 APK
-./release.sh --push-release --play-track internal # 构建并上传到手机及 Wear OS 内部测试轨道
+./release.sh --push-website                       # 同步官网两端 APK 下载，不上传 Play
+./release.sh --push-release --play-track internal # 同步官网并上传手机及 Wear OS 内部测试轨道
 ```
 
-上传脚本使用 `localConfig/google-play-service-account.json`（Git 忽略）或 `PLAY_SERVICE_ACCOUNT_JSON` 指定的现有服务账号 JSON。当前机器上的本地路径已链接到 Tools24 使用的同一 API 账号；仓库源码不依赖 Tools24 的路径，也不复制或提交账号私钥。首次在其他机器运行时需自行配置该文件。`--play-track` 支持 `internal`、`alpha`、`beta`、`production`；手机使用所选轨道，Wear OS 使用 `wear:<轨道>`。脚本在一次 Play 编辑会话中上传两端 AAB，核对版本号与 SHA-256，校验编辑后才提交；失败不会提交该编辑。版本更新日志见 `release_notes.json`。基础版本由 `pubspec.yaml` 管理；发布脚本以 Git 提交次数作为手机 versionCode，手表加 1,000,000，versionName 为基础版本加 8 位 HEAD 哈希，与 Tools24 一致。浅克隆禁止发布，同一 HEAD 重打包不递增版本 Code；上传前须确保新提交次数高于已上传版本。关于页分开显示版本及版本 Code，正式 Play 包版本追加 `(gp)`，测试包不标渠道。
+官网同步采用 Tools24 相同的 OSS → HomeTools 发布接口流程，但 AI Link 使用独立接口与 Redis key，不能把 `WEBSITE_RELEASE_URL` 指向 Tools24 的 `/api/v1/app/release`。
+
+1. 先将同级 `/Users/mateolim/codeProjects/HomeTools` 的接口与页面改动部署到官网。
+2. 将 `scripts/website_release.env.example` 复制到 `localConfig/.env.local`，填写与 HomeTools 一致的 `RELEASE_ADMIN_TOKEN`；默认接口为 `https://www.tools24.uk/api/v1/ai-link/release`。
+3. 将 `scripts/oss_config.example.json` 复制到 `localConfig/oss_config.json` 并配置 OSS；参考已有 Tools24 配置时，将文件复制到当前项目，再设置 `OSS_CONFIG_FILE=localConfig/oss_config.json`，不依赖其他项目的本地路径。AI Link 只上传到 `ai-link/release/`。
+
+`scripts/.venv/bin/python scripts/website_release.py --check` 仅检查本地配置，不上传。真实发布先校验两端 APK 签名，上传两份 APK 并核对 OSS MD5，然后 PUT 版本信息、GET 回读确认。官网失败会记录 `websiteStatus=FAILED` 并停止 Play 上传；官网已确认但 Play 后续失败时，两端状态分别记录，不代表整体发布成功。默认构建不访问 OSS、官网或 Play；正式密钥、OSS 凭据、发布 Token 均保持本地且不入库。
+
+上传脚本使用 `localConfig/google-play-service-account.json`（Git 忽略）或 `PLAY_SERVICE_ACCOUNT_JSON` 指定的现有服务账号 JSON。当前机器上的本地路径已链接到 Tools24 使用的同一 API 账号；仓库源码不依赖 Tools24 的路径，也不复制或提交账号私钥。首次在其他机器运行时需自行配置该文件。`--play-track` 支持 `internal`、`alpha`、`beta`、`production`；手机使用所选轨道，Wear OS 使用 `wear:<轨道>`。脚本在一次 Play 编辑会话中上传两端 AAB，核对版本号与 SHA-256，校验编辑后才提交；失败不会提交该编辑。版本更新日志见 `release_notes.json`。基础版本由 `pubspec.yaml` 管理；发布脚本以 Git 提交次数作为手机 versionCode，手表加 1,000,000，versionName 为基础版本加 8 位 HEAD 哈希，与 Tools24 一致。浅克隆禁止发布，同一 HEAD 重打包不递增版本 Code；上传前须确保新提交次数高于已上传版本。关于页分开显示版本及版本 Code，正式 Play 包版本追加 `(gp)`，官网 APK 追加 `(site)`，测试包不标渠道。
 
 Google [技术质量要求](https://support.google.com/googleplay/android-developer/answer/17492799?hl=en)从 2027 年 2 月起对 DEX 超过 10 MB 的普通应用要求混淆、优化及裁剪各至少 25%，覆盖所有设备形态。开启 R8 不等于已达到百分比，须在 Play Console 的 App bundle explorer 核对最终上传包。
 
