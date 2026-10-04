@@ -1582,31 +1582,16 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (_transcribing)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 7),
-              child: Row(
-                children: [
-                  const CupertinoActivityIndicator(radius: 8),
-                  const SizedBox(width: 8),
-                  Text(
-                    tr('正在识别语音…'),
-                    style: TextStyle(color: IosColors.secondary, fontSize: 13),
-                  ),
-                  const Spacer(),
-                ],
-              ),
-            ),
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               CupertinoButton(
                 padding: EdgeInsets.zero,
                 minimumSize: const Size(46, 44),
-                onPressed: _toggleVoiceMode,
+                onPressed: _transcribing ? null : _toggleVoiceMode,
                 child: Icon(
                   _voiceMode ? CupertinoIcons.keyboard : CupertinoIcons.mic,
-                  color: IosColors.blue,
+                  color: _transcribing ? IosColors.secondary : IosColors.blue,
                   size: 27,
                   semanticLabel: tr(_voiceMode ? '切换到文字输入' : '切换到语音输入'),
                 ),
@@ -1616,13 +1601,16 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                 child: _voiceMode
                     ? Semantics(
                         button: true,
-                        label: tr('按住说话，松开发送，左滑取消，右滑转文字'),
+                        enabled: !_transcribing,
+                        label: _transcribing
+                            ? tr('正在识别语音…')
+                            : tr('按住说话，松开发送，左滑取消，右滑转文字'),
                         child: Listener(
                           behavior: HitTestBehavior.opaque,
-                          onPointerDown: _voiceDown,
-                          onPointerMove: _voiceMove,
-                          onPointerUp: _voiceUp,
-                          onPointerCancel: _voiceCancel,
+                          onPointerDown: _transcribing ? null : _voiceDown,
+                          onPointerMove: _transcribing ? null : _voiceMove,
+                          onPointerUp: _transcribing ? null : _voiceUp,
+                          onPointerCancel: _transcribing ? null : _voiceCancel,
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 120),
                             height: 44,
@@ -1635,9 +1623,11 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                               border: Border.all(color: IosColors.separator),
                             ),
                             child: Text(
-                              tr('按住说话'),
+                              tr(_transcribing ? '正在识别语音…' : '按住说话'),
                               style: TextStyle(
-                                color: IosColors.label,
+                                color: _transcribing
+                                    ? IosColors.secondary
+                                    : IosColors.label,
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
                               ),
