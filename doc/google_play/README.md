@@ -20,6 +20,7 @@
 ./release.sh --test                               # 只构建测试手机与手表 APK
 ./release.sh --push-website                       # 同步官网两端 APK 下载，不上传 Play
 ./release.sh --push-release --play-track internal # 同步官网并上传手机及 Wear OS 内部测试轨道
+./release.sh --push-release --play-track alpha --wear-track 'wear:手表内部测试V2' # 两端指定不同的已有测试轨道
 ```
 
 官网同步采用 Tools24 相同的 OSS → HomeTools 发布接口流程，但 AI Link 使用独立接口与 Redis key，不能把 `WEBSITE_RELEASE_URL` 指向 Tools24 的 `/api/v1/app/release`。
@@ -30,13 +31,30 @@
 
 `scripts/.venv/bin/python scripts/website_release.py --check` 仅检查本地配置，不上传。真实发布先校验两端 APK 签名，上传两份 APK 并核对 OSS MD5，然后 PUT 版本信息、GET 回读确认。官网失败会记录 `websiteStatus=FAILED` 并停止 Play 上传；官网已确认但 Play 后续失败时，两端状态分别记录，不代表整体发布成功。默认构建不访问 OSS、官网或 Play；正式密钥、OSS 凭据、发布 Token 均保持本地且不入库。
 
-上传脚本使用 `localConfig/google-play-service-account.json`（Git 忽略）或 `PLAY_SERVICE_ACCOUNT_JSON` 指定的现有服务账号 JSON。当前机器上的本地路径已链接到 Tools24 使用的同一 API 账号；仓库源码不依赖 Tools24 的路径，也不复制或提交账号私钥。首次在其他机器运行时需自行配置该文件。`--play-track` 支持 `internal`、`alpha`、`beta`、`production`；手机使用所选轨道，Wear OS 使用 `wear:<轨道>`。脚本在一次 Play 编辑会话中上传两端 AAB，核对版本号与 SHA-256，校验编辑后才提交；失败不会提交该编辑。版本更新日志见 `release_notes.json`。基础版本由 `pubspec.yaml` 管理；发布脚本以 Git 提交次数作为手机 versionCode，手表加 1,000,000，versionName 为基础版本加 8 位 HEAD 哈希，与 Tools24 一致。浅克隆禁止发布，同一 HEAD 重打包不递增版本 Code；上传前须确保新提交次数高于已上传版本。关于页分开显示版本及版本 Code，正式 Play 包版本追加 `(gp)`，官网 APK 追加 `(site)`，测试包不标渠道。
+上传脚本使用 `localConfig/google-play-service-account.json`（Git 忽略）或 `PLAY_SERVICE_ACCOUNT_JSON` 指定的现有服务账号 JSON。当前机器上的本地路径已链接到 Tools24 使用的同一 API 账号；仓库源码不依赖 Tools24 的路径，也不复制或提交账号私钥。首次在其他机器运行时需自行配置该文件。`--play-track` 支持 `internal`、`alpha`、`beta`、`production`；手机使用所选轨道，Wear OS 默认使用 `wear:<轨道>`，可通过 `--wear-track` 指定另一个已有轨道的完整名称。脚本在一次 Play 编辑会话中上传两端 AAB，核对版本号与 SHA-256，校验编辑后才提交；校验失败不提交，并尝试丢弃编辑。日志分别标记校验和提交阶段及编辑 ID；提交阶段网络或服务器报错时，应先在 Console 核对是否保存成功，再决定重试。版本更新日志见 `release_notes.json`。基础版本由 `pubspec.yaml` 管理；发布脚本以 Git 提交次数作为手机 versionCode，手表加 1,000,000，versionName 为基础版本加 8 位 HEAD 哈希，与 Tools24 一致。浅克隆禁止发布，同一 HEAD 重打包不递增版本 Code；上传前须确保新提交次数高于已上传版本。关于页分开显示版本及版本 Code，正式 Play 包版本追加 `(gp)`，官网 APK 追加 `(site)`，测试包不标渠道。
 
 Google [技术质量要求](https://support.google.com/googleplay/android-developer/answer/17492799?hl=en)从 2027 年 2 月起对 DEX 超过 10 MB 的普通应用要求混淆、优化及裁剪各至少 25%，覆盖所有设备形态。开启 R8 不等于已达到百分比，须在 Play Console 的 App bundle explorer 核对最终上传包。
 
 手机及手表 Release 均启用 R8 混淆、代码优化与资源裁剪；手机额外启用 Dart 混淆及调试符号拆分。每次归档保存两端 R8 映射和 Dart 符号，须与产物一起保留以还原堆栈。
 
-上传前需在 Play Console 完成 Play App Signing、Wear OS form factor 和相关应用内容设置。2026-09-30 API 已可见 `wear:internal`、`wear:beta`、`wear:production`，但尚无 `wear:alpha`；选择 `--play-track alpha` 时，脚本会在同一编辑会话中创建对应的 Wear OS 封闭测试轨道，再上传两端 AAB。其他缺失的 Wear OS 轨道仍会在构建前停止。提交成功只表示 API 编辑已提交，审核与上线状态以 Console 为准；脚本不会自动完成问卷，也不会上传 Tools24 专用的 OSS/官网发布接口。每次正式上传前更新 `release_notes.json` 的版本说明。
+上传前需在 Play Console 完成 Play App Signing、Wear OS form factor 和相关应用内容设置。脚本不自动创建缺失轨道，预检会在构建前停止，并列出已有手表轨道；可在 Console 建立和配置新轨道，或用 `--wear-track` 选择已有轨道。提交成功只表示 API 编辑已提交，审核与上线状态以 Console 为准；脚本不会自动完成问卷，也不会上传 Tools24 专用的 OSS/官网发布接口。每次正式上传前更新 `release_notes.json` 的版本说明。
+
+2026-10-04 实际 API 诊断：Play 保存的最新手机/手表版本为 38 / 1000038，40、41 的失败编辑未保存。临时创建 `wear:alpha` 后，空轨道或分配已有 1000038 的 `draft` 版本可通过 `edits.validate`；改为 `completed` 返回 HTTP 500，移除版本后恢复正常。同一已有版本分配到手机 `alpha` 与手表 `wear:手表内部测试V2` 可通过校验。上述诊断编辑全部丢弃，未调用提交接口；该结果定位了新轨道发布校验的问题，尚不能确定 Google 后端具体原因，也不能代替新版本实际提交验证。
+
+官网已同步而 Play 校验失败时，可复用归档中的 AAB，只重试 Play，无需重建或重复上传 OSS。以下示例对应 41 / 1000041，执行前核对归档及目标轨道；脚本默认从本机忽略目录读取服务账号。Python 上传命令使用环境中的 HTTP 代理，本机示例代理为 `127.0.0.1:7897`，其他机器按实际设置修改。
+
+```bash
+archive='/Users/mateolim/codeProjects/mulit_ai_flutter/release-artifacts/release-publish-history/1.0.2-6caae03d+41/20261004171535-56061'
+https_proxy=http://127.0.0.1:7897 http_proxy=http://127.0.0.1:7897 \
+  scripts/.venv/bin/python -u scripts/play_upload.py \
+  --phone-aab "$archive/AI-Link-phone-1.0.2-6caae03d+41.aab" \
+  --wear-aab "$archive/AI-Link-wear-1.0.2-6caae03d+41.aab" \
+  --phone-version-code 41 --wear-version-code 1000041 \
+  --track alpha --wear-track 'wear:手表内部测试V2' \
+  > "$archive/play-upload-retry.log" 2>&1
+```
+
+直接调用上传脚本的重试日志单独保存；原始 `release-info.txt` 保留首次失败记录，不会自动更新。仅当重试日志出现 `PLAY_UPLOAD_STATUS=COMMITTED` 时，才确认该编辑提交成功。
 
 正式包「AI Link」使用 `com.maxhall.ailink`；普通 `flutter run`/Debug APK 和 `./release.sh --test` 均为「AI Link Debug」，使用 `com.maxhall.ailink.debug` 及仓库中的测试签名，彼此可覆盖更新，并可与正式包同时安装。手机与 Wear OS 必须安装同一类型的包，才能满足 Data Layer 的包名与签名匹配要求。正式版与测试版的本地数据、密钥和手表同步各自独立。旧测试包仍保留原包名及数据，不会迁移到新测试包；**不要通过卸载或清除数据来强行切换签名**。
 

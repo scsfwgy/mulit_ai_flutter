@@ -48,6 +48,7 @@ class ReleaseScriptTest(unittest.TestCase):
                 push_release="1",
                 push_website="1",
                 play_track="internal",
+                wear_track="wear:internal",
             )
             result = subprocess.run(
                 ["/bin/bash", "-Eeuo", "pipefail", "-c", preflight +
@@ -58,7 +59,7 @@ class ReleaseScriptTest(unittest.TestCase):
             self.assertIn("play=http://127.0.0.1:7897|http://127.0.0.1:7897", result.stdout)
             self.assertIn("flutter=|", result.stdout)
 
-    def run_upload_step(self, succeeds):
+    def run_upload_step(self, succeeds, wear_track="wear:internal"):
         # Execute the real post-build branch without building or contacting Play.
         source = RELEASE_SCRIPT.read_text()
         upload_step = source[source.index('if (( push_release )); then\n  echo "上传手机到'):]
@@ -75,6 +76,7 @@ class ReleaseScriptTest(unittest.TestCase):
             env.update(
                 push_release="1",
                 play_track="internal",
+                wear_track=wear_track,
                 output=directory,
                 python_bin=str(uploader),
                 json_key=str(output / "fake-account.json"),
@@ -105,6 +107,20 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("Google Play 上传未完成", result.stderr)
         self.assertEqual(info, "playStatus=FAILED\n")
+
+    def test_custom_wear_track_reaches_uploader(self):
+        result, info = self.run_upload_step(True, "wear:手表内部测试V2")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--wear-track\nwear:手表内部测试V2\n", result.stdout)
+        self.assertIn("Wear OS 到 wear:手表内部测试V2", result.stdout)
+        self.assertIn("playStatus=COMMITTED", info)
+
+    def test_invalid_wear_track_stops_before_build(self):
+        for name in ("alpha", "wear:", "wear:  "):
+            result = subprocess.run(["/bin/bash", str(RELEASE_SCRIPT), "--wear-track", name],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("--wear-track 必须", result.stderr)
 
     def test_complete_release_modes_and_website_failure(self):
         for flags, website_failure in (([], False), (["--test"], False),

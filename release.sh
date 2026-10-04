@@ -9,15 +9,17 @@ profile="release"
 push_release=0
 push_website=0
 play_track="internal"
+wear_track=""
 json_key="${PLAY_SERVICE_ACCOUNT_JSON:-$repo_root/localConfig/google-play-service-account.json}"
 
 usage() {
-  echo "用法：./release.sh [--test] [--push-release|--push-website] [--play-track internal|alpha|beta|production] [--json-key 路径]"
+  echo "用法：./release.sh [--test] [--push-release|--push-website] [--play-track internal|alpha|beta|production] [--wear-track wear:轨道名] [--json-key 路径]"
   echo "  （无参数）        构建正式签名的手机和 Wear OS APK/AAB；仅本地归档"
   echo "  --test          构建本地测试签名的手机和 Wear OS APK；不上传"
   echo "  --push-release  APK 上传 OSS 并同步官网，同时上传两个 AAB 到 Google Play"
   echo "  --push-website  APK 上传 OSS 并同步 AI Link 官网；不上传 Google Play"
   echo "  --play-track    手机轨道；Wear OS 自动使用 wear:<轨道>"
+  echo "  --wear-track    指定已有手表轨道，可与手机轨道名称不同"
   echo "  --json-key      服务账号 JSON 路径；也可设 PLAY_SERVICE_ACCOUNT_JSON"
 }
 
@@ -29,6 +31,9 @@ while [[ $# -gt 0 ]]; do
     --play-track)
       [[ $# -ge 2 ]] || { echo "--play-track 缺少轨道" >&2; exit 2; }
       play_track="$2"; shift 2 ;;
+    --wear-track)
+      [[ $# -ge 2 ]] || { echo "--wear-track 缺少轨道" >&2; exit 2; }
+      wear_track="$2"; shift 2 ;;
     --json-key)
       [[ $# -ge 2 ]] || { echo "--json-key 缺少路径" >&2; exit 2; }
       json_key="$2"; shift 2 ;;
@@ -41,6 +46,11 @@ case "$play_track" in
   internal|alpha|beta|production) ;;
   *) echo "不支持的 Play 轨道：$play_track" >&2; exit 2 ;;
 esac
+wear_track="${wear_track:-wear:$play_track}"
+if [[ "$wear_track" != wear:* || -z "${wear_track#wear:}" || "${wear_track#wear:}" != *[![:space:]]* ]]; then
+  echo "--wear-track 必须使用完整的 wear:<轨道名>" >&2
+  exit 2
+fi
 if (( push_release || push_website )) && [[ "$profile" == "test" ]]; then
   echo "测试签名 APK 不可发布到官网或 Google Play；请去掉 --test。" >&2
   exit 2
@@ -137,7 +147,7 @@ if (( push_release )); then
   fi
   ensure_publish_dependencies
   "${play_env[@]}" "$python_bin" scripts/play_upload.py \
-    --json-key "$json_key" --track "$play_track" --check-tracks
+    --json-key "$json_key" --track "$play_track" --wear-track "$wear_track" --check-tracks
 fi
 if (( push_website && ! push_release )); then ensure_publish_dependencies; fi
 
@@ -246,6 +256,7 @@ fi
   echo "phoneApk=$phone_apk"
   echo "wearApk=$wear_apk"
   echo "playTrack=$play_track"
+  echo "wearTrack=$wear_track"
 } > "$output/release-info.txt"
 echo "本地产物：$output"
 echo "签名证书 SHA-256：$phone_cert"
@@ -266,13 +277,13 @@ else
 fi
 
 if (( push_release )); then
-  echo "上传手机到 ${play_track}，Wear OS 到 wear:${play_track} ..."
+  echo "上传手机到 ${play_track}，Wear OS 到 ${wear_track} ..."
   upload_log="$output/play-upload.log"
   if ! "${play_env[@]}" "$python_bin" -u scripts/play_upload.py \
     --json-key "$json_key" \
     --phone-aab "$phone" --wear-aab "$wear" \
     --phone-version-code "$code" --wear-version-code "$watch_code" \
-    --track "$play_track" 2>&1 | tee "$upload_log"; then
+    --track "$play_track" --wear-track "$wear_track" 2>&1 | tee "$upload_log"; then
     echo "playStatus=FAILED" >> "$output/release-info.txt"
     echo "Google Play 上传未完成，详情见 $upload_log" >&2
     exit 1

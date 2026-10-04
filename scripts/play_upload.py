@@ -45,7 +45,7 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def require_tracks(service, edit_id: str, track: str) -> bool:
+def require_tracks(service, edit_id: str, track: str, wear_track: str | None = None) -> None:
     available_tracks = {
         item["track"]
         for item in service.edits()
@@ -54,22 +54,19 @@ def require_tracks(service, edit_id: str, track: str) -> bool:
         .execute(num_retries=3)
         .get("tracks", [])
     }
-    wear_track = f"wear:{track}"
+    wear_track = wear_track or f"wear:{track}"
+    if not wear_track.startswith("wear:") or not wear_track[5:].strip():
+        raise ValueError("Wear OS 轨道必须使用完整的 wear:<轨道名>")
     if track not in available_tracks:
         raise RuntimeError(f"Play Console 尚未提供手机 {track} 轨道。")
     if wear_track in available_tracks:
-        return False
-    if track == "alpha":
-        service.edits().tracks().create(
-            packageName=PACKAGE_NAME,
-            editId=edit_id,
-            body={"track": wear_track, "type": "CLOSED_TESTING", "formFactor": "WEAR"},
-        ).execute(num_retries=3)
-        return True
+        return
+    choices = "、".join(sorted(t for t in available_tracks if t.startswith("wear:")))
     raise RuntimeError(
         f"Play Console 尚未提供 Wear OS {wear_track} 轨道。"
-        "请先在‘测试和发布 → 高级设置 → 设备类型’中添加 Wear OS，"
-        "并建立对应测试轨道。"
+        "请在 Console 建立并配置对应轨道，或用 --wear-track 指定已有轨道。"
+        f"已有手表轨道：{choices or '无'}。"
+        "脚本不再自动创建轨道，以避免新建轨道带版本校验时返回 HTTP 500。"
     )
 
 
@@ -82,20 +79,24 @@ def upload_to_edit(
     track: str,
     notes: list[dict[str, str]],
     media_file_upload,
+    wear_track: str | None = None,
 ) -> tuple[str, dict[str, int]]:
     """Commit both form factors together; discard the edit on any failure."""
     edit_id = service.edits().insert(body={}, packageName=PACKAGE_NAME).execute(
         num_retries=3
     )["id"]
     codes: dict[str, int] = {}
+    wear_track = wear_track or f"wear:{track}"
+    stage = "检查轨道"
+    print(f"Play 编辑会话：{edit_id}", flush=True)
     try:
-        if require_tracks(service, edit_id, track):
-            print(f"已在本次编辑会话创建 Wear OS {track} 封闭测试轨道", flush=True)
+        require_tracks(service, edit_id, track, wear_track)
 
         for label, path, expected in (
             ("phone", phone, phone_code),
             ("wear", wear, wear_code),
         ):
+            stage = f"上传 {label} AAB"
             bundle = service.edits().bundles().upload(
                 packageName=PACKAGE_NAME,
                 editId=edit_id,
@@ -117,7 +118,8 @@ def upload_to_edit(
             codes[label] = actual
             print(f"已上传 {label} AAB：versionCode={actual}", flush=True)
 
-        for destination, code in ((track, phone_code), (f"wear:{track}", wear_code)):
+        for destination, code in ((track, phone_code), (wear_track, wear_code)):
+            stage = f"分配轨道 {destination}"
             release = {"status": "completed", "versionCodes": [str(code)]}
             if notes:
                 release["releaseNotes"] = notes
@@ -129,20 +131,27 @@ def upload_to_edit(
             ).execute(num_retries=3)
             print(f"已分配轨道 {destination}：versionCode={code}", flush=True)
 
+        stage = "校验编辑（edits.validate）"
+        print(f"开始{stage}", flush=True)
         service.edits().validate(packageName=PACKAGE_NAME, editId=edit_id).execute(
             num_retries=3
         )
+        print("Play 编辑校验通过", flush=True)
+        stage = "提交编辑（edits.commit）"
+        print(f"开始{stage}", flush=True)
         service.edits().commit(packageName=PACKAGE_NAME, editId=edit_id).execute(
             num_retries=3
         )
         return edit_id, codes
     except Exception:
+        print(f"Play 失败阶段：{stage}；editId={edit_id}", file=sys.stderr, flush=True)
         try:
             service.edits().delete(packageName=PACKAGE_NAME, editId=edit_id).execute(
                 num_retries=1
             )
+            print("已丢弃本次 Play 编辑会话", file=sys.stderr, flush=True)
         except Exception:
-            pass
+            print("丢弃 Play 编辑未获确认，请在 Console 核对状态", file=sys.stderr, flush=True)
         raise
 
 
@@ -191,6 +200,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--track", default="internal", choices=("internal", "alpha", "beta", "production")
     )
+    parser.add_argument("--wear-track", help="完整的手表轨道名，默认 wear:<手机轨道>")
     parser.add_argument(
         "--release-notes",
         type=Path,
@@ -204,6 +214,10 @@ def main(argv: list[str] | None = None) -> int:
         return fail(f"服务账号密钥不存在：{args.json_key}")
     if args.timeout <= 0:
         return fail("--timeout 必须大于 0")
+    if args.wear_track is not None and (
+        not args.wear_track.startswith("wear:") or not args.wear_track[5:].strip()
+    ):
+        return fail("--wear-track 必须使用完整的 wear:<轨道名>")
     if args.check_tracks:
         try:
             service = service_from_key(args.json_key, args.timeout)
@@ -211,15 +225,14 @@ def main(argv: list[str] | None = None) -> int:
                 num_retries=3
             )["id"]
             try:
-                created = require_tracks(service, edit_id, args.track)
+                require_tracks(service, edit_id, args.track, args.wear_track)
             finally:
                 service.edits().delete(
                     packageName=PACKAGE_NAME, editId=edit_id
                 ).execute(num_retries=1)
         except Exception as exc:
             return fail(str(exc))
-        suffix = "（上传时创建）" if created else ""
-        print(f"Play 轨道预检通过：{args.track} / wear:{args.track}{suffix}")
+        print(f"Play 轨道预检通过：{args.track} / {args.wear_track or f'wear:{args.track}'}")
         return 0
 
     if any(
@@ -253,6 +266,7 @@ def main(argv: list[str] | None = None) -> int:
             args.track,
             notes,
             MediaFileUpload,
+            args.wear_track,
         )
     except Exception as exc:
         try:

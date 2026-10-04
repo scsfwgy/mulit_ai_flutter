@@ -1,9 +1,11 @@
 import tempfile
 import unittest
+import io
+from contextlib import redirect_stderr
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from play_upload import upload_to_edit
+from play_upload import require_tracks, upload_to_edit
 
 
 class PlayUploadTest(unittest.TestCase):
@@ -86,13 +88,27 @@ class PlayUploadTest(unittest.TestCase):
         self.service.edits.return_value.bundles.return_value.upload.assert_not_called()
         self.service.edits.return_value.delete.assert_called_once()
 
-    def test_missing_wear_alpha_is_created_in_same_edit(self):
+    def test_missing_wear_alpha_stops_before_upload_or_creation(self):
         self.service.edits.return_value.tracks.return_value.list.return_value.execute.return_value = {
             "tracks": [{"track": "alpha"}]
         }
+        with self.assertRaisesRegex(RuntimeError, "--wear-track"):
+            upload_to_edit(
+                self.service, self.phone, self.wear, 7, 1000007,
+                "alpha", [], lambda *args, **kwargs: object(),
+            )
+        self.service.edits.return_value.tracks.return_value.create.assert_not_called()
+        self.service.edits.return_value.bundles.return_value.upload.assert_not_called()
+        self.service.edits.return_value.commit.assert_not_called()
+        self.service.edits.return_value.delete.assert_called_once()
+
+    def test_explicit_wear_track_does_not_change_phone_destination(self):
+        wear_track = "wear:手表内部测试V2"
+        self.service.edits.return_value.tracks.return_value.list.return_value.execute.return_value = {
+            "tracks": [{"track": "alpha"}, {"track": wear_track}]
+        }
         self.service.edits.return_value.bundles.return_value.upload.return_value.execute.side_effect = [
-            {"versionCode": 7},
-            {"versionCode": 1000007},
+            {"versionCode": 7}, {"versionCode": 1000007},
         ]
         upload_to_edit(
             self.service,
@@ -103,13 +119,34 @@ class PlayUploadTest(unittest.TestCase):
             "alpha",
             [],
             lambda *args, **kwargs: object(),
+            wear_track=wear_track,
         )
-        create = self.service.edits.return_value.tracks.return_value.create
         self.assertEqual(
-            create.call_args.kwargs["body"],
-            {"track": "wear:alpha", "type": "CLOSED_TESTING", "formFactor": "WEAR"},
+            [call.kwargs["track"] for call in self.service.edits.return_value.tracks.return_value.update.call_args_list],
+            ["alpha", wear_track],
         )
         self.service.edits.return_value.commit.assert_called_once()
+
+    def test_validation_failure_identifies_stage_and_never_commits(self):
+        self.service.edits.return_value.bundles.return_value.upload.return_value.execute.side_effect = [
+            {"versionCode": 7}, {"versionCode": 1000007},
+        ]
+        self.service.edits.return_value.validate.return_value.execute.side_effect = RuntimeError("HTTP 500")
+        output = io.StringIO()
+        with redirect_stderr(output), self.assertRaisesRegex(RuntimeError, "HTTP 500"):
+            upload_to_edit(
+                self.service, self.phone, self.wear, 7, 1000007,
+                "internal", [], lambda *args, **kwargs: object(),
+            )
+        self.assertIn("edits.validate", output.getvalue())
+        self.assertIn("editId=edit-1", output.getvalue())
+        self.service.edits.return_value.commit.assert_not_called()
+        self.service.edits.return_value.delete.assert_called_once()
+
+    def test_invalid_wear_track_is_rejected(self):
+        for name in ("alpha", "wear:", "wear:  "):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                require_tracks(self.service, "edit-1", "internal", name)
 
 
 if __name__ == "__main__":
