@@ -91,6 +91,9 @@ fi
 channel="google_play"
 if [[ "$profile" == "test" ]]; then channel="unknown"; fi
 
+# Keep the Play proxy scoped to Python commands so local Flutter HTTP tests
+# continue to connect directly to their loopback servers.
+play_env=(env)
 if (( push_release )); then
   resolve_http_proxy() {
     local configured="${http_proxy:-${HTTP_PROXY:-${https_proxy:-${HTTPS_PROXY:-}}}}" candidate
@@ -112,7 +115,7 @@ if (( push_release )); then
   }
   proxy="$(resolve_http_proxy)"
   if [[ -n "$proxy" ]]; then
-    export http_proxy="$proxy" https_proxy="$proxy"
+    play_env+=("http_proxy=$proxy" "https_proxy=$proxy")
     echo "已为 Google Play API 配置 HTTP 代理。"
   fi
   [[ -f "$json_key" ]] || { echo "服务账号密钥不存在：$json_key" >&2; exit 2; }
@@ -124,9 +127,9 @@ if (( push_release )); then
     python3 -m venv "$repo_root/scripts/.venv"
   fi
   if ! "$python_bin" -c 'import googleapiclient, google.oauth2, google_auth_httplib2, httplib2' >/dev/null 2>&1; then
-    "$python_bin" -m pip install -r "$repo_root/scripts/requirements.txt"
+    "${play_env[@]}" "$python_bin" -m pip install -r "$repo_root/scripts/requirements.txt"
   fi
-  "$python_bin" scripts/play_upload.py \
+  "${play_env[@]}" "$python_bin" scripts/play_upload.py \
     --json-key "$json_key" --track "$play_track" --check-tracks
 fi
 
@@ -226,7 +229,7 @@ echo "签名证书 SHA-256：$phone_cert"
 if (( push_release )); then
   echo "上传手机到 ${play_track}，Wear OS 到 wear:${play_track} ..."
   upload_log="$output/play-upload.log"
-  if ! "$python_bin" -u scripts/play_upload.py \
+  if ! "${play_env[@]}" "$python_bin" -u scripts/play_upload.py \
     --json-key "$json_key" \
     --phone-aab "$phone" --wear-aab "$wear" \
     --phone-version-code "$code" --wear-version-code "$watch_code" \
