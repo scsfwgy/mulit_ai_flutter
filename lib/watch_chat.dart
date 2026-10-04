@@ -24,7 +24,11 @@ void startWatchWorker() {
     final requestId = args['id'] as String;
     final kind = args['kind'] as String? ?? 'audio';
     Future<void> publish(Map<String, Object?> update) =>
-        channel.invokeMethod<void>('publish', {'id': requestId, ...update});
+        channel.invokeMethod<void>('publish', {
+          'id': requestId,
+          if (kind.startsWith('remote-')) 'remote': true,
+          ...update,
+        });
     try {
       final processor = WatchChatProcessor();
       if (kind == 'confirm') {
@@ -40,6 +44,13 @@ void startWatchWorker() {
           speak: args['speak'] as bool?,
           onUpdate: publish,
         );
+      } else if (kind == 'apple-configuration') {
+        final config = await processor.configuration();
+        await publish({
+          'kind': 'preferences',
+          ...await processor.preferences(),
+          'configuration': config,
+        });
       } else if (kind == 'apple-preferences') {
         await publish({
           'kind': 'preferences',
@@ -66,6 +77,7 @@ void startWatchWorker() {
           args['history'] as String,
           args['providerId'] as int,
           args['model'] as String,
+          requireComplete: args['requireComplete'] == true,
           onUpdate: publish,
         );
       } else if (kind == 'remote-tts') {
@@ -90,6 +102,7 @@ void startWatchWorker() {
         'stage': 'error',
         'error': message,
         'networkFailure': _isNetworkFailure(error),
+        'retrySafe': watchRetrySafe(error),
       });
     }
   });
@@ -104,6 +117,12 @@ bool _isNetworkFailure(Object error) =>
     error is HttpException ||
     error is http.ClientException ||
     (error is ApiException && error.kind == ApiErrorKind.network);
+
+/// A refused connection or DNS lookup failed before a request reached a service.
+/// Socket timeouts, resets and generic HTTP client errors are ambiguous.
+bool watchRetrySafe(Object error) =>
+    (error is ApiException && error.retrySafe) ||
+    (error is SocketException && [8, 61].contains(error.osError?.errorCode));
 
 typedef WatchAudio = ({Uint8List bytes, String format});
 
@@ -137,6 +156,7 @@ class WatchChatProcessor {
     String rawHistory,
     int providerId,
     String model, {
+    bool requireComplete = false,
     required WatchUpdate onUpdate,
   }) async {
     final source = jsonDecode(rawHistory);
@@ -184,6 +204,7 @@ class WatchChatProcessor {
         history,
         model,
         systemPrompt: await store.systemPrompt(providerId, model),
+        requireComplete: requireComplete,
       )) {
         answer.write(chunk);
         if (answer.length > 100000) throw const WatchChatException('模型回复过长');
@@ -199,6 +220,7 @@ class WatchChatProcessor {
         'stage': 'error',
         'error': error is ApiException ? error.message : '手机模型请求失败',
         'networkFailure': answer.isEmpty && _isNetworkFailure(error),
+        'retrySafe': answer.isEmpty && watchRetrySafe(error),
       });
     } finally {
       clock.stop();

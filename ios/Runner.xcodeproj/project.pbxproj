@@ -26,6 +26,9 @@
 		AA2200000000000000000012 /* WatchChatShortcut.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2200000000000000000002 /* WatchChatShortcut.swift */; };
 		AA2200000000000000000013 /* WatchChatShortcut.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2200000000000000000002 /* WatchChatShortcut.swift */; };
 		AA2200000000000000000014 /* AILinkWatchWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = AA2200000000000000000003 /* AILinkWatchWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		AA3300000000000000000011 /* WatchNetworkConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA3300000000000000000001 /* WatchNetworkConfiguration.swift */; };
+		AA3300000000000000000012 /* WatchNetworkClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA3300000000000000000002 /* WatchNetworkClient.swift */; };
+		AA3300000000000000000013 /* WatchPhoneRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA3300000000000000000003 /* WatchPhoneRelay.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -100,6 +103,9 @@
 		AA2200000000000000000003 /* AILinkWatchWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AILinkWatchWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA2200000000000000000004 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AA2200000000000000000006 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AA3300000000000000000001 /* WatchNetworkConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchNetworkConfiguration.swift; sourceTree = "<group>"; };
+		AA3300000000000000000002 /* WatchNetworkClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchNetworkClient.swift; sourceTree = "<group>"; };
+		AA3300000000000000000003 /* WatchPhoneRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchPhoneRelay.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -187,6 +193,9 @@
 			isa = PBXGroup;
 			children = (
 				AA1100000000000000000001 /* AILinkWatchApp.swift */,
+				AA3300000000000000000001 /* WatchNetworkConfiguration.swift */,
+				AA3300000000000000000002 /* WatchNetworkClient.swift */,
+				AA3300000000000000000003 /* WatchPhoneRelay.swift */,
 				AA1100000000000000000002 /* WatchChatSession.swift */,
 				AA1100000000000000000003 /* WatchContentView.swift */,
 				AA2200000000000000000006 /* Info.plist */,
@@ -424,6 +433,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA1100000000000000000011 /* AILinkWatchApp.swift in Sources */,
+				AA3300000000000000000011 /* WatchNetworkConfiguration.swift in Sources */,
+				AA3300000000000000000012 /* WatchNetworkClient.swift in Sources */,
+				AA3300000000000000000013 /* WatchPhoneRelay.swift in Sources */,
 				AA1100000000000000000012 /* WatchChatSession.swift in Sources */,
 				AA1100000000000000000013 /* WatchContentView.swift in Sources */,
 				AA2200000000000000000012 /* WatchChatShortcut.swift in Sources */,
@@ -759,10 +771,10 @@
 				DEVELOPMENT_TEAM = T94W2V3B6M;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "AI Link Debug";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "用于录制语音并发送给 iPhone 上配置的语音识别服务";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "用于录制语音并发送给你选择的云端语音识别服务";
 				INFOPLIST_KEY_WKApplication = YES;
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.maxhall.ailink.debug;
-				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = NO;
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.maxhall.ailink.debug.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -785,10 +797,10 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "AI Link";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "用于录制语音并发送给 iPhone 上配置的语音识别服务";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "用于录制语音并发送给你选择的云端语音识别服务";
 				INFOPLIST_KEY_WKApplication = YES;
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.maxhall.ailink;
-				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = NO;
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.maxhall.ailink.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -811,10 +823,10 @@
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "AI Link Debug";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "用于录制语音并发送给 iPhone 上配置的语音识别服务";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "用于录制语音并发送给你选择的云端语音识别服务";
 				INFOPLIST_KEY_WKApplication = YES;
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.maxhall.ailink.debug;
-				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = NO;
+				INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp = YES;
 				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.maxhall.ailink.debug.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";

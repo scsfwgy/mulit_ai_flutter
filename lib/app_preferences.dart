@@ -212,8 +212,8 @@ const _englishPrefixes = <(String, String)>[
 const _english = <String, String>{
   '手表': 'Watch',
   '手表数据': 'Watch data',
-  'Wear OS 会加密保存所选服务密钥与离线问答，并在重连后同步到手机。Apple Watch 首版只保存最近显示的问答，语音和模型请求由配对 iPhone 处理，不接收 API Key。清空手机数据不会自动清除手表数据。': 'Wear OS stores selected service keys encrypted and keeps offline chats for later phone sync. The first Apple Watch version stores only recent displayed turns; the paired iPhone handles voice and model requests, and no API key is sent to Apple Watch. Clearing phone data does not automatically erase watch data.',
-  '手机上的话题、聊天记录、服务配置、API Key 和提示词会被删除。Wear OS 上已同步的配置和离线问答、Apple Watch 上最近显示的问答不会自动清除，需分别在手表上卸载应用。此操作无法撤销。': 'Chats, service settings, API keys and prompts on the phone will be deleted. Synced settings and offline chats on Wear OS and recent displayed turns on Apple Watch remain until you uninstall the respective watch app. This cannot be undone.',
+  '手表安全保存所选服务密钥和问答。Apple Watch 优先在手表请求，手表网络不可用时再尝试手机；Wear OS 优先通过手机请求，不可达时使用手表网络。Wear OS 使用加密存储，Apple Watch 使用钥匙串；问答重连后同步到手机。清空手机数据不会自动清除手表数据。': 'Watches securely store selected service keys and chats. Apple Watch uses its own requests first, then tries the phone when unavailable. Wear OS uses the phone first, then its own network. Wear OS uses encrypted storage; Apple Watch uses Keychain. Chats sync to the phone after reconnecting. Clearing phone data does not erase watch data.',
+  '手机上的话题、聊天记录、服务配置、API Key 和提示词会被删除。手表上的配置、密钥和问答不会自动清除；Wear OS 需卸载手表应用，Apple Watch 请在手表设置中清除配置和问答。此操作无法撤销。': 'Chats, service settings, API keys and prompts on the phone will be deleted. Watch settings, keys and chats remain. Uninstall the Wear OS app or use Clear watch settings and chats on Apple Watch. This cannot be undone.',
   '手表使用的模型': 'Watch model',
   '手表播报回复': 'Speak replies on watch',
   '配套手表应用': 'Watch companion app',
@@ -222,7 +222,7 @@ const _english = <String, String>{
   'Apple Watch 已连接': 'Apple Watch connected',
   '手表应用已安装，等待连接': 'Watch app installed; waiting for connection',
   '在 iPhone 的 Watch 应用中安装 AI Link 手表版。首次使用请先在手机端配置文字和语音服务；手表与手机配对并连接后，点上方状态重新检查。': 'Install AI Link for Apple Watch in the Watch app on iPhone. Configure text and voice services on iPhone first, then tap the status above after pairing and connecting.',
-  'Apple Watch 首版由配对 iPhone 完成语音识别、模型请求和可选朗读，结果保存到手机会话。手表仅保存最近显示的问答，不接收 API Key；手机不可达时暂不能提问。': 'The first Apple Watch version uses the paired iPhone for transcription, model requests and optional speech. Replies are saved in iPhone chats. The watch keeps only recent displayed turns and receives no API keys; questions require the iPhone to be reachable.',
+  'Apple Watch 优先在手表请求语音和模型服务，手表网络不可用且手机可达时再交给 iPhone。所选密钥同步并保存在手表钥匙串；问答在手表保存，重连后同步到手机。明确且可安全重试的网络故障才换路，超时或已有部分回答时不重发。': 'Apple Watch requests voice and model services itself first, then uses a reachable iPhone if the watch network is unavailable. Selected keys sync to watch Keychain. Chats are saved on the watch and sync to the phone on reconnect. Only failures that are safe to retry switch routes; timeouts and partial replies are not resubmitted.',
   '手表应用安装': 'Install watch app',
   '在手表安装': 'Install on watch',
   '正在检查已连接的手表…': 'Checking connected watches…',
@@ -503,7 +503,7 @@ const _english = <String, String>{
   '例如：我的 OpenAI': 'For example: My OpenAI',
   '新建模型服务': 'Add model service',
   '扫一扫': 'Scan',
-  '密钥保存在手机安全存储中；选作 Wear OS 服务时会经配对通道同步并加密保存。Apple Watch 首版由 iPhone 代为请求，不接收密钥。我们不设中转服务器，请求会直达你配置的 API 服务商。': 'Keys stay in secure phone storage. Selected Wear OS services sync keys over the paired connection and store them encrypted. The first Apple Watch version sends requests through iPhone and receives no keys. We run no relay server; requests go directly to your configured API provider.',
+  '密钥保存在手机安全存储中；选作手表服务时会经配对通道同步到手表，Wear OS 加密保存，Apple Watch 保存在钥匙串。我们不设中转服务器，请求会直达你配置的 API 服务商。': 'Keys stay in secure phone storage. Selected watch service keys sync over the paired connection, using encrypted storage on Wear OS and Keychain on Apple Watch. We run no relay server; requests go directly to your configured API provider.',
   '还没有接入服务。选择下方平台，填写密钥即可开始。':
       'No services yet. Choose a provider below and enter your key.',
   '已填入 API 地址和示例模型；账号可用模型以服务端为准。': 'API URLs and example models are prefilled. Available models depend on your account.',
@@ -591,6 +591,6 @@ const _english = <String, String>{
       'Allow camera access in system settings, then try again.',
   '相机暂不可用，请检查设备相机后重试':
       'The camera is unavailable. Check the device camera and try again.',
-  '扫码后请检查密钥并保存服务。密钥保存在设备安全存储中；选作 Wear OS 服务时会加密同步到手表。Apple Watch 首版不接收密钥。': 'Check the scanned key before saving. It is stored securely on the device and syncs encrypted to Wear OS if selected there. The first Apple Watch version receives no key.',
-  '二维码需包含 name、protocol、baseUrl、model、apiKey。\n密钥保存在设备安全存储中；选作 Wear OS 服务时会加密同步到手表，Apple Watch 首版不接收。': 'The QR code must contain name, protocol, baseUrl, model, and apiKey.\nThe key stays in secure device storage; selected Wear OS services sync it encrypted to the watch, while the first Apple Watch version receives no key.',
+  '扫码后请检查密钥并保存服务。密钥保存在设备安全存储中；选作手表服务时会经配对通道同步，Wear OS 加密保存，Apple Watch 使用钥匙串。': 'Check the scanned key before saving. It stays in secure device storage. Selected watch keys sync over the paired connection; Wear OS uses encrypted storage and Apple Watch uses Keychain.',
+  '二维码需包含 name、protocol、baseUrl、model、apiKey。\n密钥保存在设备安全存储中；选作手表服务时会经配对通道同步，Wear OS 加密保存，Apple Watch 使用钥匙串。': 'The QR code must contain name, protocol, baseUrl, model, and apiKey.\nThe key stays in secure device storage. Selected watch keys sync over the paired connection; Wear OS uses encrypted storage and Apple Watch uses Keychain.',
 };

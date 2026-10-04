@@ -32,7 +32,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
         title: Text(tr('清空本地数据？')),
         content: Text(
           tr(
-            '手机上的话题、聊天记录、服务配置、API Key 和提示词会被删除。Wear OS 上已同步的配置和离线问答、Apple Watch 上最近显示的问答不会自动清除，需分别在手表上卸载应用。此操作无法撤销。',
+            '手机上的话题、聊天记录、服务配置、API Key 和提示词会被删除。手表上的配置、密钥和问答不会自动清除；Wear OS 需卸载手表应用，Apple Watch 请在手表设置中清除配置和问答。此操作无法撤销。',
           ),
         ),
         actions: [
@@ -100,7 +100,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
               _PrivacyRow(
                 title: '手表数据',
                 detail: tr(
-                  'Wear OS 会加密保存所选服务密钥与离线问答，并在重连后同步到手机。Apple Watch 首版只保存最近显示的问答，语音和模型请求由配对 iPhone 处理，不接收 API Key。清空手机数据不会自动清除手表数据。',
+                  '手表安全保存所选服务密钥和问答。Apple Watch 优先在手表请求，手表网络不可用时再尝试手机；Wear OS 优先通过手机请求，不可达时使用手表网络。Wear OS 使用加密存储，Apple Watch 使用钥匙串；问答重连后同步到手机。清空手机数据不会自动清除手表数据。',
                 ),
               ),
             ],

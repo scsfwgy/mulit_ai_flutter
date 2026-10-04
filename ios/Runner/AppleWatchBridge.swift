@@ -16,6 +16,7 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
   private var outgoingAudio: [WCSessionFileTransfer: URL] = [:]
   private var phoneUpdates: FlutterMethodChannel?
   private var processingIDs: Set<String> = []
+  private var receivedRequests: Set<String> = []
 
   func start() {
     guard WCSession.isSupported() else { return }
@@ -77,6 +78,11 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
     guard session.activationState == .activated,
           session.isPaired, session.isWatchAppInstalled,
           let language = UserDefaults.standard.string(forKey: "ai_link_watch_language") else { return }
+    if UserDefaults.standard.bool(forKey: "ai_link_watch_independent") {
+      let id = UUID().uuidString
+      enqueue(id: id, arguments: ["id": id, "kind": "apple-configuration"])
+      return
+    }
     // Preserve display metadata when refreshing the phone's language.
     var preferences = UserDefaults.standard.dictionary(forKey: "ai_link_watch_preferences") ?? [:]
     preferences["kind"] = "preferences"
@@ -121,7 +127,7 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
 
   private func enqueue(id: String, arguments: [String: Any]) {
     DispatchQueue.main.async {
-      if ["audio", "confirm"].contains(arguments["kind"] as? String ?? "") {
+      if ["audio", "confirm", "remote-asr", "remote-chat", "remote-tts", "turn"].contains(arguments["kind"] as? String ?? "") {
         self.processingIDs.insert(id)
         self.phoneUpdates?.invokeMethod("changed", arguments: nil)
       }
@@ -149,6 +155,9 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
         if let error = result as? FlutterError {
           self?.sendUpdate(["id": id, "stage": "error", "error": error.message ?? "iPhone 处理失败"])
         }
+        if !(result is FlutterError), arguments["kind"] as? String == "turn" {
+          self?.sendUpdate(["id": id, "kind": "turn-ack"])
+        }
         self?.processingIDs.remove(id)
         self?.phoneUpdates?.invokeMethod("changed", arguments: nil)
         self?.endBackgroundTask(id)
@@ -167,11 +176,16 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
     guard session.activationState == .activated else { return }
     var message = update
     if message["kind"] as? String == "preferences" {
+      // Flutter's optional fields arrive as NSNull, which WCSession property lists reject.
+      message = propertyList(message) as? [String: Any] ?? [:]
       message["language"] = UserDefaults.standard.string(forKey: "ai_link_watch_language") ?? "zh"
-      UserDefaults.standard.set(message.filter { $0.key != "id" }, forKey: "ai_link_watch_preferences")
+      UserDefaults.standard.set(message.filter { $0.key != "id" && $0.key != "configuration" }, forKey: "ai_link_watch_preferences")
       try? session.updateApplicationContext(message)
       if session.isReachable { session.sendMessage(message, replyHandler: nil) }
       return
+    }
+    if message["stage"] as? String == "complete", message["audio"] == nil {
+      sendResultFile(message, session: session)
     }
     if let answer = message["answer"] as? String, answer.count > 6_000 {
       message["answer"] = String(answer.prefix(6_000)) + "…"
@@ -196,7 +210,8 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
     if ["complete", "error", "awaiting_confirmation"].contains(stage) {
       phoneUpdates?.invokeMethod("changed", arguments: nil)
     }
-    let shouldQueue = ["complete", "error", "awaiting_confirmation"].contains(stage)
+    if stage == "complete" && message["remote"] as? Bool == true { return }
+    let shouldQueue = ["complete", "error", "awaiting_confirmation"].contains(stage) || message["kind"] as? String == "turn-ack"
     if session.isReachable {
       session.sendMessage(message, replyHandler: nil) { _ in
         if shouldQueue { session.transferUserInfo(message) }
@@ -204,6 +219,14 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
     } else if shouldQueue {
       session.transferUserInfo(message)
     }
+  }
+
+  private func propertyList(_ value: Any) -> Any {
+    if let map = value as? [String: Any] {
+      return map.filter { !($0.value is NSNull) }.mapValues(propertyList)
+    }
+    if let list = value as? [Any] { return list.filter { !($0 is NSNull) }.map(propertyList) }
+    return value
   }
 
   func session(
@@ -225,44 +248,74 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
 
   func sessionDidDeactivate(_ session: WCSession) { session.activate() }
 
-  func session(_ session: WCSession, didReceive file: WCSessionFile) {
-    guard file.metadata?["kind"] as? String == "audio",
-          let id = file.metadata?["id"] as? String else { return }
-    guard let audio = try? Data(contentsOf: file.fileURL),
-          !audio.isEmpty, audio.count <= 4 * 1024 * 1024 else {
-      DispatchQueue.main.async {
-        self.sendUpdate(["id": id, "stage": "error", "error": "录音无效或超过 4 MB"])
-      }
-      return
+  private func sendResultFile(_ update: [String: Any], session: WCSession) {
+    guard update["remote"] as? Bool == true, let id = update["id"] as? String else { return }
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("result-\(UUID().uuidString).json")
+    do {
+      try JSONSerialization.data(withJSONObject: update).write(to: url, options: .atomic)
+      outgoingAudio[session.transferFile(url, metadata: ["kind": "remote-result", "id": id])] = url
+    } catch {
+      try? FileManager.default.removeItem(at: url)
+      sendUpdate(["id": id, "stage": "error", "error": "手机结果传输失败"])
     }
-    var arguments: [String: Any] = [
-      "id": id, "kind": "audio", "audio": FlutterStandardTypedData(bytes: audio),
-    ]
-    if let autoSend = file.metadata?["autoSend"] as? Bool { arguments["autoSend"] = autoSend }
-    if let speak = file.metadata?["speak"] as? Bool { arguments["speak"] = speak }
-    enqueue(id: id, arguments: arguments)
   }
 
-  func session(
-    _ session: WCSession, didReceiveMessage message: [String: Any],
-    replyHandler: @escaping ([String: Any]) -> Void
-  ) {
-    if message["kind"] as? String == "preferences", let id = message["id"] as? String {
-      enqueue(id: id, arguments: ["id": id, "kind": "apple-preferences"])
-      replyHandler(["accepted": true])
-      return
+  private func accept(_ arguments: [String: Any]) -> Bool {
+    guard let id = arguments["id"] as? String,
+          let kind = arguments["kind"] as? String else { return false }
+    if kind.hasPrefix("remote-") {
+      guard let deadline = arguments["expiresAt"] as? Double, deadline >= Date().timeIntervalSince1970,
+            deadline <= Date().addingTimeInterval(60).timeIntervalSince1970 else {
+        sendUpdate(["id": id, "stage": "error", "error": "请求已过期，请重新操作"])
+        return false
+      }
+      guard !receivedRequests.contains(id) else { return true }
+      if receivedRequests.count >= 1000 { receivedRequests.removeAll() }
+      receivedRequests.insert(id)
     }
-    guard message["kind"] as? String == "confirm",
-          let id = message["id"] as? String,
-          let transcript = message["transcript"] as? String,
-          !transcript.isEmpty, transcript.count <= 5000 else {
-      replyHandler(["accepted": false])
-      return
+    var accepted = arguments
+    if kind == "remote-chat" { accepted["requireComplete"] = true }
+    enqueue(id: id, arguments: accepted)
+    return true
+  }
+
+  func session(_ session: WCSession, didReceive file: WCSessionFile) {
+    guard let kind = file.metadata?["kind"] as? String, let id = file.metadata?["id"] as? String,
+          let data = try? Data(contentsOf: file.fileURL), !data.isEmpty, data.count <= 4 * 1024 * 1024 else { return }
+    DispatchQueue.main.async {
+      if kind == "turn" {
+        guard let raw = String(data: data, encoding: .utf8) else { return }
+        self.enqueue(id: id, arguments: ["id": id, "kind": "turn", "turn": raw])
+      } else if kind == "remote-request" {
+        guard let args = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              args["kind"] as? String == "remote-chat", args["id"] as? String == id else { return }
+        _ = self.accept(args)
+      } else if kind == "audio" || kind == "remote-asr" {
+        var args = file.metadata ?? [:]
+        args["id"] = id
+        args["kind"] = kind
+        args["audio"] = FlutterStandardTypedData(bytes: data)
+        _ = self.accept(args)
+      }
     }
-    var arguments: [String: Any] = ["id": id, "kind": "confirm", "transcript": transcript]
-    if let speak = message["speak"] as? Bool { arguments["speak"] = speak }
-    enqueue(id: id, arguments: arguments)
-    replyHandler(["accepted": true])
+  }
+
+  func session(_ session: WCSession, didReceiveMessage message: [String: Any],
+               replyHandler: @escaping ([String: Any]) -> Void) {
+    DispatchQueue.main.async {
+      let kind = message["kind"] as? String ?? ""
+      guard let id = message["id"] as? String else { replyHandler(["accepted": false]); return }
+      if kind == "preferences" {
+        let independent = message["version"] as? Int == 2
+        if independent { UserDefaults.standard.set(true, forKey: "ai_link_watch_independent") }
+        self.enqueue(id: id, arguments: ["id": id, "kind": independent ? "apple-configuration" : "apple-preferences"])
+        replyHandler(["accepted": true])
+      } else if kind == "remote-tts", let text = message["text"] as? String, text.count <= 1800 {
+        replyHandler(["accepted": self.accept(message)])
+      } else if kind == "confirm", let text = message["transcript"] as? String, !text.isEmpty, text.count <= 5000 {
+        replyHandler(["accepted": self.accept(message)])
+      } else { replyHandler(["accepted": false]) }
+    }
   }
 
   func session(_ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?) {

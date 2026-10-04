@@ -1,9 +1,11 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mulit_ai_flutter/data.dart';
+import 'package:mulit_ai_flutter/api_client.dart';
 import 'package:mulit_ai_flutter/watch_chat.dart';
 
 class _Store extends Fake implements ChatStore {
@@ -80,6 +82,116 @@ _Store _configuredStore([String voiceUrl = 'https://example.com']) {
 }
 
 void main() {
+  test('Apple full snapshot contains only selected credentials and invalidates deleted services', () async {
+    final store = _configuredStore();
+    final processor = WatchChatProcessor(store: store);
+    final config = await processor.configuration();
+    expect(config['protocol'], 'openai_chat');
+    expect(config['apiKey'], 'test-key');
+    expect((config['asr'] as Map)['apiKey'], 'test-key');
+    expect(
+      jsonEncode(await processor.preferences()),
+      isNot(contains('test-key')),
+    );
+    store.textKeys[1] = null;
+    store.voiceKey = null;
+    final revoked = await processor.configuration();
+    expect(revoked['textReady'], false);
+    expect(revoked['asrReady'], false);
+    expect(revoked['apiKey'], isNull);
+    expect(revoked['asr'], isNull);
+  });
+
+  test('ambiguous timeout and transport resets cannot switch watch routes', () {
+    expect(watchRetrySafe(TimeoutException('unknown')), false);
+    expect(
+      watchRetrySafe(
+        const SocketException('reset', osError: OSError('reset', 54)),
+      ),
+      false,
+    );
+    expect(
+      watchRetrySafe(
+        const SocketException('refused', osError: OSError('refused', 61)),
+      ),
+      true,
+    );
+    expect(
+      watchRetrySafe(const ApiException('network', kind: ApiErrorKind.network)),
+      false,
+    );
+  });
+
+  test('phone remote reply rejects incomplete SSE and never falls back after partial text', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    server.listen((request) async {
+      await request.drain<void>();
+      request.response.headers.contentType = ContentType(
+        'text',
+        'event-stream',
+      );
+      request.response.write(
+        'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n',
+      );
+      await request.response.close();
+    });
+    try {
+      final store = _configuredStore();
+      store.services[0] = ProviderConfig(
+        id: 1,
+        name: 'Test',
+        baseUrl: 'http://127.0.0.1:${server.port}',
+        model: 'chat',
+        protocol: ApiProtocol.openAi,
+      );
+      final updates = <Map<String, Object?>>[];
+      await WatchChatProcessor(store: store).remoteReply(
+        '[{"role":"user","content":"q"}]',
+        1,
+        'chat',
+        requireComplete: true,
+        onUpdate: (update) async {
+          updates.add(update);
+        },
+      );
+      expect(updates.last['stage'], 'error');
+      expect(updates.last['retrySafe'], false);
+      expect(updates.where((u) => u['stage'] == 'complete'), isEmpty);
+      // Fake store implements no database writes: a remote execution must not persist.
+    } finally {
+      await server.close(force: true);
+    }
+  });
+
+  test(
+    'connection failure before sending body allows one route fallback',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final port = server.port;
+      await server.close(force: true);
+      final store = _configuredStore();
+      store.services[0] = ProviderConfig(
+        id: 1,
+        name: 'Test',
+        baseUrl: 'http://127.0.0.1:$port',
+        model: 'chat',
+        protocol: ApiProtocol.openAi,
+      );
+      final updates = <Map<String, Object?>>[];
+      await WatchChatProcessor(store: store).remoteReply(
+        '[{"role":"user","content":"q"}]',
+        1,
+        'chat',
+        requireComplete: true,
+        onUpdate: (update) async {
+          updates.add(update);
+        },
+      );
+      expect(updates.last['stage'], 'error');
+      expect(updates.last['retrySafe'], true);
+    },
+  );
+
   test(
     'sync uses the phone model instead of stale legacy watch settings',
     () async {

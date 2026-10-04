@@ -1,21 +1,21 @@
-# AI Link iPhone 与 Apple Watch 第一版
+# AI Link iPhone 与 Apple Watch
 
 ## 已接入的代码
 
 - iPhone 沿用 Flutter 的同一套聊天、服务配置、语音和本地 SQLite；`ios/Runner/AppleWatchBridge.swift` 在后台 Flutter engine 中复用 `WatchChatProcessor`。
 - Xcode 工程增加 `AILinkWatch` SwiftUI watchOS target，并嵌入 iPhone Runner；bundle ID 为 `com.maxhall.ailink.watchkitapp`，配套 iPhone ID 为 `com.maxhall.ailink`，最低 watchOS 10。Debug 的 iPhone ID 为 `com.maxhall.ailink.debug`，watchOS ID 为 `com.maxhall.ailink.debug.watchkitapp`，名称均为「AI Link Debug」，与 Release 使用独立标识；Debug 已通过完整 Xcode 构建与配对模拟器启动；Release 签名与真机验证仍待完成。
-- Apple Watch 按住录制 16 kHz、16 位、单声道 WAV，原位松手后经配对 iPhone 转写并发送，左上滑松手取消，右上滑松手转文字并等待确认。iPhone 使用用户选择的云端语音识别与文字模型。回复进入 iPhone SQLite，会话在侧栏显示手表标记；可选云端语音合成通过文件传回手表播放。
-- Apple Watch 仅保存最近 50 条显示用问答，不接收模型或语音 API Key。录音与合成音频使用临时文件。界面语言通过 WatchConnectivity 同步 iPhone App 的语言设置，外观跟随手表系统；按住录音显示实时波形与计时，并高亮当前选中的取消或转文字动作。
+- Apple Watch 按住录制 16 kHz、16 位、单声道 WAV，原位松手转写并发送，左上滑取消，右上滑转文字并等待确认。识别/聊天/合成分别优先由 `WatchNetworkClient` 使用 URLSession 请求，手表网络明确不可用且手机可达时再通过 iPhone 无落库接口处理。文字支持 OpenAI 兼容 Chat Completions 与 Claude Messages；语音支持 OpenAI、MiMo 和豆包。
+- 选定服务的完整配置经 WatchConnectivity applicationContext 同步，API Key 仅保存在手表 Keychain（AfterFirstUnlockThisDeviceOnly、不同步 iCloud）；手机 UserDefaults 只缓存不含密钥的显示摘要。手表保留最近 50 条问答及最多 100 条未确认同步记录，后者不随显示历史裁剪。每条问答具有会话 UUID、turn UUID 和序号，手机 SQLite 事务保存并确认后，手表才删除待同步记录。录音/合成音频使用临时文件。界面语言跟随手机 App，外观跟随手表系统。
 - `AILinkWatchWidgets` 的 WidgetKit 复杂功能源码已实现，**2026-10-03 按用户要求暂时关闭默认构建和嵌入**，等待 Apple Developer 账号与扩展签名准备完成。`Runner` → `AILinkWatch` 的默认构建链不再包含此扩展，普通手机/手表调试无需为新扩展生成描述文件；暂勿单独运行 `AILinkWatchWidgets` Scheme。
 - 扩展最低 watchOS 10，支持圆形、矩形与行内复杂功能；矩形样式也支持智能叠放。启用后点击通过本地 URL 打开聊天页，即使 App 停在设置页也会返回聊天；首次使用保留操作引导。入口只显示麦克风图标与「AI Link」，不读取设置、聊天、音频或密钥，不请求网络、不自动录音，无需 App Groups。Debug/Profile 使用 `com.maxhall.ailink.debug.watchkitapp.widgets` 与 `ailink-watch-debug://chat`；Release 使用 `com.maxhall.ailink.watchkitapp.widgets` 与 `ailink-watch://chat`，开发版和正式版入口分开。
 
-- 界面对齐 Wear OS：首页全屏显示可上下滚动的聊天，旧问答直接展开；长按屏幕录音，双击聊天进入设置。首次打开显示操作引导，确认后不再重复，设置页保留操作说明。右上滑转文字后，在聊天内容中显示确认发送与重新录音；设置页保留停止播放。自动播报可在手表独立设置，覆盖单次请求选项，不修改手机默认设置；同步仅包含语言、服务名称、模型 ID、默认开关与配置就绪状态；iPhone 检查密钥是否配置，不向手表发送密钥。离开前台或录音页取消录音，不足 0.6 秒静默忽略。
+- 界面沿用两页聊天与设置：长按屏幕录音、双击进入设置、滑动阅读；右上滑转写后等待确认。自动播报可在手表单独设置。离开录音页或前台取消录音，实际录音不足 0.6 秒静默忽略。设置提供需明确确认的「清除手表配置和问答」，同时删除 Keychain、最近问答及待同步记录；清除后屏蔽缓存配置，直到用户手动同步。
 
 ## 当前限制
 
-- Apple Watch 第一版需要配对 iPhone 可达，由 iPhone 网络和后台执行完成模型请求；手表自有 Wi-Fi 或蜂窝网络还不能独立提问。WatchConnectivity 文件传输可能延迟，系统也可能结束长时间后台请求。
+- URLSession 在 watchOS 上自行选择 iPhone 代理、Wi-Fi 或蜂窝，应用不使用不受支持的低层接口强制选网。独立请求为前台任务，系统挂起或终止应用可能导致失败；手机后台 Flutter 处理同样受运行时间限制。超时状态不明时不换路、不自动重发。语音接口只有明确的 DNS/拒绝连接错误才允许换路，普通 HTTP 客户端异常按状态不明处理。
 - 2026-10-03 已在 Xcode 27.0 构建 iOS/watchOS Debug，安装到配对的 iPhone 17 与 Apple Watch Ultra 4 模拟器，并验证页面导航、连接与配置摘要同步。真实语音服务、后台长请求、音频播放及配对真机尚未验证。Apple 官方说明模拟器不支持 `transferFile(_:metadata:)`，录音与合成音频的文件传输需用配对真机验证。
-- 公开隐私政策页面目前仍以 Wear OS 数据流为主。Apple 版发布前，需要补充：手表仅保存最近问答、录音经 WatchConnectivity 传至 iPhone、识别/模型/合成请求从 iPhone 直发用户配置的第三方服务、Apple Watch 不接收 API Key、清空 iPhone 数据不会自动删除手表最近问答。应用内“数据与隐私”已按两类手表分别说明；线上正文需同步。
+- Apple 版公开发布前需核对并更新线上隐私政策：配对通道同步所选密钥、Apple Watch Keychain、安全存储和第三方直连、手表问答与确认同步、两端分别清理。应用内数据与隐私已更新；此次不修改或部署官网。
 - watchOS App 与复杂功能扩展当前版本号固定为 `1.0.0 (1)`；每次 iPhone 版本提升时应一并更新两者的 `MARKETING_VERSION` 与 `CURRENT_PROJECT_VERSION`。Debug/Profile 已配置本机开发团队，Release 签名与 App Store Connect 仍待配置。
 
 ## 后续重新启用复杂功能
@@ -69,6 +69,20 @@ AA2200000000000000000027 /* PBXTargetDependency */,
 4. iPhone 配置文字模型、语音识别及可选朗读；Apple Watch 分别测试授权麦克风、按住录音、上滑取消、自动发送、确认发送、长文本滚动、自动播报、后台唤醒与断连。检查 iPhone 会话入库及手表标记；不要清除已有用户数据来测试。
 5. 对真实语音服务与多个供应商分别验证 WAV 兼容性、模型权限、TTS 格式和响应时限。重点核验后台 30 秒以上请求的系统行为，以及 watchOS 10 播放路由。
 
-后续独立网络与手机网络切换方案见 [`TODO.md`](../../TODO.md)。Apple 的 [文件传输与模拟器限制](https://developer.apple.com/documentation/watchconnectivity/wcsession/transferfile%28_%3Ametadata%3A%29)、[WatchConnectivity 数据传输说明](https://developer.apple.com/documentation/WatchConnectivity/transferring-data-with-watch-connectivity) 区分即时消息、排队字典和文件传输；[独立 watchOS 应用说明](https://developer.apple.com/documentation/watchos-apps/creating-independent-watchos-apps/) 解释了配套应用与独立运行选项。
+独立路由通过 `WatchRequestRouting` 最多切换一次。仅请求前的 DNS、拒绝连接或明确无网络错误允许自动切换；超时、服务错误、连接重置、部分回答或截断流不重发。每个阶段先使用手表请求，手机可达也不改变优先级；手表网络明确失败且手机可达时可转向手机。手机兜底也失败后直接结束，不回到手表反复尝试。回答在手表落库后，重连同步进手机 SQLite 的手表会话；手机清空数据后可从最早未确认的序号重建会话，已确认历史不会全量恢复。
 
-手表开始录音前会向 iPhone 校验文字模型与所选语音识别服务，要求两者均有有效配置和非空密钥；缺少任一项时不申请麦克风或录音，显示手机设置路径。仅向 Apple Watch 发送配置就绪状态，不发送密钥。每次按住前重新校验，避免删除服务后沿用旧状态。自动播报仍为可选功能。
+每次启动、恢复前台和重连时尝试同步手机最新配置；冷启动先加载 Keychain 缓存，等待 WatchConnectivity 激活后发送同步请求。手机不可达、15 秒超时、返回格式无效或 Keychain 保存失败时保留上次缓存；已有可用快照时可以继续录音，不等待手机处理器。点击「同步手机配置」立即开始新请求，即使自动同步仍在进行；被替换或已失败请求的迟到响应不会覆盖配置。缺少文字或识别配置时须先同步手机配置，否则不开始录音。收到删除服务或密钥后的快照会使手表配置失效；尚未同步时不能立即获知手机上的删除。开启自动播报仍须配置朗读服务。
+
+## 独立网络验证
+
+- 本地协议测试：`python3 scripts/test_watch_network.py` 编译原生 Swift 网络代码，并通过本机 HTTP fixtures 测试 OpenAI/Claude 流式回复、三类 ASR/TTS、重定向拒绝、截断流、换路限制及待同步记录；不调用真实服务、不使用用户密钥。
+- Flutter 测试：`flutter test`，覆盖手机无落库请求、配置失效、保守重试判定、同步幂等、顺序和手机数据重置后的恢复。
+- 配对真机：更新安装手机和手表，手动同步后分别验证手机可达、关闭手机且手表连 Wi-Fi、手表关闭 Wi-Fi 并有可用蜂窝三种情况。每次确认转写、上下文回复、可选播放及重连入库；蜂窝型号与套餐须支持上网。
+- 故障验证：无网络、错误密钥、服务器 401/500、超过时限和收到部分回答后断网。检查仅安全失败换路，未知状态或部分回答不重复计费；不要通过删除已有用户数据制造测试条件。
+- 真机不可用时，签名构建和模拟器截图不能代替 WatchConnectivity 文件传输、Keychain 配对同步、真实语音、Wi-Fi/蜂窝与后台唤醒验证。Apple 官方 [URLSession 网络路由说明](https://developer.apple.com/documentation/watchos-apps/keeping-your-watchos-app-s-content-up-to-date)、[独立 watchOS 应用](https://developer.apple.com/documentation/watchos-apps/creating-independent-watchos-apps/)、[文件传输与模拟器限制](https://developer.apple.com/documentation/watchconnectivity/wcsession/transferfile%28_%3Ametadata%3A%29)。
+
+2026-10-04 本次代码验证：`flutter analyze` 无问题，`flutter test` 84 项通过，原生本地协议与路由测试通过；完整 Xcode 的 iOS/watchOS Profile 构建和 `codesign --verify --deep --strict` 通过，配套标识一致，产物独立运行标志为 YES，未嵌入暂关的 Widget 扩展。配对模拟器 Debug 已构建、安装并启动。当前安装工具未发现可安装的 Apple 真机，未更新实体设备，真实服务与独立 Wi-Fi/蜂窝尚未实测；Mac 锁定也限制了本次设置页交互检查。
+
+同日路由调整：Apple Watch 改为各请求阶段始终先在手表执行，明确网络失败且 iPhone 可达时才兜底到手机；已有可用配置不再逐次等待手机录音前校验。原生回归覆盖手机可达仍优先手表、手表失败转手机、手机不可达、超时/部分回复/服务错误不换路，以及手机兜底失败不循环重试。URLSession 的物理网络路径仍由 watchOS 自行选择。
+
+配置同步补充：启动同步失败仅更新状态提示，保留内存和 Keychain 中上次成功的配置；无缓存时提示先连接手机同步。手机成功返回的有效空配置仍会撤销旧密钥，不当作失败沿用已删除服务。明确清除手表数据后继续保留须手动同步才能恢复的规则。原生回归新增冷启动等待激活、自动请求合并、手动立即重发、旧请求/超时回调隔离。

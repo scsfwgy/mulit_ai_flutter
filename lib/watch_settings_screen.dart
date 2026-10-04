@@ -239,7 +239,7 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
           IosSection(
             footer: tr(
               _isAppleWatch
-                  ? 'Apple Watch 首版由配对 iPhone 完成语音识别、模型请求和可选朗读，结果保存到手机会话。手表仅保存最近显示的问答，不接收 API Key；手机不可达时暂不能提问。'
+                  ? 'Apple Watch 优先在手表请求语音和模型服务，手表网络不可用且手机可达时再交给 iPhone。所选密钥同步并保存在手表钥匙串；问答在手表保存，重连后同步到手机。明确且可安全重试的网络故障才换路，超时或已有部分回答时不重发。'
                   : '已连接手机时优先使用手机网络，失败后尝试手表网络；未连接时先用手表 Wi-Fi 或蜂窝网络。仅明确的网络故障才自动换路，避免重复请求。配置与密钥由手机同步到手表。',
             ),
             children: [

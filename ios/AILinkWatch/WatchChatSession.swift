@@ -20,8 +20,8 @@ struct WatchTurn: Codable, Identifiable {
   var answer: String
 }
 
-/// The watch owns only temporary audio and a small local display history.
-/// Recognition, model requests, and optional synthesis use the iPhone's configured services.
+/// Watch-first requests and optional phone fallback share watch-owned history.
+@MainActor
 final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVAudioRecorderDelegate, AVAudioPlayerDelegate {
   @Published private(set) var turns: [WatchTurn] = []
   @Published private(set) var status = ""
@@ -46,20 +46,28 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
   @Published private(set) var asrReady = false
   private var recordingPreflight = false
   private var phase = "idle"
-  private var settingsRequestID: String?
+  private var settingsSync = WatchSettingsSync()
+  private var settingsRequestID: String? { settingsSync.requestID }
   private var statusLabels: (String, String)?
 
   private var recorder: AVAudioRecorder?
   private var player: AVAudioPlayer?
   private var playbackURL: URL?
   private var timer: Timer?
-  private var requestTimer: Timer?
   private var recordURL: URL?
   private var recordedAt: Date?
   private var activeID: String?
   private var outgoing: [WCSessionFileTransfer: URL] = [:]
   private var pressActive = false
   private var permissionPending = false
+  private let configurationStore = WatchConfigurationStore()
+  private let independentHistory = WatchHistoryStore()
+  private let networkClient = WatchNetworkClient()
+  private var configuration: WatchNetworkConfiguration?
+  private var turnConfiguration: WatchNetworkConfiguration?
+  private var syncID: String?
+  private var processingTask: Task<Void, Never>?
+  @MainActor private lazy var relay = WatchPhoneRelay()
   private let historyKey = "ai_link_watch_history_v1"
 
   override init() {
@@ -68,6 +76,13 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
        let saved = try? JSONDecoder().decode([WatchTurn].self, from: data) {
       turns = Array(saved.suffix(50))
     }
+    configuration = configurationStore.load()
+    textReady = configuration?.canChat ?? false
+    asrReady = configuration?.canTranscribe ?? false
+    for turn in independentHistory.snapshot.recent where !turns.contains(where: { $0.id == turn.id }) {
+      turns.append(WatchTurn(id: turn.id, question: turn.transcript, answer: turn.answer))
+    }
+    turns = Array(turns.suffix(50))
     let defaults = UserDefaults.standard
     speak = defaults.object(forKey: "ai_link_watch_speak") as? Bool
       ?? defaults.object(forKey: "ai_link_phone_speak") as? Bool ?? false
@@ -75,6 +90,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     if WCSession.isSupported() {
       WCSession.default.delegate = self
       WCSession.default.activate()
+      refreshPhoneSettings()
     }
   }
 
@@ -87,7 +103,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
   var chinese: Bool { language == "zh" }
 
   var connectionLabel: String {
-    phoneAvailable ? localized("手机已连接", "Phone connected") : localized("手机未连接", "Phone disconnected")
+    phoneAvailable ? localized("手机已连接", "Phone connected") : localized("手机未连接 · 使用手表网络", "Phone offline · using watch network")
   }
 
   var configurationGuidance: String {
@@ -116,19 +132,33 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     if !value { stopPlayback() }
   }
 
-  func refreshPhoneSettings() {
+  func refreshPhoneSettings(manual: Bool = false) {
     objectWillChange.send()
-    guard phoneAvailable else {
-      syncingSettings = false
-      settingsStatus = localized("请先在 iPhone 安装并打开 AI Link", "Open AI Link on the paired iPhone")
-      return
-    }
-    guard !syncingSettings else { return }
-    let id = UUID().uuidString
-    settingsRequestID = id
+    // A local wipe must not be undone by a cached application context on launch.
+    if manual { UserDefaults.standard.removeObject(forKey: "ai_link_watch_config_cleared") }
+    guard !UserDefaults.standard.bool(forKey: "ai_link_watch_config_cleared") else { return }
+    guard let id = settingsSync.begin(manual: manual) else { return }
     syncingSettings = true
     settingsStatus = localized("正在向手机请求最新配置…", "Requesting latest phone settings…")
-    WCSession.default.sendMessage(["kind": "preferences", "id": id], replyHandler: { [weak self] reply in
+    sendPendingSettingsRequest()
+    DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
+      guard let self, self.settingsRequestID == id else { return }
+      self.finishSettingsRequest(success: false)
+    }
+  }
+
+  private func sendPendingSettingsRequest() {
+    guard WCSession.isSupported() else { finishSettingsRequest(success: false); return }
+    // Activation is asynchronous on cold launch. Send the already-created
+    // request after activation rather than mistaking it for an offline phone.
+    guard WCSession.default.activationState == .activated else {
+      WCSession.default.activate()
+      return
+    }
+    guard let id = settingsSync.takePending() else { return }
+    guard phoneAvailable else { finishSettingsRequest(success: false); return }
+    syncPendingTurns()
+    WCSession.default.sendMessage(["kind": "preferences", "id": id, "version": 2], replyHandler: { [weak self] reply in
       DispatchQueue.main.async {
         guard let self, self.settingsRequestID == id else { return }
         if reply["accepted"] as? Bool != true { self.finishSettingsRequest(success: false) }
@@ -139,21 +169,19 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
         self.finishSettingsRequest(success: false)
       }
     })
-    DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
-      guard let self, self.settingsRequestID == id, self.syncingSettings else { return }
-      self.finishSettingsRequest(success: false)
-    }
   }
 
   private func finishSettingsRequest(success: Bool) {
+    guard let id = settingsRequestID, settingsSync.finish(id, success: success) else { return }
     syncingSettings = false
-    settingsRequestID = nil
     settingsStatus = success
       ? (textReady && asrReady ? localized("配置已同步", "Settings synced") : configurationGuidance)
-      : localized("配置同步失败，请在手机检查模型和语音服务", "Sync failed. Check model and voice services on phone")
+      : (textReady && asrReady
+          ? localized("同步失败，继续使用上次配置", "Sync failed; using saved settings")
+          : localized("同步失败，尚无可用配置；请连接手机后重试", "Sync failed; no usable saved settings. Connect iPhone and retry"))
     guard recordingPreflight else { return }
     recordingPreflight = false
-    guard success else {
+    guard success || (textReady && asrReady) else {
       setStatus("无法校验服务配置，请打开手机应用后重试", "Could not check services. Open the phone app and retry")
       return
     }
@@ -187,11 +215,20 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     pressActive = true
     releaseAction = .send
     guard !recording && !busy && !permissionPending && !recordingPreflight else { return }
-    guard phoneAvailable else {
-      setStatus("请先在 iPhone 安装并打开 AI Link", "Open AI Link on the paired iPhone")
+    guard independentHistory.snapshot.pending.count < 100 else {
+      setStatus("请先连接手机同步已有问答", "Reconnect iPhone to sync pending chats first")
       return
     }
-    // Recheck on each press so a deleted service or key cannot start recording.
+    if textReady && asrReady {
+      requestMicrophoneAndRecord()
+      return
+    }
+    guard phoneAvailable, !UserDefaults.standard.bool(forKey: "ai_link_watch_config_cleared") else {
+      configurationPrompt = true
+      return
+    }
+    // Only missing setup blocks recording on phone sync; usable cached settings
+    // let the watch start without waiting for the phone processor.
     recordingPreflight = true
     setStatus("正在检查服务配置…", "Checking service settings…")
     refreshPhoneSettings()
@@ -277,132 +314,197 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
       setStatus(cancel && duration >= 0.6 ? "已取消" : "", cancel && duration >= 0.6 ? "Canceled" : "")
       return
     }
-    guard WCSession.default.activationState == .activated else {
+    guard let config = configuration, config.canChat, config.canTranscribe else {
       try? FileManager.default.removeItem(at: url)
-      setStatus("手机连接不可用，请重试", "iPhone connection unavailable")
+      configurationPrompt = true
       return
     }
-    let id = UUID().uuidString
+    let id = UUID().uuidString.lowercased()
     activeID = id
+    turnConfiguration = config
     transcript = ""
     answer = ""
     awaitingConfirmation = false
     busy = true
     phase = "transcribing"
     scrollGeneration += 1
-    setStatus("正在发送录音…", "Sending recording…")
-    let transfer = WCSession.default.transferFile(url, metadata: ["kind": "audio", "id": id, "autoSend": action == .send, "speak": speak])
-    outgoing[transfer] = url
-    armRequestTimeout(id: id)
+    setStatus("正在识别语音…", "Transcribing…")
+    processingTask = Task { @MainActor in
+      defer { try? FileManager.default.removeItem(at: url) }
+      do {
+        let wav = try Data(contentsOf: url)
+        let text: String = try await routed(phone: {
+          let result = try await self.relay.request("remote-asr", audio: wav)
+          guard let text = result["transcript"] as? String, !text.isEmpty else {
+            throw WatchRequestError("识别结果无效", "Invalid transcript")
+          }
+          return text
+        }, watch: { try await self.networkClient.transcribe(wav, config: config) })
+        self.transcript = text
+        if action == .review {
+          self.awaitingConfirmation = true
+          self.busy = false
+          self.phase = "awaiting_confirmation"
+          self.setStatus("确认后发送", "Confirm to send")
+        } else { await self.sendTurn(id: id, config: config) }
+      } catch { self.failRequest(error) }
+    }
   }
 
   func confirmTranscript() {
-    guard awaitingConfirmation, !transcript.isEmpty,
-          WCSession.default.isReachable, let id = activeID else {
-      setStatus("请打开 iPhone 上的 AI Link 后重试", "Open AI Link on iPhone and retry")
-      return
-    }
+    guard awaitingConfirmation, !transcript.isEmpty, let id = activeID,
+          let config = turnConfiguration else { return }
     awaitingConfirmation = false
     busy = true
-    setStatus("正在发送…", "Sending…")
-    armRequestTimeout(id: id)
-    WCSession.default.sendMessage(
-      ["kind": "confirm", "id": id, "transcript": transcript, "speak": speak],
-      replyHandler: { [weak self] reply in
-        if reply["accepted"] as? Bool != true {
-          DispatchQueue.main.async {
-            self?.busy = false
-            self?.awaitingConfirmation = true
-            self?.requestTimer?.invalidate()
-            self?.setStatus("发送未被手机接收，请重试", "The iPhone did not accept this turn. Try again")
-          }
-        }
-      },
-      errorHandler: { [weak self] _ in
-        DispatchQueue.main.async {
-          self?.busy = false
-          self?.awaitingConfirmation = true
-          self?.requestTimer?.invalidate()
-          self?.setStatus("手机连接不可用，请重试", "iPhone connection unavailable")
-        }
-      }
-    )
+    processingTask = Task { @MainActor in await self.sendTurn(id: id, config: config) }
   }
 
-  private func apply(_ update: [String: Any]) {
+  @MainActor private func routed<T>(phone: () async throws -> T, watch: () async throws -> T) async throws -> T {
+    try await WatchRequestRouting.execute(phoneAvailable: { self.phoneAvailable },
+      hasPartial: { ["thinking", "replying"].contains(self.phase) && !self.answer.isEmpty }, onRoute: { phone in
+        if self.phase == "thinking" {
+          self.setStatus(phone ? "手机正在请求模型…" : "手表正在请求模型…",
+                         phone ? "Phone requesting model…" : "Watch requesting model…")
+        }
+      }, phone: phone, watch: watch)
+  }
+
+  @MainActor private func sendTurn(id: String, config: WatchNetworkConfiguration) async {
+    phase = "thinking"
+    do {
+      let history = independentHistory.history(for: config, question: transcript)
+      let onText: (String) -> Void = { value in
+        // Both relay callbacks and the native client run in this task's actor.
+        self.answer = value
+        self.phase = "replying"
+        self.setStatus("正在回答…", "Answering…")
+      }
+      let result: String = try await routed(phone: {
+        let data = try JSONSerialization.data(withJSONObject: history)
+        let response = try await self.relay.request("remote-chat", arguments: [
+          "history": String(decoding: data, as: UTF8.self), "providerId": config.providerId!, "model": config.model,
+        ], onText: onText)
+        guard let answer = response["answer"] as? String, !answer.isEmpty else {
+          throw WatchRequestError("模型回复无效", "Invalid model reply")
+        }
+        return answer
+      }, watch: { try await self.networkClient.reply(history: history, config: config, onText: onText) })
+      answer = result
+      try independentHistory.append(id: id, config: config, question: transcript, answer: result)
+      turns.append(WatchTurn(id: id, question: transcript, answer: result))
+      turns = Array(turns.suffix(50))
+      if let data = try? JSONEncoder().encode(turns) { UserDefaults.standard.set(data, forKey: historyKey) }
+      phase = "complete"
+      setStatus("", "")
+      syncPendingTurns()
+      if speak, config.tts != nil {
+        do {
+          let audio: (Data, String)? = try await routed(phone: {
+            let text = String(String.UnicodeScalarView(result.unicodeScalars.prefix(1800)))
+            let reply = try await self.relay.request("remote-tts", arguments: ["text": text])
+            guard let url = reply["audioURL"] as? URL else { return nil }
+            defer { try? FileManager.default.removeItem(at: url) }
+            return (try Data(contentsOf: url), url.pathExtension)
+          }, watch: { try await self.networkClient.synthesize(result, config: config) })
+          if let (data, format) = audio {
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("speech-\(UUID().uuidString).\(format)")
+            try data.write(to: url, options: .atomic)
+            playAudio(at: url)
+          }
+        } catch { setStatus("文字已保存，朗读失败", "Text saved; speech failed") }
+      }
+      busy = false
+    } catch { failRequest(error) }
+  }
+
+  @MainActor private func failRequest(_ error: Error) {
+    let failure = WatchRequestError.network(error)
+    busy = false
+    phase = "error"
+    setStatus(failure.chinese, failure.english)
+  }
+
+  private func syncPendingTurns() {
+    guard phoneAvailable, syncID == nil, let turn = independentHistory.snapshot.pending.first else { return }
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("turn-\(UUID().uuidString).json")
+    do {
+      try JSONEncoder().encode(turn).write(to: url, options: .atomic)
+      syncID = turn.id
+      outgoing[WCSession.default.transferFile(url, metadata: ["kind": "turn", "id": turn.id])] = url
+      DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
+        if self.syncID == turn.id { self.syncID = nil }
+      }
+    } catch { try? FileManager.default.removeItem(at: url); syncID = nil }
+  }
+
+  func clearLocalData() {
+    guard !busy && !recording else { return }
+    stopPlayback()
+    do { try configurationStore.clear() }
+    catch { failRequest(error); return }
+    UserDefaults.standard.set(true, forKey: "ai_link_watch_config_cleared")
+    configuration = nil
+    turnConfiguration = nil
+    independentHistory.clear()
+    for transfer in outgoing.keys { transfer.cancel() }
+    for url in outgoing.values { try? FileManager.default.removeItem(at: url) }
+    outgoing.removeAll()
+    syncID = nil
+    turns = []
+    modelSummary = localized("等待手机配置", "Waiting for phone settings")
+    UserDefaults.standard.removeObject(forKey: "ai_link_phone_model_summary")
+    UserDefaults.standard.removeObject(forKey: historyKey)
+    textReady = false
+    asrReady = false
+    resetForRecording()
+    setStatus("已清除手表配置和问答", "Watch settings and chats cleared")
+  }
+
+  @MainActor private func apply(_ update: [String: Any]) {
+    if update["kind"] as? String == "turn-ack", let id = update["id"] as? String {
+      independentHistory.acknowledge(id)
+      if syncID == id { syncID = nil }
+      syncPendingTurns()
+      return
+    }
+    if relay.receive(update) { return }
     if update["kind"] as? String == "preferences" {
+      let updateID = update["id"] as? String
+      guard settingsSync.accepts(updateID) else { return }
       guard let language = update["language"] as? String, ["zh", "en"].contains(language) else { return }
       self.language = language
       UserDefaults.standard.set(language, forKey: "ai_link_phone_language")
       if let labels = statusLabels { status = localized(labels.0, labels.1) }
-      if let value = update["textReady"] as? Bool { textReady = value }
-      if let value = update["asrReady"] as? Bool { asrReady = value }
+      if UserDefaults.standard.bool(forKey: "ai_link_watch_config_cleared") { return }
+      guard let snapshot = update["configuration"] as? [String: Any] else {
+        if updateID == settingsRequestID { finishSettingsRequest(success: false) }
+        return
+      }
+      do {
+        // Assign only after decoding and Keychain persistence both succeed.
+        // A broken snapshot or storage failure leaves the previous cache usable.
+        let saved = try configurationStore.save(snapshot)
+        configuration = saved
+        textReady = saved.canChat
+        asrReady = saved.canTranscribe
+      } catch {
+        if updateID == settingsRequestID { finishSettingsRequest(success: false) }
+        return
+      }
       let defaults = UserDefaults.standard
       if let value = update["speak"] as? Bool {
         defaults.set(value, forKey: "ai_link_phone_speak")
         if defaults.object(forKey: "ai_link_watch_speak") == nil { speak = value }
       }
-      if let name = update["providerName"] as? String, let model = update["model"] as? String {
+      if let config = configuration {
+        let name = config.providerName
+        let model = config.model
         modelSummary = name.isEmpty ? localized("等待手机配置", "Waiting for phone settings") : "\(name) · \(model)"
         defaults.set(modelSummary, forKey: "ai_link_phone_model_summary")
         if update["id"] as? String == settingsRequestID { finishSettingsRequest(success: true) }
       }
+      syncPendingTurns()
       return
-    }
-    guard let id = update["id"] as? String, id == activeID else { return }
-    let stage = update["stage"] as? String ?? ""
-    if ["complete", "error", "awaiting_confirmation"].contains(stage) {
-      requestTimer?.invalidate()
-      requestTimer = nil
-    } else {
-      armRequestTimeout(id: id)
-    }
-    if let value = update["transcript"] as? String { transcript = value }
-    if let value = update["answer"] as? String { answer = value }
-    phase = stage
-    switch stage {
-    case "transcribing":
-      setStatus("正在识别语音…", "Transcribing…")
-    case "transcribed", "thinking":
-      setStatus("模型正在思考…", "Model is thinking…")
-    case "awaiting_confirmation":
-      awaitingConfirmation = true
-      busy = false
-      setStatus("确认后发送", "Confirm to send")
-    case "replying":
-      busy = true
-      setStatus("正在回答…", "Answering…")
-    case "complete":
-      busy = false
-      setStatus("", "")
-      if !transcript.isEmpty && !answer.isEmpty {
-        if let index = turns.firstIndex(where: { $0.id == id }) {
-          turns[index].answer = answer
-        } else {
-          turns.append(WatchTurn(id: id, question: transcript, answer: answer))
-        }
-        turns = Array(turns.suffix(50))
-        if let data = try? JSONEncoder().encode(turns) {
-          UserDefaults.standard.set(data, forKey: historyKey)
-        }
-      }
-    case "error":
-      busy = false
-      setStatus((update["error"] as? String) ?? "请求失败，请重试", "Request failed. Check the iPhone for details.")
-    default:
-      break
-    }
-  }
-
-  private func armRequestTimeout(id: String) {
-    requestTimer?.invalidate()
-    requestTimer = Timer.scheduledTimer(withTimeInterval: 90, repeats: false) { [weak self] _ in
-      DispatchQueue.main.async {
-        guard let self, self.activeID == id, self.busy else { return }
-        self.busy = false
-        self.phase = "error"
-        self.setStatus("响应超时，请先在手机查看会话，再决定是否重试", "Response timed out. Check iPhone chat before retrying")
-      }
     }
   }
 
@@ -436,12 +538,8 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     try? AVAudioSession.sharedInstance().setActive(false)
   }
 
-  func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-    if let url = playbackURL { try? FileManager.default.removeItem(at: url) }
-    playbackURL = nil
-    self.player = nil
-    playing = false
-    try? AVAudioSession.sharedInstance().setActive(false)
+  nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+    DispatchQueue.main.async { self.stopPlayback() }
   }
 
   private func localized(_ chinese: String, _ english: String) -> String {
@@ -453,33 +551,42 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     status = localized(chinese, english)
   }
 
-  func session(_ session: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) {
+  nonisolated func session(_ session: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) {
     DispatchQueue.main.async {
       self.apply(session.receivedApplicationContext)
       self.objectWillChange.send()
+      if state == .activated { self.sendPendingSettingsRequest() }
+      else { self.finishSettingsRequest(success: false) }
     }
   }
 
-  func sessionReachabilityDidChange(_ session: WCSession) {
+  nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
     DispatchQueue.main.async {
       self.objectWillChange.send()
       if session.isReachable { self.refreshPhoneSettings() }
     }
   }
 
-  func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+  nonisolated func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
     DispatchQueue.main.async { self.apply(applicationContext) }
   }
 
-  func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+  nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
     DispatchQueue.main.async { self.apply(message) }
   }
 
-  func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
+  nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
     DispatchQueue.main.async { self.apply(userInfo) }
   }
 
-  func session(_ session: WCSession, didReceive file: WCSessionFile) {
+  nonisolated func session(_ session: WCSession, didReceive file: WCSessionFile) {
+    if file.metadata?["kind"] as? String == "remote-result" {
+      if let data = try? Data(contentsOf: file.fileURL), data.count <= 2 * 1024 * 1024,
+         let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+        DispatchQueue.main.async { self.apply(value) }
+      }
+      return
+    }
     guard file.metadata?["kind"] as? String == "audio",
           let id = file.metadata?["id"] as? String else { return }
     let destination = FileManager.default.temporaryDirectory
@@ -487,22 +594,18 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     do {
       try FileManager.default.moveItem(at: file.fileURL, to: destination)
       DispatchQueue.main.async {
-        if id == self.activeID { self.playAudio(at: destination) }
-        else { try? FileManager.default.removeItem(at: destination) }
+        if self.relay.receive(["id": id, "stage": "complete", "audioURL": destination]) { return }
+        try? FileManager.default.removeItem(at: destination)
       }
     } catch { return }
   }
 
-  func session(_ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?) {
+  nonisolated func session(_ session: WCSession, didFinish fileTransfer: WCSessionFileTransfer, error: Error?) {
     DispatchQueue.main.async {
+      self.relay.finished(fileTransfer, error: error)
+      if error != nil && fileTransfer.file.metadata?["id"] as? String == self.syncID { self.syncID = nil }
       if let url = self.outgoing.removeValue(forKey: fileTransfer) {
         try? FileManager.default.removeItem(at: url)
-      }
-      if error != nil && fileTransfer.file.metadata?["id"] as? String == self.activeID {
-        self.busy = false
-        self.phase = "error"
-        self.requestTimer?.invalidate()
-        self.setStatus("录音发送失败，请重试", "Recording transfer failed. Try again")
       }
     }
   }

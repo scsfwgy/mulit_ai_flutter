@@ -7,6 +7,7 @@ struct WatchContentView: View {
   @AppStorage("watchGestureGuideSeen") private var guideSeen = false
   @GestureState private var holdingChat = false
   @State private var recordingPressStarted = false
+  @State private var confirmClear = false
   private let accent = Color(red: 24 / 255, green: 126 / 255, blue: 240 / 255)
 
   private func label(_ zh: String, _ en: String) -> String { session.chinese ? zh : en }
@@ -36,6 +37,13 @@ struct WatchContentView: View {
       Text(session.configurationGuidance)
     }
     .onAppear { session.refreshPhoneSettings() }
+    .alert(label("清除手表数据？", "Clear watch data?"), isPresented: $confirmClear) {
+      Button(label("清除", "Clear"), role: .destructive) { session.clearLocalData() }
+      Button(label("取消", "Cancel"), role: .cancel) {}
+    } message: {
+      Text(label("将删除手表保存的密钥、问答和未同步记录，手机数据保留。重新使用需同步手机配置。",
+        "Deletes watch credentials, chats and pending sync records. Phone data remains. Sync phone settings to use again."))
+    }
     .onOpenURL { url in
       guard WatchChatShortcut.opensChat(url) else { return }
       page = 0
@@ -160,8 +168,7 @@ struct WatchContentView: View {
         Toggle(label("自动播报回答", "Speak replies automatically"), isOn: Binding(
           get: { session.speak }, set: { session.setSpeak($0) }
         ))
-        Button(label("同步手机配置", "Sync phone settings")) { session.refreshPhoneSettings() }
-          .disabled(session.syncingSettings)
+        Button(label("同步手机配置", "Sync phone settings")) { session.refreshPhoneSettings(manual: true) }
         if !session.settingsStatus.isEmpty {
           Text(session.settingsStatus).font(.system(size: 11)).foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
@@ -172,8 +179,10 @@ struct WatchContentView: View {
         gestureInstructions
         Text(label("模型与语音服务在手机端设置", "Set up text and voice services on phone"))
           .font(.system(size: 11)).foregroundStyle(.secondary).multilineTextAlignment(.center)
-        Text(label("语音和模型请求由配对 iPhone 处理", "The paired iPhone handles voice and model requests"))
+        Text(label("优先由手表请求；手表网络不可用时尝试手机。密钥保存在手表钥匙串。", "Uses the watch first, then tries the phone if the watch network is unavailable. Credentials are stored in watch Keychain."))
           .font(.system(size: 10)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+        Button(label("清除手表配置和问答", "Clear watch settings and chats"), role: .destructive) { confirmClear = true }
+          .disabled(session.busy || session.recording || session.syncingSettings)
       }.font(.system(size: 13)).padding(.horizontal, 8)
     }
   }

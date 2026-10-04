@@ -1040,9 +1040,19 @@ class ChatStore {
       if (await value('watch_turn_$id') != null) return;
       final sequenceKey = 'watch_sequence_$conversationId';
       final expected = int.tryParse(await value(sequenceKey) ?? '0') ?? 0;
-      if (sequence != expected) throw StateError('等待前一条手表会话同步');
       final topicKey = 'watch_conversation_$conversationId';
       final existingTopicId = int.tryParse(await value(topicKey) ?? '');
+      // Apple Watch sends only the oldest unacknowledged turn. After phone data
+      // is cleared, its first pending turn can start a restored conversation.
+      // Existing conversations and the Wear OS protocol retain strict ordering.
+      final restoresMissingAppleConversation =
+          turn['source'] == 'apple-watch' &&
+          expected == 0 &&
+          existingTopicId == null &&
+          sequence > 0;
+      if (sequence != expected && !restoresMissingAppleConversation) {
+        throw StateError('等待前一条手表会话同步');
+      }
       final existingTopic = existingTopicId == null
           ? <Map<String, Object?>>[]
           : await transaction.query(

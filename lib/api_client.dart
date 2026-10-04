@@ -7,9 +7,16 @@ import 'data.dart';
 enum ApiErrorKind { other, network, auth, model }
 
 class ApiException implements Exception {
-  const ApiException(this.message, {this.kind = ApiErrorKind.other});
+  const ApiException(
+    this.message, {
+    this.kind = ApiErrorKind.other,
+    this.retrySafe = false,
+  });
   final String message;
   final ApiErrorKind kind;
+
+  /// True only when connection failed before sending the HTTP request body.
+  final bool retrySafe;
   @override
   String toString() => message;
 }
@@ -56,6 +63,7 @@ class ModelApiClient {
   ModelApiClient(this.provider, this.apiKey);
   final ProviderConfig provider;
   final String apiKey;
+  bool _requestSent = false;
   final HttpClient _client = HttpClient()
     ..connectionTimeout = const Duration(seconds: 20);
 
@@ -113,6 +121,7 @@ class ModelApiClient {
     String model, {
     String systemPrompt = '',
     int? maxTokens,
+    bool requireComplete = false,
     void Function(ReplyUsage usage)? onUsage,
   }) async* {
     try {
@@ -157,11 +166,21 @@ class ModelApiClient {
       }
       final decoder = SseDecoder();
       var received = false;
+      var finished = false;
+      bool isFinished(String payload) =>
+          payload == '[DONE]' ||
+          (provider.protocol == ApiProtocol.anthropic &&
+              (jsonDecode(payload) as Map<String, dynamic>)['type'] ==
+                  'message_stop');
       await for (final line
           in response.transform(utf8.decoder).transform(const LineSplitter())) {
         final payload = decoder.addLine(line);
         if (payload == null) continue;
-        if (payload == '[DONE]') break;
+        if (requireComplete && isFinished(payload)) finished = true;
+        if (payload == '[DONE]') {
+          finished = true;
+          break;
+        }
         final piece = _textFromEvent(payload, onUsage: onUsage);
         if (piece.isNotEmpty) {
           received = true;
@@ -169,6 +188,7 @@ class ModelApiClient {
         }
       }
       final tail = decoder.finish();
+      if (requireComplete && tail != null && isFinished(tail)) finished = true;
       if (tail != null && tail != '[DONE]') {
         final piece = _textFromEvent(tail, onUsage: onUsage);
         if (piece.isNotEmpty) {
@@ -182,10 +202,17 @@ class ModelApiClient {
           kind: ApiErrorKind.model,
         );
       }
+      if (requireComplete && !finished) {
+        throw const ApiException('模型回复未完整结束，请稍后检查再重试');
+      }
     } on FormatException {
       throw const ApiException('服务返回的数据格式不正确，请检查接口协议');
     } on SocketException catch (error) {
-      throw ApiException('网络连接失败：${error.message}', kind: ApiErrorKind.network);
+      throw ApiException(
+        '网络连接失败：${error.message}',
+        kind: ApiErrorKind.network,
+        retrySafe: !_requestSent,
+      );
     } on HttpException {
       throw const ApiException(
         '连接中断，请检查 API 地址或稍后重试',
@@ -219,6 +246,7 @@ class ModelApiClient {
       jsonEncode(_body(history, model, systemPrompt, maxTokens, includeUsage)),
     );
     request.contentLength = bytes.length;
+    _requestSent = true;
     request.add(bytes);
     return request.close().timeout(const Duration(seconds: 40));
   }
