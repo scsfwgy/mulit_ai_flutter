@@ -25,7 +25,11 @@ void main() {
     await tester.pumpWidget(
       const MaterialApp(home: MessageInfoSettingsScreen()),
     );
-    expect(find.byType(CupertinoSwitch), findsNWidgets(5));
+    expect(find.byType(CupertinoSwitch), findsNWidgets(9));
+    expect(find.text('简洁模式'), findsOneWidget);
+    expect(find.text('回复完成后自动朗读'), findsOneWidget);
+    expect(find.text('复制按钮'), findsOneWidget);
+    expect(find.text('语音按钮'), findsOneWidget);
     expect(find.text('首帧耗时'), findsOneWidget);
     expect(find.text('总耗时'), findsOneWidget);
     expect(find.text('Token 用量'), findsOneWidget);

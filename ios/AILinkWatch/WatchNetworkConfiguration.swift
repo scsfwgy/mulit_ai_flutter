@@ -2,6 +2,7 @@ import Foundation
 import Security
 
 struct WatchVoiceConfiguration: Codable {
+  var providerName: String? = nil
   let protocolName: String
   let baseUrl: String
   let apiKey: String
@@ -11,7 +12,7 @@ struct WatchVoiceConfiguration: Codable {
 
   enum CodingKeys: String, CodingKey {
     case protocolName = "protocol"
-    case baseUrl, apiKey, asrModel, ttsModel, voice
+    case providerName, baseUrl, apiKey, asrModel, ttsModel, voice
   }
 }
 

@@ -275,6 +275,7 @@ class WatchChatProcessor {
         return null;
       }
       return {
+        'providerName': selected.name,
         'protocol': selected.protocol.name,
         'baseUrl': selected.baseUrl,
         'asrModel': selected.asrModel,

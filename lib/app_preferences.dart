@@ -15,7 +15,9 @@ enum ChatInfoField {
   firstFrame('首帧耗时'),
   totalTime('总耗时'),
   tokens('Token 用量'),
-  characters('字数');
+  characters('字数'),
+  copy('复制按钮'),
+  speech('语音按钮');
 
   const ChatInfoField(this.label);
   final String label;
@@ -40,6 +42,9 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
   static final instance = AppPreferences._();
   static const _companion = MethodChannel('between_models/companion_install');
 
+  bool autoReadReplies = false;
+  bool simpleMessageInfo = false;
+
   AppLanguage language = AppLanguage.zh;
   AppSkin skin = AppSkin.blue;
   AppAppearance appearance = AppAppearance.system;
@@ -47,7 +52,8 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
     for (final field in ChatInfoField.values) field: true,
   };
 
-  bool showChatInfo(ChatInfoField field) => _chatInfoVisible[field] ?? true;
+  bool showChatInfo(ChatInfoField field) =>
+      !simpleMessageInfo && (_chatInfoVisible[field] ?? true);
 
   bool get dark => switch (appearance) {
     AppAppearance.light => false,
@@ -118,6 +124,10 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
   };
 
   Future<void> load() async {
+    simpleMessageInfo =
+        await ChatStore.instance.setting('chat_info_simple') == '1';
+    autoReadReplies =
+        await ChatStore.instance.setting('voice_auto_read') == '1';
     final savedLanguage = await ChatStore.instance.setting('app_language');
     final savedSkin = await ChatStore.instance.setting('app_skin');
     final savedAppearance = await ChatStore.instance.setting('app_appearance');
@@ -140,6 +150,18 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
     _syncSystemBars();
     notifyListeners();
     unawaited(_syncWatchLanguage());
+  }
+
+  Future<void> setSimpleMessageInfo(bool value) async {
+    await ChatStore.instance.saveSetting('chat_info_simple', value ? '1' : '0');
+    simpleMessageInfo = value;
+    notifyListeners();
+  }
+
+  Future<void> setAutoReadReplies(bool value) async {
+    await ChatStore.instance.saveSetting('voice_auto_read', value ? '1' : '0');
+    autoReadReplies = value;
+    notifyListeners();
   }
 
   Future<void> setLanguage(AppLanguage value) async {
@@ -176,9 +198,26 @@ String tr(String chinese) {
   if (!AppPreferences.instance.english) return chinese;
   final direct = _english[chinese];
   if (direct != null) return direct;
-  final voiceHttp = RegExp(r'^语音服务请求失败（HTTP (\d+)）').firstMatch(chinese);
+  final voiceHttp = RegExp(r'^(语音服务|语音识别|语音朗读)请求失败（HTTP (\d+)），(.+)$')
+      .firstMatch(chinese);
   if (voiceHttp != null) {
-    return 'Voice service failed (HTTP ${voiceHttp.group(1)}). Check the key, model and permissions';
+    final operation = switch (voiceHttp.group(1)) {
+      '语音识别' => 'Transcription',
+      '语音朗读' => 'Speech synthesis',
+      _ => 'Voice service',
+    };
+    final status = int.parse(voiceHttp.group(2)!);
+    final reason = switch (status) {
+      401 || 403 => 'Check the key and permissions',
+      429 => 'Rate limit or quota reached. Try again later',
+      >= 500 => 'Server processing failed. Try again later',
+      400 || 404 || 422 => 'Check the model, endpoint and audio format',
+      >= 300 && < 400 => 'Redirect blocked. Check the endpoint',
+      _ => 'Check the service settings and try again',
+    };
+    final code = RegExp(r'（([a-zA-Z0-9_.-]{1,64})）$').firstMatch(chinese);
+    return '$operation failed (HTTP $status). $reason'
+        '${code == null ? '' : ' (${code.group(1)})'}';
   }
   final voiceCatalogHttp = RegExp(r'^获取模型列表失败（HTTP (\d+)）$')
       .firstMatch(chinese);
@@ -310,6 +349,16 @@ const _english = <String, String>{
   '文字服务已删除': 'Text provider was deleted',
   '不使用': 'None',
   '未设置': 'Not set',
+  '正在生成语音': 'Generating speech',
+  '停止朗读': 'Stop reading aloud',
+  '简洁模式': 'Simple mode',
+  '复制按钮': 'Copy button',
+  '语音按钮': 'Speech button',
+  '录音采集失败，请重试': 'Audio capture failed. Try again',
+  '录音未完整结束，请重试': 'Recording did not finish. Try again',
+  '没有录到音频，请检查麦克风后重试': 'No audio captured. Check the microphone and try again',
+  '录音数据不完整，请重试': 'Incomplete audio data. Try again',
+  '录音没有有效音频数据，请重新录音': 'Recording contains no valid audio. Record again',
   '朗读回复': 'Read reply aloud',
   '语音输入': 'Voice input',
   '切换到语音输入': 'Switch to voice input',

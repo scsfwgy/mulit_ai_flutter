@@ -33,6 +33,7 @@ internal class WatchRecordingOverlay(
 ) : View(context) {
     @Volatile var level = 0f
     var releaseAction = WatchReleaseAction.SEND
+    var simpleMode = false
     private var startedAt = 0L
     private var smoothedLevel = 0f
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -62,62 +63,66 @@ internal class WatchRecordingOverlay(
         val foreground = if (dark()) Color.WHITE else Color.rgb(23, 31, 42)
         val secondary = if (dark()) Color.rgb(177, 191, 211) else Color.rgb(77, 92, 111)
         canvas.drawColor(0xA0000000.toInt())
+        if (simpleMode) {
+            drawSimpleRecording(canvas, cx, cy, accent, elapsed)
+            if (visibility == VISIBLE) postInvalidateOnAnimation()
+            return
+        }
         paint.style = Paint.Style.FILL
         paint.color = if (dark()) Color.rgb(28, 28, 30) else Color.WHITE
         canvas.drawCircle(cx, cy, 99 * density, paint)
 
-        val micY = top + 30 * density
+        val micY = top + 78 * density
         paint.color = Color.argb(30, Color.red(accent), Color.green(accent), Color.blue(accent))
-        canvas.drawCircle(cx, micY, 18 * density, paint)
+        canvas.drawCircle(cx, micY, 32 * density, paint)
         paint.color = accent
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 2 * density
+        paint.strokeWidth = 3 * density
         paint.strokeCap = Paint.Cap.ROUND
         if (releaseAction == WatchReleaseAction.CANCEL) {
-            canvas.drawLine(cx - 5 * density, micY - 5 * density, cx + 5 * density, micY + 5 * density, paint)
-            canvas.drawLine(cx + 5 * density, micY - 5 * density, cx - 5 * density, micY + 5 * density, paint)
+            canvas.drawLine(cx - 10 * density, micY - 10 * density, cx + 10 * density, micY + 10 * density, paint)
+            canvas.drawLine(cx + 10 * density, micY - 10 * density, cx - 10 * density, micY + 10 * density, paint)
+        } else if (releaseAction == WatchReleaseAction.REVIEW) {
+            for (line in -1..1) {
+                val y = micY + line * 8 * density
+                canvas.drawLine(cx - 12 * density, y, cx + (if (line == 1) 6 else 12) * density, y, paint)
+            }
         } else {
-            canvas.drawRoundRect(cx - 3 * density, micY - 8 * density, cx + 3 * density,
-                micY + 2 * density, 3 * density, 3 * density, paint)
-            canvas.drawArc(cx - 7 * density, micY - 6 * density, cx + 7 * density,
-                micY + 6 * density, 0f, 180f, false, paint)
-            canvas.drawLine(cx, micY + 6 * density, cx, micY + 10 * density, paint)
-            canvas.drawLine(cx - 4 * density, micY + 10 * density, cx + 4 * density, micY + 10 * density, paint)
+            paint.style = Paint.Style.FILL
+            canvas.drawRoundRect(cx - 6 * density, micY - 16 * density, cx + 6 * density,
+                micY + 3 * density, 6 * density, 6 * density, paint)
+            paint.style = Paint.Style.STROKE
+            canvas.drawArc(cx - 12 * density, micY - 8 * density, cx + 12 * density,
+                micY + 10 * density, 0f, 180f, false, paint)
+            canvas.drawLine(cx, micY + 10 * density, cx, micY + 17 * density, paint)
+            canvas.drawLine(cx - 7 * density, micY + 17 * density, cx + 7 * density, micY + 17 * density, paint)
         }
-        drawTarget(canvas, cx - 61 * density, top + 28 * density, "↖", "取消",
+        drawTarget(canvas, cx - 42 * density, top + 29 * density, "↖", "取消",
             releaseAction == WatchReleaseAction.CANCEL, Color.rgb(255, 69, 58), secondary)
-        drawTarget(canvas, cx + 61 * density, top + 28 * density, "↗", "转文字",
+        drawTarget(canvas, cx + 42 * density, top + 29 * density, "↗", "转文字",
             releaseAction == WatchReleaseAction.REVIEW, Color.rgb(48, 176, 89), secondary)
-        val title = when (releaseAction) {
-            WatchReleaseAction.CANCEL -> "松开取消录音"
-            WatchReleaseAction.REVIEW -> "松开转文字"
-            WatchReleaseAction.SEND -> "正在录音"
-        }
-        drawText(canvas, text(title), cx, top + 66 * density, 13f, foreground, true)
-
         smoothedLevel += (level - smoothedLevel) * .22f
         paint.style = Paint.Style.FILL
         paint.color = accent
         for (index in 0 until 19) {
             val weight = 1 - abs(index - 9) / 10f
             val pulse = abs(sin(elapsed / 1500.0 * Math.PI * 2 + index * .63)).toFloat() * .72f + .28f
-            val barHeight = (3 + 26 * (.15f + smoothedLevel * .85f) * weight * pulse) * density
-            val x = cx + (index - 9) * 6 * density
-            val y = top + 92 * density
+            val barHeight = (2 + 12 * (.15f + smoothedLevel * .85f) * weight * pulse) * density
+            val x = cx + (index - 9) * 5 * density
+            val y = top + 124 * density
             canvas.drawRoundRect(x - 1.5f * density, y - barHeight / 2,
                 x + 1.5f * density, y + barHeight / 2, 2 * density, 2 * density, paint)
         }
         val seconds = elapsed / 1000
         val time = "%02d:%02d.%d".format(java.util.Locale.ROOT, seconds / 60, seconds % 60, elapsed % 1000 / 100)
-        drawText(canvas, time, cx, top + 136 * density, 22f, foreground, true)
+        drawText(canvas, time, cx, top + 155 * density, 18f, foreground, true)
         val hint = when (releaseAction) {
             WatchReleaseAction.CANCEL -> "松开取消"
-            WatchReleaseAction.REVIEW -> "识别后确认发送"
+            WatchReleaseAction.REVIEW -> "松开转文字"
             WatchReleaseAction.SEND -> "松开发送"
         }
-        drawText(canvas, text(hint), cx, top + 158 * density, 11f,
+        drawText(canvas, text(hint), cx, top + 177 * density, 11f,
             if (releaseAction == WatchReleaseAction.SEND) secondary else accent)
-        drawText(canvas, text("左上取消 · 右上确认"), cx, top + 177 * density, 10f, secondary)
         if (visibility == VISIBLE) postInvalidateOnAnimation()
     }
 
@@ -126,10 +131,50 @@ internal class WatchRecordingOverlay(
         if (selected) {
             paint.style = Paint.Style.FILL
             paint.color = accent
-            canvas.drawCircle(x, y, 16 * density, paint)
+            paint.color = Color.argb(38, Color.red(accent), Color.green(accent), Color.blue(accent))
+            canvas.drawRoundRect(x - 31 * density, y - 12 * density, x + 31 * density,
+                y + 12 * density, 12 * density, 12 * density, paint)
         }
-        drawText(canvas, arrow, x, y + 5 * density, 16f, if (selected) Color.WHITE else secondary, true)
-        drawText(canvas, text(label), x, y + 30 * density, 9f, if (selected) accent else secondary)
+        drawText(canvas, "$arrow ${text(label)}", x, y + 4 * density, 10f, if (selected) accent else secondary)
+    }
+
+    private fun drawSimpleRecording(canvas: Canvas, cx: Float, cy: Float, accent: Int, elapsed: Long) {
+        smoothedLevel += (level - smoothedLevel) * .22f
+        val radius = 69 * density
+        val pulse = (sin(elapsed / 1000.0 * Math.PI * 2).toFloat() + 1) / 2
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 2 * density
+        paint.color = Color.argb(115, Color.red(accent), Color.green(accent), Color.blue(accent))
+        canvas.drawCircle(cx, cy, radius * (1.04f + smoothedLevel * .1f + pulse * .02f), paint)
+        paint.style = Paint.Style.FILL
+        paint.color = Color.argb(51, Color.red(accent), Color.green(accent), Color.blue(accent))
+        canvas.drawCircle(cx, cy, radius, paint)
+        paint.color = accent
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 4 * density
+        paint.strokeCap = Paint.Cap.ROUND
+        when (releaseAction) {
+            WatchReleaseAction.CANCEL -> {
+                canvas.drawLine(cx - 15 * density, cy - 15 * density, cx + 15 * density, cy + 15 * density, paint)
+                canvas.drawLine(cx + 15 * density, cy - 15 * density, cx - 15 * density, cy + 15 * density, paint)
+            }
+            WatchReleaseAction.REVIEW -> {
+                for (line in -1..1) {
+                    val y = cy + line * 12 * density
+                    canvas.drawLine(cx - 18 * density, y, cx + (if (line == 1) 8 else 18) * density, y, paint)
+                }
+            }
+            WatchReleaseAction.SEND -> {
+                paint.style = Paint.Style.FILL
+                canvas.drawRoundRect(cx - 9 * density, cy - 25 * density, cx + 9 * density,
+                    cy + 5 * density, 9 * density, 9 * density, paint)
+                paint.style = Paint.Style.STROKE
+                canvas.drawArc(cx - 18 * density, cy - 12 * density, cx + 18 * density,
+                    cy + 16 * density, 0f, 180f, false, paint)
+                canvas.drawLine(cx, cy + 16 * density, cx, cy + 27 * density, paint)
+                canvas.drawLine(cx - 10 * density, cy + 27 * density, cx + 10 * density, cy + 27 * density, paint)
+            }
+        }
     }
 
     private fun drawText(canvas: Canvas, value: String, x: Float, y: Float,

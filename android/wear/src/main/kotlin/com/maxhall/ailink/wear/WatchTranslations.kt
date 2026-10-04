@@ -2,6 +2,17 @@ package com.maxhall.ailink.wear
 
 // Phone app preferences are the source of the watch UI language.
 internal val watchTranslations = mapOf(
+    "录音界面" to "Recording view",
+    "新手模式" to "Beginner",
+    "简洁模式" to "Simple",
+    "文本模型" to "Text model",
+    "语音识别" to "Speech recognition",
+    "语音朗读" to "Speech synthesis",
+    "提供商" to "Provider",
+    "模型 ID" to "Model ID",
+    "音色" to "Voice",
+    "未配置" to "Not configured",
+    "同步后显示" to "Sync to display",
     "松开发送" to "Release to send",
     "松开转文字" to "Release to transcribe",
     "识别后确认发送" to "Review before sending",

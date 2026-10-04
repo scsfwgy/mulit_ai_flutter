@@ -1,10 +1,13 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
 import 'data.dart';
+import 'voice_request_diagnostics.dart';
 
 class VoiceException implements Exception {
   const VoiceException(this.message);
@@ -31,6 +34,27 @@ class VoiceClient {
   final String key;
   final http.Client _client;
   final bool _ownsClient;
+  Map<String, Object?>? _audioDiagnostics;
+
+  void _trace(String id, String event, Map<String, Object?> details) {
+    if (!kDebugMode) return;
+    // Also redact accidental secret echoes in model IDs or endpoint paths.
+    var line = jsonEncode({'event': event, ...details});
+    for (final secret in [
+      key,
+      Uri.encodeComponent(key),
+      base64Encode(utf8.encode(key)),
+    ]) {
+      if (secret.isNotEmpty) {
+        line = line.replaceAll(secret, '<redacted>');
+        line = line.replaceAll(
+          jsonEncode(secret).substring(1, jsonEncode(secret).length - 1),
+          '<redacted>',
+        );
+      }
+    }
+    debugPrint('[AI Link Voice][$id] $line');
+  }
 
   void close() {
     if (_ownsClient) _client.close();
@@ -46,18 +70,41 @@ class VoiceClient {
   Future<http.Response> _send(
     http.BaseRequest request, {
     int maxBytes = 2 * 1024 * 1024,
+    String operation = '语音服务',
   }) async {
     request.followRedirects = false;
     request.headers.addAll(_auth);
+    final traceId = const Uuid().v4();
+    final watch = Stopwatch()..start();
+    if (kDebugMode) {
+      _trace(traceId, 'request', {
+        'operation': operation,
+        'protocol': config.protocol.name,
+        ...voiceRequestDiagnostics(request),
+        if (operation == '语音识别') 'recording': _audioDiagnostics,
+      });
+    }
     final streamed = await _client
         .send(request)
         .timeout(const Duration(seconds: 65));
+    _trace(traceId, 'response', {
+      'http_status': streamed.statusCode,
+      'headers_ms': watch.elapsedMilliseconds,
+      'content_type': streamed.headers['content-type'],
+    });
+    final failed = streamed.statusCode < 200 || streamed.statusCode >= 300;
+    // Error bodies can echo credentials and need only a bounded structured code.
+    final limit = failed ? 4096 : maxBytes;
     final data = <int>[];
     await for (final chunk in streamed.stream.timeout(
       const Duration(seconds: 65),
     )) {
+      if (data.length + chunk.length > limit) {
+        if (!failed) throw const VoiceException('语音服务返回内容过大');
+        data.addAll(chunk.take(limit - data.length));
+        break;
+      }
       data.addAll(chunk);
-      if (data.length > maxBytes) throw const VoiceException('语音服务返回内容过大');
     }
     final response = http.Response.bytes(
       Uint8List.fromList(data),
@@ -65,10 +112,46 @@ class VoiceClient {
       headers: streamed.headers,
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
+      final reason = switch (response.statusCode) {
+        401 || 403 => '请检查密钥和服务权限',
+        429 => '请求过于频繁或额度不足，请稍后重试',
+        >= 500 => '服务端处理失败，请稍后重试',
+        400 || 404 || 422 => '请检查模型、接口地址和音频格式',
+        >= 300 && < 400 => '服务地址发生重定向，请检查接口地址',
+        _ => '请检查服务配置后重试',
+      };
+      // Never display the raw response or server-provided message.
+      String? code;
+      try {
+        final json = jsonDecode(utf8.decode(response.bodyBytes));
+        final error = json is Map ? json['error'] : null;
+        final value = error is Map ? error['code'] : null;
+        final candidate = value?.toString();
+        if (candidate != null &&
+            RegExp(r'^[a-zA-Z0-9_.-]{1,64}$').hasMatch(candidate) &&
+            !candidate.contains(key) &&
+            !candidate.contains(base64Encode(utf8.encode(key)))) {
+          code = candidate;
+        }
+      } catch (_) {
+        // Invalid or truncated JSON stays a generic HTTP error.
+      }
+      _trace(traceId, 'error', {
+        'http_status': response.statusCode,
+        'elapsed_ms': watch.elapsedMilliseconds,
+        'response_bytes': response.bodyBytes.length,
+        'error_code': code,
+      });
       throw VoiceException(
-        '语音服务请求失败（HTTP ${response.statusCode}），请检查密钥、模型和服务权限',
+        '$operation请求失败（HTTP ${response.statusCode}），$reason'
+        '${code == null ? '' : '（$code）'}',
       );
     }
+    _trace(traceId, 'complete', {
+      'http_status': response.statusCode,
+      'elapsed_ms': watch.elapsedMilliseconds,
+      'response_bytes': response.bodyBytes.length,
+    });
     return response;
   }
 
@@ -77,11 +160,12 @@ class VoiceClient {
     Object body, {
     Map<String, String> headers = const {},
     int maxBytes = 2 * 1024 * 1024,
+    String operation = '语音朗读',
   }) {
     final request = http.Request('POST', _endpoint(path))
       ..headers.addAll({'Content-Type': 'application/json', ...headers})
       ..body = jsonEncode(body);
-    return _send(request, maxBytes: maxBytes);
+    return _send(request, maxBytes: maxBytes, operation: operation);
   }
 
   Map<String, dynamic> _decode(http.Response response) {
@@ -98,6 +182,15 @@ class VoiceClient {
       throw const VoiceException('录音为空或超过 12 MB，请缩短录音');
     }
     if (key.trim().isEmpty) throw const VoiceException('语音服务缺少 API Key');
+    final audio = voiceWavDiagnostics(wav, includeLevels: kDebugMode);
+    if (kDebugMode) _audioDiagnostics = audio;
+    if (audio['container'] != 'RIFF/WAVE' ||
+        (audio['data_actual_bytes'] as int? ?? 0) == 0 ||
+        audio['data_truncated'] == true ||
+        audio['truncated_chunk'] == true) {
+      _trace(const Uuid().v4(), 'audio_rejected', {'recording': audio});
+      throw const VoiceException('录音没有有效音频数据，请重新录音');
+    }
     late final Map<String, dynamic> body;
     switch (config.protocol) {
       case VoiceProtocol.openAi:
@@ -112,7 +205,7 @@ class VoiceClient {
                   contentType: http.MediaType('audio', 'wav'),
                 ),
               );
-        body = _decode(await _send(request));
+        body = _decode(await _send(request, operation: '语音识别'));
         return validateTranscript(
           body['text'] is String ? body['text'] as String : '',
         );
@@ -135,7 +228,7 @@ class VoiceClient {
               },
             ],
             'asr_options': {'language': 'auto'},
-          }),
+          }, operation: '语音识别'),
         );
         final choices = body['choices'];
         final message = choices is List && choices.isNotEmpty
@@ -157,6 +250,7 @@ class VoiceClient {
             'X-Api-Request-Id': const Uuid().v4(),
             'X-Api-Sequence': '-1',
           },
+          operation: '语音识别',
         );
         final status = response.headers['x-api-status-code'];
         if (status != null && status != '20000000') {

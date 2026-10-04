@@ -18,7 +18,6 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
   List<VoiceProviderConfig> _services = [];
   String? _asrId;
   String? _ttsId;
-  bool _autoRead = false;
 
   @override
   void initState() {
@@ -41,13 +40,11 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
         await store.saveSetting('voice_tts_id', tts);
       }
     }
-    final auto = await store.setting('voice_auto_read');
     if (mounted) {
       setState(() {
         _services = services;
         _asrId = asr;
         _ttsId = tts;
-        _autoRead = auto == '1';
       });
     }
   }
@@ -127,13 +124,10 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                 title: '回复完成后自动朗读',
                 chevron: false,
                 trailing: CupertinoSwitch(
-                  value: _autoRead,
+                  value: AppPreferences.instance.autoReadReplies,
                   onChanged: (value) async {
-                    await ChatStore.instance.saveSetting(
-                      'voice_auto_read',
-                      value ? '1' : '0',
-                    );
-                    if (mounted) setState(() => _autoRead = value);
+                    await AppPreferences.instance.setAutoReadReplies(value);
+                    if (mounted) setState(() {});
                   },
                 ),
               ),
@@ -185,6 +179,7 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
   int? _textProviderId;
   List<ProviderConfig> _textProviders = [];
   bool _saving = false;
+  bool _obscure = true;
 
   @override
   void initState() {
@@ -394,16 +389,36 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
         const SizedBox(height: 5),
         CupertinoTextField(
           controller: controller,
-          obscureText: secret,
+          obscureText: secret && _obscure,
+          enableSuggestions: !secret,
           suffix: secret
-              ? CupertinoButton(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  onPressed: _scanKey,
-                  child: Icon(
-                    CupertinoIcons.qrcode_viewfinder,
-                    color: IosColors.blue,
-                    semanticLabel: tr('扫码填写 API Key'),
-                  ),
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CupertinoButton(
+                      padding: const EdgeInsets.symmetric(horizontal: 7),
+                      minimumSize: const Size(36, 36),
+                      onPressed: _scanKey,
+                      child: Icon(
+                        CupertinoIcons.qrcode_viewfinder,
+                        size: 20,
+                        color: IosColors.blue,
+                        semanticLabel: tr('扫码填写 API Key'),
+                      ),
+                    ),
+                    CupertinoButton(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: const Size(36, 36),
+                      onPressed: () => setState(() => _obscure = !_obscure),
+                      child: Icon(
+                        _obscure
+                            ? CupertinoIcons.eye_slash
+                            : CupertinoIcons.eye,
+                        size: 19,
+                        color: IosColors.secondary,
+                      ),
+                    ),
+                  ],
                 )
               : onPick == null
               ? null

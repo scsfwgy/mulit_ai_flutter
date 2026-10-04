@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mulit_ai_flutter/data.dart';
 import 'package:mulit_ai_flutter/api_client.dart';
+import 'package:mulit_ai_flutter/voice_recording.dart';
 import 'package:mulit_ai_flutter/watch_chat.dart';
 
 class _Store extends Fake implements ChatStore {
@@ -84,11 +85,17 @@ _Store _configuredStore([String voiceUrl = 'https://example.com']) {
 void main() {
   test('Apple full snapshot contains only selected credentials and invalidates deleted services', () async {
     final store = _configuredStore();
+    store.values['voice_tts_id'] = 'asr';
     final processor = WatchChatProcessor(store: store);
     final config = await processor.configuration();
     expect(config['protocol'], 'openai_chat');
     expect(config['apiKey'], 'test-key');
     expect((config['asr'] as Map)['apiKey'], 'test-key');
+    expect((config['asr'] as Map)['providerName'], 'Voice');
+    expect((config['asr'] as Map)['asrModel'], 'asr');
+    expect((config['tts'] as Map)['providerName'], 'Voice');
+    expect((config['tts'] as Map)['ttsModel'], 'tts');
+    expect((config['tts'] as Map)['voice'], 'voice');
     expect(
       jsonEncode(await processor.preferences()),
       isNot(contains('test-key')),
@@ -460,7 +467,7 @@ void main() {
           final processor = _Processor(store);
           final updates = <Map<String, Object?>>[];
           await processor.process(
-            Uint8List.fromList([1, 2, 3]),
+            pcm16VoiceWav(Uint8List.fromList([1, 2, 3, 4])),
             autoSend: override,
             speak: true,
             onUpdate: (update) async {

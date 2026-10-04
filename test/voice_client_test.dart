@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:mulit_ai_flutter/data.dart';
 import 'package:mulit_ai_flutter/voice_client.dart';
+import 'package:mulit_ai_flutter/voice_recording.dart';
 
 VoiceProviderConfig config(VoiceProtocol protocol) => VoiceProviderConfig(
   id: 'test',
@@ -31,15 +32,26 @@ void main() {
             request.headers['content-type'],
             contains('multipart/form-data'),
           );
-          expect(request.body, contains('name="file"'));
-          expect(request.body, contains('name="model"'));
+          expect(
+            utf8.decode(request.bodyBytes, allowMalformed: true),
+            contains('name="file"'),
+          );
+          expect(
+            utf8.decode(request.bodyBytes, allowMalformed: true),
+            contains('name="model"'),
+          );
           return http.Response.bytes(
             utf8.encode(jsonEncode({'text': '  你好  '})),
             200,
           );
         }),
       );
-      expect(await client.transcribe(Uint8List.fromList([1, 2, 3])), '你好');
+      expect(
+        await client.transcribe(
+          pcm16VoiceWav(Uint8List.fromList([1, 2, 3, 4])),
+        ),
+        '你好',
+      );
     },
   );
 
@@ -68,7 +80,10 @@ void main() {
         );
       }),
     );
-    expect(await client.transcribe(Uint8List.fromList([1])), '测试文字');
+    expect(
+      await client.transcribe(pcm16VoiceWav(Uint8List.fromList([1, 2]))),
+      '测试文字',
+    );
   });
 
   test('Doubao uses separate speech key and resource headers', () async {
@@ -91,7 +106,10 @@ void main() {
         );
       }),
     );
-    expect(await client.transcribe(Uint8List.fromList([1])), '火山测试');
+    expect(
+      await client.transcribe(pcm16VoiceWav(Uint8List.fromList([1, 2]))),
+      '火山测试',
+    );
   });
 
   test('MiMo TTS reads base64 audio without using system speech', () async {
@@ -138,6 +156,94 @@ void main() {
   });
 
   test(
+    'ASR 500 identifies the server failure and keeps only a safe code',
+    () async {
+      final client = VoiceClient(
+        config(VoiceProtocol.mimo),
+        'secret-key',
+        client: MockClient(
+          (_) async => http.Response(
+            jsonEncode({
+              'error': {
+                'code': 'internal_error',
+                'message': 'audio data secret-key',
+              },
+            }),
+            500,
+          ),
+        ),
+      );
+      await expectLater(
+        client.transcribe(pcm16VoiceWav(Uint8List.fromList([1, 2]))),
+        throwsA(
+          predicate(
+            (e) =>
+                e is VoiceException &&
+                e.message == '语音识别请求失败（HTTP 500），服务端处理失败，请稍后重试（internal_error）',
+          ),
+        ),
+      );
+    },
+  );
+
+  test('speech errors separate synthesis, quota and credentials', () async {
+    for (final status in [401, 429, 503]) {
+      var count = 0;
+      final client = VoiceClient(
+        config(VoiceProtocol.openAi),
+        'secret-key',
+        client: MockClient((_) async {
+          count++;
+          return http.Response('secret-key', status);
+        }),
+      );
+      await expectLater(
+        client.synthesize('hello'),
+        throwsA(
+          predicate(
+            (e) =>
+                e is VoiceException &&
+                e.message.startsWith('语音朗读请求失败') &&
+                !e.message.contains('secret-key') &&
+                (status == 401
+                    ? e.message.contains('密钥')
+                    : !e.message.contains('密钥')),
+          ),
+        ),
+      );
+      expect(count, 1);
+    }
+  });
+
+  test('ASR drops unsafe codes and limits oversized error responses', () async {
+    for (final response in [
+      jsonEncode({
+        'error': {'code': 'secret-key'},
+      }),
+      jsonEncode({
+        'error': {'code': 'data:audio/wav;base64,AQ=='},
+      }),
+      'secret-key' * 2000,
+    ]) {
+      final client = VoiceClient(
+        config(VoiceProtocol.mimo),
+        'secret-key',
+        client: MockClient((_) async => http.Response(response, 500)),
+      );
+      await expectLater(
+        client.transcribe(pcm16VoiceWav(Uint8List.fromList([1, 2]))),
+        throwsA(
+          predicate(
+            (e) =>
+                e is VoiceException &&
+                e.message == '语音识别请求失败（HTTP 500），服务端处理失败，请稍后重试',
+          ),
+        ),
+      );
+    }
+  });
+
+  test(
     'invalid transcripts and error responses do not expose secret',
     () async {
       expect(() => validateTranscript(' \n '), throwsA(isA<VoiceException>()));
@@ -149,7 +255,7 @@ void main() {
         ),
       );
       await expectLater(
-        client.transcribe(Uint8List.fromList([1])),
+        client.transcribe(pcm16VoiceWav(Uint8List.fromList([1, 2]))),
         throwsA(
           predicate(
             (e) => e is VoiceException && !e.message.contains('secret-key'),

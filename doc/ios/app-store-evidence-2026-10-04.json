@@ -1,0 +1,104 @@
+[
+  {
+    "app": "Pal Chat",
+    "country": "us",
+    "resultCount": 1,
+    "source": "https://itunes.apple.com/lookup?id=6447545085&country=us",
+    "trackName": "Pal Chat - AI Chat Client",
+    "trackViewUrl": "https://apps.apple.com/us/app/pal-chat-ai-chat-client/id6447545085?uo=4",
+    "sellerName": "Pulkit Agarwal",
+    "version": "1.0.75",
+    "currentVersionReleaseDate": "2026-09-23T09:09:53Z",
+    "apiLines": [
+      "It supports EVERY AI model in one interface, including support for: GPT-5.5, Claude 4.7, Gemini 3.1, Grok 4.3, Cursor, Advanced Voice Mode, Image input, GPT-Image 2, Groq, Perplexity, OpenRouter, DeepSeek, Mistral, Fal.ai, Together.ai, custom endpoints, and fully offline local models.",
+      "- Easily switch between models",
+      "- Universal - easily switch many different models",
+      "Make sure to get an API Key!"
+    ]
+  },
+  {
+    "app": "Pal Chat",
+    "country": "cn",
+    "resultCount": 0,
+    "source": "https://itunes.apple.com/lookup?id=6447545085&country=cn"
+  },
+  {
+    "app": "Chatbox",
+    "country": "us",
+    "resultCount": 1,
+    "source": "https://itunes.apple.com/lookup?id=6471368056&country=us",
+    "trackName": "Chatbox - Powerful AI Client",
+    "trackViewUrl": "https://apps.apple.com/us/app/chatbox-powerful-ai-client/id6471368056?uo=4",
+    "sellerName": "2.5 HK LIMITED",
+    "version": "1.23.4",
+    "currentVersionReleaseDate": "2026-09-24T05:56:43Z",
+    "apiLines": [
+      "Harness the power of the world's most advanced AI models right on your phone! An all-in-one AI client that's ready to use right out of the box — no complex configuration needed. ",
+      "- Seamlessly Connect Global AI Models",
+      "Access ChatGPT, Claude, Gemini, and other leading AI models worldwide. Regardless of which model you prefer, Chatbox lets you integrate them seamlessly. Flexibly configure your own model services, switch freely, and maintain full control — one app for all your AI needs.",
+      "- AI Enthusiasts → Experience multiple models in one place, explore AI frontiers with ease"
+    ]
+  },
+  {
+    "app": "Chatbox",
+    "country": "cn",
+    "resultCount": 1,
+    "source": "https://itunes.apple.com/lookup?id=6471368056&country=cn",
+    "trackName": "Chatbox AI: 强大的 AI / LLM 客户端",
+    "trackViewUrl": "https://apps.apple.com/cn/app/chatbox-ai-%E5%BC%BA%E5%A4%A7%E7%9A%84-ai-llm-%E5%AE%A2%E6%88%B7%E7%AB%AF/id6471368056?uo=4",
+    "sellerName": "2.5 HK LIMITED",
+    "version": "1.23.4",
+    "currentVersionReleaseDate": "2026-09-24T05:56:43Z",
+    "apiLines": [
+      "- 畅连全球先进 AI 模型",
+      "支持 Deepseek、Kimi、Minimax、Qwen等主流 AI 模型，无论你习惯使用哪家模型，都能在 Chatbox 中无缝接入。灵活配置自己的模型服务，自由切换、自主掌控，一个应用满足所有 AI 使用场景。",
+      "- AI 爱好者 → 多模型一站式体验，一个应用玩转 AI 前沿"
+    ]
+  },
+  {
+    "app": "FlowDown",
+    "country": "us",
+    "resultCount": 1,
+    "source": "https://itunes.apple.com/lookup?id=6740553198&country=us",
+    "trackName": "FlowDown - Open & Fast AI",
+    "trackViewUrl": "https://apps.apple.com/us/app/flowdown-open-fast-ai/id6740553198?uo=4",
+    "sellerName": "子衎 王",
+    "version": "5.1.8",
+    "currentVersionReleaseDate": "2026-10-03T21:10:41Z",
+    "apiLines": [
+      "FlowDown is a fast, minimal AI chat app that makes working with large language models feel smooth, focused, and under your control.",
+      "Connect to any OpenAI-compatible API, from major cloud providers to services running in your own home lab. If it speaks the OpenAI API, FlowDown can talk to it.",
+      "Blazing-fast text rendering makes responses stream in fluidly, so you can start reading and refining your prompt without waiting for the model to finish.",
+      "Stop hunting for the right thread. FlowDown names your conversations automatically based on their content, so you can quickly find that \"API bug fix\" or \"Trip planning\" chat later.",
+      "- Send selected text from another app to your model"
+    ]
+  },
+  {
+    "app": "FlowDown",
+    "country": "cn",
+    "resultCount": 0,
+    "source": "https://itunes.apple.com/lookup?id=6740553198&country=cn"
+  },
+  {
+    "app": "Petey",
+    "country": "us",
+    "resultCount": 1,
+    "source": "https://itunes.apple.com/lookup?id=6446047813&country=us",
+    "trackName": "Petey - AI Chat for Watch",
+    "trackViewUrl": "https://apps.apple.com/us/app/petey-ai-chat-for-watch/id6446047813?uo=4",
+    "sellerName": "User Camp Inc.",
+    "version": "3.1.5",
+    "currentVersionReleaseDate": "2026-09-08T17:22:25Z",
+    "apiLines": [
+      "USE YOUR OWN API KEY",
+      "If you have an OpenAI API key, add it in settings and Petey uses it directly. You pay OpenAI, not us, and you can pick from the models your key allows. A ChatGPT Plus subscription is not an API key; keys come from platform.openai.com.",
+      "Petey is free to use with a monthly limit of messages. Petey Premium removes the limit and unlocks the more capable models. Bought Petey before it went free? Tap Restore Purchases and your original purchase carries over."
+    ]
+  },
+  {
+    "app": "Petey",
+    "country": "cn",
+    "resultCount": 0,
+    "source": "https://itunes.apple.com/lookup?id=6446047813&country=cn"
+  }
+]

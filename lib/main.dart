@@ -28,6 +28,7 @@ import 'provider_screen.dart';
 import 'settings_screen.dart';
 import 'topic_screen.dart';
 import 'voice_client.dart';
+import 'voice_recording.dart';
 import 'voice_settings_screen.dart';
 import 'voice_recording_overlay.dart';
 import 'watch_chat.dart';
@@ -146,7 +147,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   final _inputFocus = FocusNode();
   final _recorder = AudioRecorder();
   final _player = AudioPlayer();
-  String? _recordingPath;
+  PcmVoiceRecording? _pcmRecording;
   String? _playingPath;
   bool _recording = false;
   bool _voiceMode = false;
@@ -162,8 +163,13 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   final _recordClock = Stopwatch();
   StreamSubscription<Amplitude>? _amplitudeSubscription;
   bool _transcribing = false;
-  bool _playing = false;
+  bool _canSpeak = false;
+  int? _speechMessageId;
+  SpeechPlaybackState _speechState = SpeechPlaybackState.idle;
+  bool get _playing => _speechState != SpeechPlaybackState.idle;
   int _speechGeneration = 0;
+  VoiceClient? _speechClient;
+  StreamSubscription<void>? _playbackCompletion;
   Timer? _recordTimer;
   final _chatScroll = ChatScrollController();
   List<ProviderConfig> _providers = [];
@@ -200,11 +206,16 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     });
     WidgetsBinding.instance.addObserver(this);
     unawaited(_removeStaleVoiceFiles(DateTime.now()));
-    _player.onPlayerComplete.listen((_) {
+    _playbackCompletion = _player.onPlayerComplete.listen((_) {
       final path = _playingPath;
       _playingPath = null;
       if (path != null) File(path).delete().catchError((_) => File(path));
-      if (mounted) setState(() => _playing = false);
+      if (mounted) {
+        setState(() {
+          _speechState = SpeechPlaybackState.idle;
+          _speechMessageId = null;
+        });
+      }
     });
     _load();
   }
@@ -241,10 +252,11 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     }
     if (_recording) _recorder.cancel();
     _recorder.dispose();
+    _speechGeneration++;
+    _speechClient?.close();
+    unawaited(_playbackCompletion?.cancel());
     _player.dispose();
-    if (_recordingPath case final path?) {
-      File(path).delete().catchError((_) => File(path));
-    }
+    unawaited(_pcmRecording?.discard());
     if (_playingPath case final path?) {
       File(path).delete().catchError((_) => File(path));
     }
@@ -283,6 +295,16 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         // Wear OS integration is only installed in the Android phone app.
       }
       final providers = await ChatStore.instance.providers();
+      final store = ChatStore.instance;
+      final ttsId = await store.setting('voice_tts_id');
+      final speechService = (await store.voiceProviders())
+          .where((service) => service.id == ttsId)
+          .firstOrNull;
+      final canSpeak =
+          speechService != null &&
+          speechService.ttsModel.trim().isNotEmpty &&
+          speechService.voice.trim().isNotEmpty &&
+          (await store.voiceApiKey(speechService))?.trim().isNotEmpty == true;
       final topics = await ChatStore.instance.topics();
       final savedSelection = _loading
           ? await ChatStore.instance.lastChatSelection()
@@ -297,6 +319,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       final initialLoad = _loading;
       setState(() {
         _providers = providers;
+        _canSpeak = canSpeak;
         _watchProcessing = watchProcessing;
         _topics = topics;
         _topic = selected;
@@ -555,25 +578,22 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         return;
       }
       if (!_voicePointerDown || !mounted) return;
-      final dir = await getTemporaryDirectory();
-      if (!_voicePointerDown || !mounted) return;
-      final path =
-          '${dir.path}/voice_${DateTime.now().microsecondsSinceEpoch}.wav';
-      await _recorder.start(
+      final stream = await _recorder.startStream(
         const RecordConfig(
-          encoder: AudioEncoder.wav,
+          encoder: AudioEncoder.pcm16bits,
           sampleRate: 16000,
           numChannels: 1,
         ),
-        path: path,
       );
+      final recording = PcmVoiceRecording(stream);
       if (!mounted) {
         await _recorder.cancel();
+        await recording.discard();
         return;
       }
       setState(() {
         _recording = true;
-        _recordingPath = path;
+        _pcmRecording = recording;
       });
       if (!_voicePointerDown) {
         await _cancelRecording();
@@ -618,10 +638,10 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         _recording = false;
       });
     }
+    final recording = _pcmRecording;
+    _pcmRecording = null;
     await _recorder.cancel();
-    final path = _recordingPath;
-    _recordingPath = null;
-    if (path != null) await File(path).delete().catchError((_) => File(path));
+    await recording?.discard();
   }
 
   Future<void> _finishRecording({required bool reviewBeforeSending}) async {
@@ -638,15 +658,14 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       _recording = false;
       _transcribing = true;
     });
-    final path = _recordingPath;
-    _recordingPath = null;
+    final recording = _pcmRecording;
+    _pcmRecording = null;
     VoiceClient? client;
     var sendAfterTranscription = false;
     try {
-      final stopped = await _recorder.stop();
-      final file = File(stopped ?? path ?? '');
-      if (!await file.exists()) throw const VoiceException('录音文件不存在，请重试');
-      final data = await file.readAsBytes();
+      await _recorder.stop();
+      if (recording == null) throw const VoiceException('录音采集失败，请重试');
+      final data = await recording.finish();
       final service = await _selectedVoiceService(
         'voice_asr_id',
         openSettings: false,
@@ -676,7 +695,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       }
     } finally {
       client?.close();
-      if (path != null) await File(path).delete().catchError((_) => File(path));
+      await recording?.discard();
       if (mounted) setState(() => _transcribing = false);
     }
     if (sendAfterTranscription && mounted) await _send();
@@ -769,52 +788,83 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _playSpeech(String markdown, {bool automatic = false}) async {
+  Future<void> _playSpeech(String markdown, {required int messageId}) async {
+    if (_speechState == SpeechPlaybackState.loading) return;
     if (_playing) {
-      _speechGeneration++;
-      await _player.stop();
+      final generation = ++_speechGeneration;
       final oldPath = _playingPath;
       _playingPath = null;
-      if (oldPath != null) {
-        await File(oldPath).delete().catchError((_) => File(oldPath));
+      setState(() => _speechState = SpeechPlaybackState.loading);
+      try {
+        await _player.stop();
+      } finally {
+        if (oldPath != null) {
+          await File(oldPath).delete().catchError((_) => File(oldPath));
+        }
+        if (mounted && generation == _speechGeneration) {
+          setState(() {
+            _speechState = SpeechPlaybackState.idle;
+            _speechMessageId = null;
+          });
+        }
       }
-      if (mounted) setState(() => _playing = false);
       return;
     }
+    if (!_canSpeak || !mounted) return;
     final generation = ++_speechGeneration;
-    final service = await _selectedVoiceService(
-      'voice_tts_id',
-      openSettings: !automatic,
-    );
-    if (service == null) return;
+    setState(() {
+      _speechState = SpeechPlaybackState.loading;
+      _speechMessageId = messageId;
+    });
     VoiceClient? client;
+    String? path;
     try {
+      final service = await _selectedVoiceService(
+        'voice_tts_id',
+        openSettings: false,
+      );
+      if (service == null) return;
       final key = await ChatStore.instance.voiceApiKey(service);
       if (key == null || key.isEmpty) {
         throw const VoiceException('语音服务缺少 API Key');
       }
+      if (!mounted || generation != _speechGeneration) return;
       client = VoiceClient(service, key);
-      if (mounted) setState(() => _playing = true);
+      _speechClient = client;
       final bytes = await client.synthesize(readableMarkdown(markdown));
       if (!mounted || generation != _speechGeneration) return;
       final dir = await getTemporaryDirectory();
-      final path =
+      path =
           '${dir.path}/reply_${DateTime.now().microsecondsSinceEpoch}.${service.protocol == VoiceProtocol.mimo ? 'wav' : 'mp3'}';
       await File(path).writeAsBytes(bytes, flush: true);
+      if (!mounted || generation != _speechGeneration) return;
       _playingPath = path;
       await _player.play(DeviceFileSource(path));
-    } catch (error) {
-      final failedPath = _playingPath;
-      _playingPath = null;
-      if (failedPath != null) {
-        await File(failedPath).delete().catchError((_) => File(failedPath));
+      if (mounted && generation == _speechGeneration && _playingPath == path) {
+        setState(() => _speechState = SpeechPlaybackState.playing);
       }
-      if (mounted) {
+    } catch (error) {
+      if (mounted && generation == _speechGeneration) {
+        _playingPath = null;
+        setState(() {
+          _speechState = SpeechPlaybackState.idle;
+          _speechMessageId = null;
+        });
         _notify(error is VoiceException ? tr(error.message) : tr('语音朗读失败，请重试'));
       }
-      if (mounted) setState(() => _playing = false);
     } finally {
       client?.close();
+      if (path != null && path != _playingPath) {
+        await File(path).delete().catchError((_) => File(path!));
+      }
+      if (mounted &&
+          generation == _speechGeneration &&
+          _speechState == SpeechPlaybackState.loading) {
+        setState(() {
+          _speechState = SpeechPlaybackState.idle;
+          _speechMessageId = null;
+        });
+      }
     }
   }
 
@@ -1034,8 +1084,9 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       _replyTimer?.cancel();
       _replyTimer = null;
       _activeClient = null;
+      int? answerMessageId;
       if (answer.isNotEmpty) {
-        await ChatStore.instance.addMessage(
+        answerMessageId = await ChatStore.instance.addMessage(
           topic.id,
           'assistant',
           answer,
@@ -1074,8 +1125,10 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       if (completed &&
           answer.isNotEmpty &&
           mounted &&
-          await ChatStore.instance.setting('voice_auto_read') == '1') {
-        unawaited(_playSpeech(answer, automatic: true));
+          !_playing &&
+          answerMessageId != null &&
+          AppPreferences.instance.autoReadReplies) {
+        unawaited(_playSpeech(answer, messageId: answerMessageId));
       }
     }
   }
@@ -1370,6 +1423,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           return _bubble(
             message.role,
             message.content,
+            messageId: message.id,
             providerName: message.providerName,
             providerPresetId: message.providerPresetId,
             modelId: message.modelId,
@@ -1424,6 +1478,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     String role,
     String content, {
     bool loading = false,
+    int? messageId,
     String? providerName,
     String? providerPresetId,
     String? modelId,
@@ -1496,7 +1551,16 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                       inputTokens: usage?.inputTokens,
                       outputTokens: usage?.outputTokens,
                       onCopy: () => _copyBubble(content, renderMarkdown: !user),
-                      onSpeak: user ? null : () => _playSpeech(content),
+                      speechState: messageId == _speechMessageId
+                          ? _speechState
+                          : SpeechPlaybackState.idle,
+                      speechEnabled:
+                          !_playing ||
+                          (messageId == _speechMessageId &&
+                              _speechState == SpeechPlaybackState.playing),
+                      onSpeak: user || !_canSpeak || messageId == null
+                          ? null
+                          : () => _playSpeech(content, messageId: messageId),
                     ),
                 ],
               ),
@@ -1512,7 +1576,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       color: IosColors.chatChrome,
       border: Border(top: BorderSide(color: IosColors.separator, width: .5)),
     ),
-    padding: const EdgeInsets.fromLTRB(12, 9, 12, 4),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
     child: SafeArea(
       top: false,
       child: Column(
@@ -1534,7 +1598,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
               ),
             ),
           Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               CupertinoButton(
                 padding: EdgeInsets.zero,
@@ -1586,6 +1650,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                         focusNode: _inputFocus,
                         minLines: 1,
                         maxLines: 5,
+                        textAlignVertical: TextAlignVertical.center,
                         textInputAction: TextInputAction.send,
                         onSubmitted: (_) => _send(),
                         textCapitalization: TextCapitalization.sentences,

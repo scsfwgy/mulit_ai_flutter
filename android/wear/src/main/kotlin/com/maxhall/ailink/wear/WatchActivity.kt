@@ -78,6 +78,9 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
     private lateinit var pages: FrameLayout
     private lateinit var settingsStatus: TextView
     private lateinit var configSummary: TextView
+    private lateinit var serviceDetails: LinearLayout
+    private lateinit var beginnerMode: TextView
+    private lateinit var simpleMode: TextView
     private lateinit var speakSwitch: Switch
     private lateinit var recordingOverlay: WatchRecordingOverlay
     private val localizedLabels = mutableMapOf<TextView, String>()
@@ -885,9 +888,43 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
     }
 
     private fun refreshSettings() {
+        val simple = watchSettings.getBoolean("simpleRecording", false)
+        recordingOverlay.simpleMode = simple
+        for ((button, selected) in listOf(beginnerMode to !simple, simpleMode to simple)) {
+            button.isSelected = selected
+            button.setTextColor(if (selected) Color.WHITE else secondaryColor)
+            button.background = GradientDrawable().apply {
+                cornerRadius = 10 * resources.displayMetrics.density
+                setColor(if (selected) accentColor else if (darkMode) Color.rgb(36, 40, 46) else Color.rgb(229, 233, 238))
+            }
+        }
         val config = configStore.load()
-        configSummary.text = configStore.recordingIssue(config)?.let(::watchText)
-            ?: "${config?.optString("providerName")} · ${config?.optString("model")}"
+        configSummary.text = configStore.recordingIssue(config)?.let(::watchText) ?: ""
+        configSummary.visibility = if (configSummary.text.isEmpty()) View.GONE else View.VISIBLE
+        serviceDetails.removeAllViews()
+        fun section(title: String, service: JSONObject?, modelKey: String, showVoice: Boolean = false) {
+            serviceDetails.addView(label(watchText(title), 13f, primaryColor, true).apply {
+                gravity = Gravity.START
+                setPadding(0, 10, 0, 5)
+            })
+            fun field(title: String, value: String?, fallback: String = "未配置") {
+                serviceDetails.addView(label(watchText(title), 10f, secondaryColor).apply {
+                    gravity = Gravity.START
+                })
+                serviceDetails.addView(label(value?.takeIf { it.isNotBlank() }
+                    ?: watchText(fallback), 12f, primaryColor).apply {
+                    gravity = Gravity.START
+                    setPadding(0, 2, 0, 6)
+                })
+            }
+            field("提供商", service?.optString("providerName"),
+                if (service?.optString(modelKey)?.isNotBlank() == true) "同步后显示" else "未配置")
+            field("模型 ID", service?.optString(modelKey))
+            if (showVoice) field("音色", service?.optString("voice"))
+        }
+        section("文本模型", config, "model")
+        section("语音识别", config?.optJSONObject("asr"), "asrModel")
+        section("语音朗读", config?.optJSONObject("tts"), "ttsModel", showVoice = true)
         updatingSettings = true
         speakSwitch.isChecked = watchSettings.getBoolean(
             "speak", config?.optBoolean("speak", false) ?: false)
@@ -1009,9 +1046,40 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         settingsStatus = label(watchText("正在检查手机连接…"), 12f, secondaryColor)
         settingsStatus.setPadding(0, 7, 0, 10)
         settingsPage.addView(settingsStatus)
+        settingsPage.addView(uiLabel("录音界面", 12f, secondaryColor).apply {
+            gravity = Gravity.START
+            setPadding(0, 0, 0, 6)
+        })
+        val modes = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 0, 0, 12)
+        }
+        fun mode(title: String, simple: Boolean) = uiLabel(title, 12f, primaryColor, true).apply {
+            layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply {
+                if (simple) leftMargin = (4 * resources.displayMetrics.density).toInt()
+            }
+            val padding = (10 * resources.displayMetrics.density).toInt()
+            setPadding(0, padding, 0, padding)
+            setOnClickListener {
+                watchSettings.edit().putBoolean("simpleRecording", simple).apply()
+                refreshSettings()
+            }
+        }
+        beginnerMode = mode("新手模式", false)
+        simpleMode = mode("简洁模式", true)
+        modes.addView(beginnerMode)
+        modes.addView(simpleMode)
+        settingsPage.addView(modes)
         configSummary = label(watchText("等待手机配置"), 12f, mutedColor)
         configSummary.setPadding(0, 0, 0, 8)
         settingsPage.addView(configSummary)
+        serviceDetails = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            setPadding(0, 0, 0, 10)
+        }
+        settingsPage.addView(serviceDetails)
         speakSwitch = Switch(this).apply {
             text = watchText("自动播报回答")
             textSize = 13f

@@ -5,6 +5,8 @@ import 'ios_style.dart';
 import 'message_copy.dart';
 import 'provider_badge.dart';
 
+enum SpeechPlaybackState { idle, loading, playing }
+
 class ChatMessageMeta extends StatelessWidget {
   const ChatMessageMeta({
     super.key,
@@ -19,6 +21,8 @@ class ChatMessageMeta extends StatelessWidget {
     this.outputTokens,
     this.onCopy,
     this.onSpeak,
+    this.speechState = SpeechPlaybackState.idle,
+    this.speechEnabled = true,
   });
 
   final bool assistant;
@@ -32,6 +36,8 @@ class ChatMessageMeta extends StatelessWidget {
   final int? outputTokens;
   final VoidCallback? onCopy;
   final VoidCallback? onSpeak;
+  final SpeechPlaybackState speechState;
+  final bool speechEnabled;
 
   String _time(int? milliseconds) {
     if (milliseconds == null) return '—';
@@ -61,9 +67,20 @@ class ChatMessageMeta extends StatelessWidget {
       if (preferences.showChatInfo(ChatInfoField.characters))
         '${visibleCharacterCount(assistant ? readableMarkdown(content) : content)} ${tr('字')}',
     ];
-    final showModel =
-        modelId != null && preferences.showChatInfo(ChatInfoField.modelId);
-    if (providerName == null && !showModel && parts.isEmpty && onCopy == null) {
+    final showIdentity = preferences.showChatInfo(ChatInfoField.modelId);
+    final showModel = modelId != null && showIdentity;
+    final showProvider = providerName != null && showIdentity;
+    final showCopy =
+        onCopy != null && preferences.showChatInfo(ChatInfoField.copy);
+    final showSpeech =
+        assistant &&
+        onSpeak != null &&
+        preferences.showChatInfo(ChatInfoField.speech);
+    if (!showProvider &&
+        !showModel &&
+        parts.isEmpty &&
+        !showCopy &&
+        !showSpeech) {
       return const SizedBox.shrink();
     }
     final style = TextStyle(
@@ -79,7 +96,7 @@ class ChatMessageMeta extends StatelessWidget {
         spacing: 9,
         runSpacing: 0,
         children: [
-          if (providerName != null)
+          if (showProvider)
             ConstrainedBox(
               constraints: BoxConstraints(
                 maxWidth: MediaQuery.sizeOf(context).width * .62,
@@ -123,7 +140,7 @@ class ChatMessageMeta extends StatelessWidget {
               ),
             ),
           for (final part in parts) Text(part, style: style),
-          if (onCopy != null)
+          if (showCopy)
             CupertinoButton(
               padding: EdgeInsets.zero,
               minimumSize: const Size(40, 32),
@@ -148,20 +165,96 @@ class ChatMessageMeta extends StatelessWidget {
                 ),
               ),
             ),
-          if (assistant && onSpeak != null)
+          if (showSpeech)
             CupertinoButton(
               padding: EdgeInsets.zero,
               minimumSize: const Size(40, 32),
-              onPressed: onSpeak,
-              child: Icon(
-                CupertinoIcons.speaker_2,
-                size: 17,
-                color: IosColors.secondary,
-                semanticLabel: tr('朗读回复'),
-              ),
+              onPressed:
+                  speechEnabled && speechState != SpeechPlaybackState.loading
+                  ? onSpeak
+                  : null,
+              child: SpeechPlaybackIndicator(state: speechState),
             ),
         ],
       ),
     );
   }
+}
+
+class SpeechPlaybackIndicator extends StatefulWidget {
+  const SpeechPlaybackIndicator({super.key, required this.state});
+  final SpeechPlaybackState state;
+
+  @override
+  State<SpeechPlaybackIndicator> createState() =>
+      _SpeechPlaybackIndicatorState();
+}
+
+class _SpeechPlaybackIndicatorState extends State<SpeechPlaybackIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _animation = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 650),
+    lowerBound: .55,
+    upperBound: 1,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _updateAnimation();
+  }
+
+  @override
+  void didUpdateWidget(SpeechPlaybackIndicator oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.state != widget.state) _updateAnimation();
+  }
+
+  void _updateAnimation() {
+    if (widget.state == SpeechPlaybackState.playing &&
+        !WidgetsBinding
+            .instance
+            .platformDispatcher
+            .accessibilityFeatures
+            .disableAnimations) {
+      _animation.repeat(reverse: true);
+    } else {
+      _animation.stop();
+      _animation.value = 1;
+    }
+  }
+
+  @override
+  void dispose() {
+    _animation.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: tr(switch (widget.state) {
+      SpeechPlaybackState.idle => '朗读回复',
+      SpeechPlaybackState.loading => '正在生成语音',
+      SpeechPlaybackState.playing => '停止朗读',
+    }),
+    child: SizedBox(
+      width: 20,
+      height: 20,
+      child: Center(
+        child: widget.state == SpeechPlaybackState.loading
+            ? const CupertinoActivityIndicator(radius: 7)
+            : FadeTransition(
+                opacity: _animation,
+                child: Icon(
+                  CupertinoIcons.speaker_2,
+                  size: 17,
+                  color: widget.state == SpeechPlaybackState.playing
+                      ? IosColors.blue
+                      : IosColors.secondary,
+                ),
+              ),
+      ),
+    ),
+  );
 }

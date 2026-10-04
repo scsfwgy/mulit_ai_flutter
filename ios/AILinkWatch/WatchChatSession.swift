@@ -63,7 +63,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
   private let configurationStore = WatchConfigurationStore()
   private let independentHistory = WatchHistoryStore()
   private let networkClient = WatchNetworkClient()
-  private var configuration: WatchNetworkConfiguration?
+  @Published private(set) var configuration: WatchNetworkConfiguration?
   private var turnConfiguration: WatchNetworkConfiguration?
   private var syncID: String?
   private var processingTask: Task<Void, Never>?

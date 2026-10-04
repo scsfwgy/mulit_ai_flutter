@@ -5,6 +5,7 @@ struct WatchContentView: View {
   @Environment(\.scenePhase) private var scenePhase
   @State private var page = 0
   @AppStorage("watchGestureGuideSeen") private var guideSeen = false
+  @AppStorage("watchSimpleRecording") private var simpleRecording = false
   @GestureState private var holdingChat = false
   @State private var recordingPressStarted = false
   @State private var confirmClear = false
@@ -159,8 +160,20 @@ struct WatchContentView: View {
         }.buttonStyle(.plain)
         Text(session.connectionLabel).font(.system(size: 12)).foregroundStyle(.secondary)
           .multilineTextAlignment(.center)
-        Text(session.modelSummary).font(.system(size: 12)).foregroundStyle(.secondary)
-          .multilineTextAlignment(.center)
+        VStack(alignment: .leading, spacing: 6) {
+          Text(label("录音界面", "Recording view")).font(.system(size: 12)).foregroundStyle(.secondary)
+          HStack(spacing: 4) {
+            recordingMode(label("新手模式", "Beginner"), simple: false)
+            recordingMode(label("简洁模式", "Simple"), simple: true)
+          }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+        serviceDetails(label("文本模型", "Text model"),
+          provider: session.configuration?.providerName, model: session.configuration?.model)
+        serviceDetails(label("语音识别", "Speech recognition"),
+          provider: session.configuration?.asr?.providerName, model: session.configuration?.asr?.asrModel)
+        serviceDetails(label("语音朗读", "Speech synthesis"),
+          provider: session.configuration?.tts?.providerName, model: session.configuration?.tts?.ttsModel,
+          voice: session.configuration?.tts?.voice, showVoice: true)
         if !session.textReady || !session.asrReady {
           Text(session.configurationGuidance).font(.system(size: 11)).foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
@@ -187,6 +200,39 @@ struct WatchContentView: View {
     }
   }
 
+  private func serviceDetails(_ title: String, provider: String?, model: String?, voice: String? = nil, showVoice: Bool = false) -> some View {
+    VStack(alignment: .leading, spacing: 5) {
+      Text(title).font(.system(size: 13, weight: .semibold))
+      serviceField(label("提供商", "Provider"), value: provider,
+        fallback: model?.isEmpty == false ? label("同步后显示", "Sync to display") : nil)
+      serviceField(label("模型 ID", "Model ID"), value: model)
+      if showVoice { serviceField(label("音色", "Voice"), value: voice) }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(10)
+    .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+  }
+
+  private func recordingMode(_ title: String, simple: Bool) -> some View {
+    Button { simpleRecording = simple } label: {
+      Text(title).font(.system(size: 12, weight: .medium))
+        .frame(maxWidth: .infinity).padding(.vertical, 10)
+        .foregroundStyle(simpleRecording == simple ? .white : .secondary)
+        .background(simpleRecording == simple ? accent : Color.secondary.opacity(0.15),
+          in: RoundedRectangle(cornerRadius: 10))
+    }.buttonStyle(.plain)
+      .accessibilityAddTraits(simpleRecording == simple ? .isSelected : [])
+  }
+
+  private func serviceField(_ title: String, value: String?, fallback: String? = nil) -> some View {
+    let display = value.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+    return VStack(alignment: .leading, spacing: 2) {
+      Text(title).font(.system(size: 10)).foregroundStyle(.secondary)
+      Text(display ?? fallback ?? label("未配置", "Not configured"))
+        .font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
+    }
+  }
+
   private var recordingOverlay: some View {
     let cancelling = session.releaseAction == .cancel
     let reviewing = session.releaseAction == .review
@@ -197,47 +243,59 @@ struct WatchContentView: View {
       let diameter = min(geometry.size.width, geometry.size.height) * 0.92
       ZStack {
         Color.black.opacity(0.6).ignoresSafeArea()
-        VStack(spacing: 4) {
-          HStack(spacing: 14) {
-            recordingTarget("arrow.up.left", label("取消", "Cancel"), selected: cancelling, color: .red)
-            Image(systemName: cancelling ? "xmark" : reviewing ? "textformat" : "mic.fill")
-              .font(.system(size: 15, weight: .semibold)).foregroundStyle(color)
-              .frame(width: 28, height: 28).background(color.opacity(0.15), in: Circle())
-            recordingTarget("arrow.up.right", label("转文字", "Text"), selected: reviewing, color: .green)
-          }
-          Text(cancelling ? label("松开取消录音", "Release to cancel") : reviewing ? label("松开转文字", "Release to transcribe") : label("正在录音", "Recording"))
-            .font(.system(size: 13, weight: .semibold))
+        if simpleRecording {
           TimelineView(.animation(minimumInterval: 0.05)) { timeline in
-            HStack(spacing: 3) {
-              ForEach(0..<19) { index in
-                let weight = 1 - Double(abs(index - 9)) / 10
-                let pulse = abs(sin(timeline.date.timeIntervalSinceReferenceDate / 1.5 * .pi * 2 + Double(index) * 0.63)) * 0.72 + 0.28
-                Capsule().fill(color)
-                  .frame(width: 2.5, height: 3 + 23 * (0.15 + session.level * 0.85) * weight * pulse)
-              }
-            }.frame(height: 26)
+            let pulse = (sin(timeline.date.timeIntervalSinceReferenceDate * .pi * 2) + 1) / 2
+            let size = diameter * 0.7
+            ZStack {
+              Circle().stroke(color.opacity(0.45), lineWidth: 2)
+                .scaleEffect(1.04 + session.level * 0.1 + pulse * 0.02)
+              Circle().fill(color.opacity(0.2))
+              Image(systemName: cancelling ? "xmark" : reviewing ? "text.alignleft" : "mic.fill")
+                .font(.system(size: size * 0.35, weight: .medium)).foregroundStyle(color)
+            }.frame(width: size, height: size)
+              .accessibilityLabel(cancelling ? label("松开取消", "Release to cancel")
+                : reviewing ? label("松开转文字", "Release to transcribe") : label("正在录音", "Recording"))
           }
-          Text(time).font(.system(size: 22, weight: .semibold, design: .monospaced))
-          Text(cancelling ? label("松开取消", "Release to cancel") : reviewing ? label("识别后确认发送", "Review before sending") : label("松开发送", "Release to send"))
-            .font(.system(size: 11)).foregroundStyle(session.releaseAction == .send ? .secondary : color)
-          Text(label("左上取消 · 右上确认", "↖ Cancel · Review ↗"))
-            .font(.system(size: 10)).foregroundStyle(.secondary)
+        } else {
+          VStack(spacing: 7) {
+            HStack {
+              recordingTarget("arrow.up.left", label("取消", "Cancel"), selected: cancelling, color: .red)
+              Spacer(minLength: 8)
+              recordingTarget("arrow.up.right", label("转文字", "Text"), selected: reviewing, color: .green)
+            }
+            Image(systemName: cancelling ? "xmark" : reviewing ? "text.alignleft" : "mic.fill")
+              .font(.system(size: 28, weight: .medium)).foregroundStyle(color)
+              .frame(width: 64, height: 64).background(color.opacity(0.15), in: Circle())
+            TimelineView(.animation(minimumInterval: 0.05)) { timeline in
+              HStack(spacing: 3) {
+                ForEach(0..<19) { index in
+                  let weight = 1 - Double(abs(index - 9)) / 10
+                  let pulse = abs(sin(timeline.date.timeIntervalSinceReferenceDate / 1.5 * .pi * 2 + Double(index) * 0.63)) * 0.72 + 0.28
+                  Capsule().fill(color)
+                    .frame(width: 2.5, height: 2 + 12 * (0.15 + session.level * 0.85) * weight * pulse)
+                }
+              }.frame(height: 14)
+            }
+            Text(time).font(.system(size: 18, weight: .medium, design: .monospaced))
+            Text(cancelling ? label("松开取消", "Release to cancel") : reviewing ? label("松开转文字", "Release to transcribe") : label("松开发送", "Release to send"))
+              .font(.system(size: 11)).foregroundStyle(session.releaseAction == .send ? .secondary : color)
+          }
+          .lineLimit(1).minimumScaleFactor(0.75)
+          .frame(width: diameter * 0.72).frame(width: diameter, height: diameter)
+          .background(.regularMaterial, in: Circle())
         }
-        .lineLimit(1).minimumScaleFactor(0.75)
-        .frame(width: diameter * 0.76).frame(width: diameter, height: diameter)
-        .background(.regularMaterial, in: Circle())
       }.frame(width: geometry.size.width, height: geometry.size.height)
     }
   }
   private func recordingTarget(_ icon: String, _ title: String, selected: Bool, color: Color) -> some View {
-    VStack(spacing: 2) {
+    HStack(spacing: 3) {
       Image(systemName: icon)
-        .font(.system(size: 13, weight: .semibold))
-        .frame(width: 26, height: 26)
-        .foregroundStyle(selected ? .white : .secondary)
-        .background(selected ? color : .clear, in: Circle())
-      Text(title).font(.system(size: 9)).foregroundStyle(selected ? color : .secondary)
-    }
+        .font(.system(size: 11, weight: .medium))
+      Text(title).font(.system(size: 10))
+    }.foregroundStyle(selected ? color : .secondary)
+      .padding(.horizontal, 5).padding(.vertical, 4)
+      .background(selected ? color.opacity(0.15) : .clear, in: Capsule())
   }
 
 }

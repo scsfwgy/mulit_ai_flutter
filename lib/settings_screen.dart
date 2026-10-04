@@ -195,6 +195,24 @@ class MessageInfoSettingsScreen extends StatelessWidget {
                 '用户消息显示模型与字数；耗时和 Token 属于整次回复请求。旧消息缺少的统计不显示；服务未提供用量时显示 Token —。',
               ),
               children: [
+                IosRow(
+                  title: '简洁模式',
+                  chevron: false,
+                  trailing: CupertinoSwitch(
+                    value: AppPreferences.instance.simpleMessageInfo,
+                    activeTrackColor: IosColors.blue,
+                    onChanged: AppPreferences.instance.setSimpleMessageInfo,
+                  ),
+                ),
+                IosRow(
+                  title: '回复完成后自动朗读',
+                  chevron: false,
+                  trailing: CupertinoSwitch(
+                    value: AppPreferences.instance.autoReadReplies,
+                    activeTrackColor: IosColors.blue,
+                    onChanged: AppPreferences.instance.setAutoReadReplies,
+                  ),
+                ),
                 for (final field in ChatInfoField.values)
                   IosRow(
                     title: tr(field.label),
@@ -202,8 +220,10 @@ class MessageInfoSettingsScreen extends StatelessWidget {
                     trailing: CupertinoSwitch(
                       value: AppPreferences.instance.showChatInfo(field),
                       activeTrackColor: IosColors.blue,
-                      onChanged: (value) => AppPreferences.instance
-                          .setChatInfoVisible(field, value),
+                      onChanged: AppPreferences.instance.simpleMessageInfo
+                          ? null
+                          : (value) => AppPreferences.instance
+                                .setChatInfoVisible(field, value),
                     ),
                   ),
               ],
