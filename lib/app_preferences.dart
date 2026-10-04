@@ -449,6 +449,8 @@ const _english = <String, String>{
   '版本 Code': 'Version Code',
   '应用信息': 'App information',
   '数据与隐私': 'Data & privacy',
+  '使用统计': 'Usage analytics',
+  'Android 和 iOS 正式版使用 Firebase Analytics 记录应用使用事件、应用实例标识与设备信息，不收集广告标识符。不会主动上传聊天内容、API Key、录音或服务地址。调试和测试版停用统计；手表暂未接入。': 'Android and iOS production builds use Firebase Analytics for app usage events, app instance identifiers and device information, without advertising IDs. Chats, API keys, recordings and provider URLs are not intentionally uploaded. Analytics is disabled in debug and test builds; watch apps are not integrated yet.',
   '完整隐私政策': 'Full privacy policy',
   '官方网站': 'Official website',
   '提示词': 'Prompts',

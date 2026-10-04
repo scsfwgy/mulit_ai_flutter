@@ -1,4 +1,6 @@
 import Flutter
+import FirebaseCore
+import FirebaseAnalytics
 import UIKit
 
 @main
@@ -7,6 +9,12 @@ import UIKit
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    // The downloaded Firebase app is registered for the production bundle only.
+    // Debug/Profile bundles retain their own data and do not emit Analytics.
+    if Bundle.main.bundleIdentifier == "com.maxhall.ailink" {
+      FirebaseApp.configure()
+      Analytics.setAnalyticsCollectionEnabled(true)
+    }
     let launched = super.application(application, didFinishLaunchingWithOptions: launchOptions)
     AppleWatchBridge.shared.start()
     return launched

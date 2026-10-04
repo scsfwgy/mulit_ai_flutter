@@ -103,6 +103,12 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
                   '手表安全保存所选服务密钥和问答。Apple Watch 优先在手表请求，手表网络不可用时再尝试手机；Wear OS 优先通过手机请求，不可达时使用手表网络。Wear OS 使用加密存储，Apple Watch 使用钥匙串；问答重连后同步到手机。清空手机数据不会自动清除手表数据。',
                 ),
               ),
+              _PrivacyRow(
+                title: tr('使用统计'),
+                detail: tr(
+                  'Android 和 iOS 正式版使用 Firebase Analytics 记录应用使用事件、应用实例标识与设备信息，不收集广告标识符。不会主动上传聊天内容、API Key、录音或服务地址。调试和测试版停用统计；手表暂未接入。',
+                ),
+              ),
             ],
           ),
           IosSection(

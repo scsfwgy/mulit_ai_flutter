@@ -4,12 +4,21 @@ plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+    id("com.google.gms.google-services")
 }
 
 val signingProfile = System.getenv("AI_LINK_SIGNING_PROFILE") ?: "release"
 require(signingProfile == "release" || signingProfile == "test") {
     "AI_LINK_SIGNING_PROFILE must be release or test"
 }
+
+// The downloaded configuration registers only the production AI Link package.
+// Debug/Profile and --test builds must neither require that client nor send
+// development usage to the production Analytics stream.
+tasks.matching {
+    it.name.startsWith("process") && it.name.endsWith("GoogleServices") &&
+        (signingProfile == "test" || it.name != "processReleaseGoogleServices")
+}.configureEach { enabled = false }
 val signingConfigFile = if (signingProfile == "test") "key.test.properties" else "key.properties"
 val releaseProperties = Properties().apply {
     val config = rootProject.file(signingConfigFile)
@@ -47,6 +56,7 @@ android {
     defaultConfig {
         applicationId = "com.maxhall.ailink"
         manifestPlaceholders["appLabel"] = "AI Link"
+        manifestPlaceholders["firebaseAnalyticsDeactivated"] = signingProfile == "test"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
@@ -73,6 +83,9 @@ android {
     }
 
     buildTypes {
+        matching { it.name != "release" }.configureEach {
+            manifestPlaceholders["firebaseAnalyticsDeactivated"] = true
+        }
         debug {
             applicationIdSuffix = ".debug"
             manifestPlaceholders["appLabel"] = "AI Link Debug"
@@ -102,6 +115,8 @@ flutter {
 }
 
 dependencies {
+    implementation(platform("com.google.firebase:firebase-bom:34.19.0"))
+    implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.android.gms:play-services-wearable:20.0.1")
     implementation("androidx.wear:wear-remote-interactions:1.2.0")
     implementation("androidx.work:work-runtime-ktx:2.11.2")

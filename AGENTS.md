@@ -91,6 +91,11 @@
 - 模拟器可能已有用户的服务、密钥和聊天记录。不要用 `adb shell pm clear`、卸载应用或删除数据库作为常规测试步骤；只清理自己创建的临时服务和话题。
 - 从旧包名 `com.example.mulit_ai_flutter` 改到 `com.maxhall.ailink` 会产生新的应用沙盒；重装新包不能自动迁移旧 SQLite 和安全存储。测试时保留旧包及其数据。
 
+## Firebase 统计
+
+- Android/iOS 正式手机版使用原生 Firebase Analytics 自动事件；Android 禁用广告 ID 收集并移除广告标识符权限，iOS 使用 SPM 的 `FirebaseAnalyticsCore`，不链接 IdentitySupport。Debug/Profile 和 Android `--test` 停用统计；手表不接入。
+- Firebase 客户端配置位于 `android/app/google-services.json` 与 `ios/Runner/GoogleService-Info.plist`，可入库；服务账号私钥不可入库。新增埋点不得携带聊天、提示词、API Key、录音、模型服务地址或错误响应原文。更新统计范围时同步应用内及官网中英文隐私说明，不把构建通过写成 Firebase 控制台收数成功。
+
 ## 开发与验证
 
 ```bash

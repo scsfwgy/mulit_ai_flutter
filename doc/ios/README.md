@@ -86,3 +86,10 @@ AA2200000000000000000027 /* PBXTargetDependency */,
 同日路由调整：Apple Watch 改为各请求阶段始终先在手表执行，明确网络失败且 iPhone 可达时才兜底到手机；已有可用配置不再逐次等待手机录音前校验。原生回归覆盖手机可达仍优先手表、手表失败转手机、手机不可达、超时/部分回复/服务错误不换路，以及手机兜底失败不循环重试。URLSession 的物理网络路径仍由 watchOS 自行选择。
 
 配置同步补充：启动同步失败仅更新状态提示，保留内存和 Keychain 中上次成功的配置；无缓存时提示先连接手机同步。手机成功返回的有效空配置仍会撤销旧密钥，不当作失败沿用已删除服务。明确清除手表数据后继续保留须手动同步才能恢复的规则。原生回归新增冷启动等待激活、自动请求合并、手动立即重发、旧请求/超时回调隔离。
+
+## Firebase Analytics（2026-10-04）
+
+- 下载的正式配置已放到 `ios/Runner/GoogleService-Info.plist` 并加入 Runner 的资源阶段，Bundle ID 为 `com.maxhall.ailink`。不把配置加入 Watch 或暂时关闭的 Widgets target。
+- Runner 通过 Swift Package Manager 使用 Firebase Apple SDK 12.19.2，依赖 `FirebaseCore` 和 `FirebaseAnalyticsCore`。该版本中，旧的 `FirebaseAnalyticsWithoutAdId` 已由 Core 产品替代；不选择 `FirebaseAnalyticsIdentitySupport` 或完整的 `FirebaseAnalytics` 产品，以避免引入广告 ID 支持。
+- 沿用 Flutter `AppDelegate` 与现有引擎、手表桥接。仅正式 Bundle ID 执行 `FirebaseApp.configure()` 与 `Analytics.setAnalyticsCollectionEnabled(true)`；Info.plist 默认关闭统计，Debug/Profile 不初始化。下载文件中的 `IS_ANALYTICS_ENABLED` 保持原样，收集开关由 AppDelegate 的正式包分支明确设置。
+- 当前仅 SDK 自动应用事件，没有 Flutter 页面路由或聊天内容埋点。未安装到真机并在 Firebase DebugView/报告验证之前，只能声明依赖和构建验证结果。

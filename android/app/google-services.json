@@ -1,0 +1,67 @@
+{
+  "project_info": {
+    "project_number": "1037945332052",
+    "project_id": "tools24-d1201",
+    "storage_bucket": "tools24-d1201.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1037945332052:android:b3803371a6c529bc9ce8c1",
+        "android_client_info": {
+          "package_name": "com.maxhall.ailink"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyArPmk1cTjRnAll4VHeYaNzT4IUqcoBLUM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1037945332052:android:f7450565ab246fb19ce8c1",
+        "android_client_info": {
+          "package_name": "com.maxhall.tools24"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyArPmk1cTjRnAll4VHeYaNzT4IUqcoBLUM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1037945332052:android:39f50e96db1d650f9ce8c1",
+        "android_client_info": {
+          "package_name": "com.maxhall.tools24.debug"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyArPmk1cTjRnAll4VHeYaNzT4IUqcoBLUM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

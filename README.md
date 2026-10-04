@@ -21,6 +21,14 @@
 - 手表界面语言同步手机 App 的简体中文或英文设置（“跟随系统”取手机语言），离线保留上次语言，重连补同步；外观跟随手表日夜模式。录音时显示实时波形、计时和取消／转文字状态浮层；手表参与过的话题在手机侧栏带手表图标。
 - 手机与手表录音不足 0.6 秒会视为误触，静默忽略，不发送到语音服务。
 
+## Firebase 使用统计
+
+Android 与 iOS 正式手机版接入同一 Firebase 项目 `tools24-d1201` 下各自的 `com.maxhall.ailink` 应用，记录 SDK 自动应用事件。Android 使用 Google Services 插件 4.5.0 和 Firebase BoM 34.19.0；`android/app/google-services.json` 由插件生成匹配正式包名的资源，并由 `FirebaseInitProvider` 自动初始化。Debug/Profile 及 `./release.sh --test` 的统计关闭，不要求 `com.maxhall.ailink.debug` 的 Firebase 配置。
+
+iOS 的配置文件位于 `ios/Runner/GoogleService-Info.plist`，已加入 Runner 资源。Swift Package Manager 固定 Firebase Apple SDK 12.19.2，链接 `FirebaseCore` 与不含广告 ID 支持的 `FirebaseAnalyticsCore`（该版本已不使用旧产品名 `FirebaseAnalyticsWithoutAdId`）。现有 Flutter `AppDelegate` 仅在正式 Bundle ID 下调用 `FirebaseApp.configure()` 并开启统计；Debug/Profile 不初始化。打开 `ios/Runner.xcworkspace` 即可由 Xcode 解析依赖。两端手表不接入 Analytics。
+
+当前没有 Flutter 路由级页面统计或自定义聊天事件，也不上传聊天正文、API Key、录音或模型服务地址。禁用广告标识符与广告个性化信号。配置文件是 Firebase 客户端标识，不是服务账号私钥；正式服务账号与其他密钥仍不得入库。应用内与公开隐私政策需说明 Analytics，Play Data safety / App Store 隐私标签应按最终安装包复核。构建成功不代表 Firebase 控制台已收到真机事件。
+
 ## 运行
 
 ```bash
