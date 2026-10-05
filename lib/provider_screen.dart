@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'app_preferences.dart';
+import 'app_platform.dart';
 
 import 'api_client.dart';
 import 'api_key_help.dart';
@@ -42,7 +43,7 @@ class _ProviderScreenState extends State<ProviderScreen> {
   Future<void> _edit({ProviderPreset? preset, ProviderConfig? config}) async {
     final changed = await Navigator.push<bool>(
       context,
-      CupertinoPageRoute(
+      appPageRoute(
         builder: (_) => ProviderEditor(preset: preset, config: config),
       ),
     );
@@ -55,7 +56,7 @@ class _ProviderScreenState extends State<ProviderScreen> {
   Future<void> _scanImport() async {
     final imported = await Navigator.push<bool>(
       context,
-      CupertinoPageRoute(builder: (_) => const ProviderQrScanner()),
+      appPageRoute(builder: (_) => const ProviderQrScanner()),
     );
     if (imported == true) {
       _changed = true;
@@ -66,7 +67,7 @@ class _ProviderScreenState extends State<ProviderScreen> {
   Future<void> _openPrivacy() async {
     final cleared = await Navigator.push<bool>(
       context,
-      CupertinoPageRoute(
+      appPageRoute(
         builder: (_) => PrivacyScreen(canClearData: widget.canClearData),
       ),
     );
@@ -107,7 +108,7 @@ class _ProviderScreenState extends State<ProviderScreen> {
   }
 
   Future<void> _providerActions(ProviderConfig provider) async {
-    final action = await showCupertinoModalPopup<String>(
+    final action = await showAppModalPopup<String>(
       context: context,
       builder: (context) => CupertinoActionSheet(
         title: Text(provider.name),
@@ -149,7 +150,9 @@ class _ProviderScreenState extends State<ProviderScreen> {
           IosSection(
             title: '我的服务',
             footer: tr(
-              '密钥保存在手机安全存储中；选作手表服务时会经配对通道同步到手表，Wear OS 加密保存，Apple Watch 保存在钥匙串。我们不设中转服务器，请求会直达你配置的 API 服务商。',
+              isDesktopApp
+                  ? '密钥保存在本机安全存储中，不写入聊天数据库。我们不设中转服务器，请求会直达你配置的 API 服务商。'
+                  : '密钥保存在手机安全存储中；选作手表服务时会经配对通道同步到手表，Wear OS 加密保存，Apple Watch 保存在钥匙串。我们不设中转服务器，请求会直达你配置的 API 服务商。',
             ),
             children: _providers.isEmpty
                 ? [
@@ -203,9 +206,7 @@ class _ProviderScreenState extends State<ProviderScreen> {
                 ),
                 onTap: () => Navigator.push<void>(
                   context,
-                  CupertinoPageRoute(
-                    builder: (_) => const PromptSettingsScreen(),
-                  ),
+                  appPageRoute(builder: (_) => const PromptSettingsScreen()),
                 ),
               ),
             ],
@@ -458,7 +459,7 @@ class _ProviderEditorState extends State<ProviderEditor> {
   Future<void> _scanApiKey() async {
     final key = await Navigator.push<String>(
       context,
-      CupertinoPageRoute(
+      appPageRoute(
         builder: (_) =>
             const ProviderQrScanner(mode: ProviderQrScanMode.apiKey),
       ),
@@ -525,7 +526,7 @@ class _ProviderEditorState extends State<ProviderEditor> {
       setState(() => _busy = false);
       final selected = await Navigator.push<String>(
         context,
-        CupertinoPageRoute(
+        appPageRoute(
           builder: (_) => ModelPicker(
             models: models,
             fetchedAt: cached?.fetchedAt ?? DateTime.now(),
@@ -567,7 +568,7 @@ class _ProviderEditorState extends State<ProviderEditor> {
   }
 
   Future<void> _chooseProtocol() async {
-    final choice = await showCupertinoModalPopup<ApiProtocol>(
+    final choice = await showAppModalPopup<ApiProtocol>(
       context: context,
       builder: (context) => CupertinoActionSheet(
         title: Text(tr('接口协议')),

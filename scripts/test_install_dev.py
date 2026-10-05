@@ -3,6 +3,7 @@ import io
 from argparse import Namespace
 from pathlib import Path
 import plistlib
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -19,6 +20,98 @@ class InstallDevTest(unittest.TestCase):
             installer.Device("ios", "phone", "iphone-a", "iPhone A"),
             installer.Device("ios", "watch", "apple-watch-a", "Apple Watch A"),
         ]
+
+    def make_mac_app(self, path, identifier=installer.MACOS_ID):
+        (path / "Contents").mkdir(parents=True)
+        (path / "Contents/Info.plist").write_bytes(plistlib.dumps({"CFBundleIdentifier": identifier}))
+
+    def test_mac_discovery_and_phone_filter(self):
+        with patch.object(installer.sys, "platform", "darwin"):
+            devices = installer.discover("macos", "desktop")
+            self.assertEqual(devices, [installer.Device("macos", "desktop", "macos", "本机 Mac")])
+            self.assertEqual(installer.discover("macos", "phone"), [])
+        with patch.object(installer.sys, "platform", "linux"), self.assertRaisesRegex(ValueError, "只能在 Mac"):
+            installer.discover("macos", "all")
+
+    def test_mac_build_once_checks_identity_and_signature(self):
+        mac = installer.Device("macos", "desktop", "macos", "Mac")
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            app = root / "build/macos/Build/Products/Profile/AI Link.app"
+            self.make_mac_app(app)
+            with patch.object(installer, "ROOT", root), patch.object(installer, "run") as command:
+                self.assertEqual(installer.build([mac, mac], "profile", None, "profile"), {("macos", "desktop"): app})
+                self.assertEqual(command.call_args_list[0].args[0], ["flutter", "build", "macos", "--profile"])
+                self.assertEqual(command.call_args_list[1].args[0], ["codesign", "--verify", "--deep", "--strict", app])
+
+    def test_mac_install_replaces_bundle_and_keeps_other_files(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / "source/AI Link.app"
+            directory = root / "Applications"
+            target = directory / "AI Link.app"
+            self.make_mac_app(source)
+            self.make_mac_app(target)
+            (source / "new-build").touch()
+            (target / "old-build").touch()
+            (directory / "unrelated.txt").write_text("keep")
+            def command(argv, **kwargs):
+                if argv[0] == "ditto":
+                    shutil.copytree(argv[1], argv[2])
+            with patch.object(installer, "run", side_effect=command):
+                self.assertEqual(installer.install_macos(source, directory), target.resolve())
+            self.assertTrue((target / "new-build").exists())
+            self.assertFalse((target / "old-build").exists())
+            self.assertEqual((directory / "unrelated.txt").read_text(), "keep")
+            self.assertFalse(list(directory.glob(".ai-link-update-*")))
+
+    def test_mac_install_rejects_foreign_app_and_symlink(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            target = root / "Applications/AI Link.app"
+            self.make_mac_app(target, "another.app")
+            with patch.object(installer, "run") as command, self.assertRaisesRegex(ValueError, "其他应用"):
+                installer.install_macos(root / "source.app", target.parent)
+            command.assert_not_called()
+            shutil.rmtree(target)
+            target.symlink_to(root / "source.app")
+            with self.assertRaisesRegex(ValueError, "符号链接"):
+                installer.install_macos(root / "source.app", target.parent)
+
+    def test_mac_install_rolls_back_if_replacement_fails(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source, target = root / "source.app", root / "Applications/AI Link.app"
+            self.make_mac_app(source)
+            self.make_mac_app(target)
+            (target / "old-build").touch()
+            rename = Path.rename
+            def command(argv, **kwargs):
+                if argv[0] == "ditto": shutil.copytree(argv[1], argv[2])
+            def fail_replacement(path, destination):
+                if path.name == "AI Link.app" and path.parent.name.startswith(".ai-link-update-"):
+                    raise OSError("simulated replacement failure")
+                return rename(path, destination)
+            with patch.object(installer, "run", side_effect=command), patch.object(Path, "rename", fail_replacement), self.assertRaises(OSError):
+                installer.install_macos(source, target.parent)
+            self.assertTrue((target / "old-build").exists())
+
+    def test_mac_cli_installs_to_chosen_directory_and_launches_only_when_requested(self):
+        mac = installer.Device("macos", "desktop", "macos", "Mac")
+        for launch in (False, True):
+            argv = ["install-dev.sh", "--platform", "macos", "--device", "macos", "--macos-dir", "/tmp/mac-apps"] + (["--launch"] if launch else [])
+            with patch("sys.argv", argv), patch.object(installer, "discover", return_value=[mac]), \
+                 patch.object(installer.shutil, "which", return_value="tool"), \
+                 patch.object(installer, "build", return_value={("macos", "desktop"): Path("built.app")}) as build, \
+                 patch.object(installer, "install_macos", return_value=Path("/tmp/mac-apps/AI Link.app")) as install, \
+                 patch.object(installer, "run") as command, contextlib.redirect_stdout(io.StringIO()):
+                installer.main()
+            build.assert_called_once_with([mac], "profile", None, "debug")
+            install.assert_called_once_with(Path("built.app"), "/tmp/mac-apps")
+            if launch:
+                command.assert_called_once_with(["open", "-a", Path("/tmp/mac-apps/AI Link.app")])
+            else:
+                command.assert_not_called()
 
     def test_multiple_indices_preserve_selection_and_deduplicate(self):
         self.assertEqual(installer.select_indices("4，1 4", self.devices), [self.devices[3], self.devices[0]])
@@ -112,7 +205,7 @@ class InstallDevTest(unittest.TestCase):
 
     def test_cli_installs_only_selected_devices_after_build(self):
         events = []
-        def build(selected, mode, team):
+        def build(selected, mode, team, macos_mode="debug"):
             events.append("built")
             self.assertEqual(selected, [self.devices[3], self.devices[0]])
             return {("android", "phone"): Path("phone.apk"), ("ios", "watch"): Path("watch.app")}

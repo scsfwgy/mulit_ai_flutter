@@ -4,8 +4,18 @@ import 'dart:async';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import 'search_service.dart';
+
+class KeychainAccessException implements Exception {
+  const KeychainAccessException();
+
+  @override
+  String toString() =>
+      '无法访问 macOS 钥匙串。请解锁登录钥匙串，并在系统授权弹窗中允许 AI Link 访问密钥。若曾拒绝，请重新打开应用后再试，或重新填写并保存密钥。';
+}
 
 enum ApiProtocol {
   openAi('openai_chat', 'OpenAI 兼容'),
@@ -603,8 +613,23 @@ class ChatStore {
   final _watchConfigurationChanges = StreamController<void>.broadcast();
   Stream<void> get watchConfigurationChanges =>
       _watchConfigurationChanges.stream;
-  static const _secrets = FlutterSecureStorage();
+  // This app does not share Keychain items with other apps. The macOS login
+  // Keychain works without a Keychain Sharing provisioning profile.
+  static const _secrets = FlutterSecureStorage(
+    mOptions: MacOsOptions(usesDataProtectionKeychain: false),
+  );
   Database? _database;
+
+  Future<T> _withSecureStorage<T>(Future<T> Function() operation) async {
+    try {
+      return await operation();
+    } on PlatformException {
+      if (defaultTargetPlatform == TargetPlatform.macOS) {
+        throw const KeychainAccessException();
+      }
+      rethrow;
+    }
+  }
 
   Future<Database> get db async {
     if (_database != null) return _database!;
@@ -725,13 +750,15 @@ class ChatStore {
       );
     }
     if (apiKey != null && apiKey.isNotEmpty) {
-      await _secrets.write(key: 'provider_$id', value: apiKey);
+      await _withSecureStorage(
+        () => _secrets.write(key: 'provider_$id', value: apiKey),
+      );
     }
     return id;
   }
 
   Future<String?> apiKey(int providerId) =>
-      _secrets.read(key: 'provider_$providerId');
+      _withSecureStorage(() => _secrets.read(key: 'provider_$providerId'));
 
   Future<List<SearchProviderConfig>> searchProviders() async {
     final raw = await setting('search_providers');
@@ -748,7 +775,8 @@ class ChatStore {
     return (await searchProviders()).where((item) => item.id == id).firstOrNull;
   }
 
-  Future<String?> searchApiKey(String id) => _secrets.read(key: 'search_$id');
+  Future<String?> searchApiKey(String id) =>
+      _withSecureStorage(() => _secrets.read(key: 'search_$id'));
 
   Future<void> saveSearchProvider(
     SearchProviderConfig config, {
@@ -776,7 +804,9 @@ class ChatStore {
       throw const FormatException('API Key 不能包含换行或控制字符');
     }
     if (key.isNotEmpty) {
-      await _secrets.write(key: 'search_${config.id}', value: key);
+      await _withSecureStorage(
+        () => _secrets.write(key: 'search_${config.id}', value: key),
+      );
     }
     final database = await db;
     await database.transaction((txn) async {
@@ -850,7 +880,7 @@ class ChatStore {
         }
       }
     });
-    await _secrets.delete(key: 'search_$id');
+    await _withSecureStorage(() => _secrets.delete(key: 'search_$id'));
     _watchConfigurationChanges.add(null);
   }
 
@@ -877,9 +907,13 @@ class ChatStore {
     items.removeWhere((item) => item.id == config.id);
     items.add(config);
     if (apiKey != null && apiKey.trim().isNotEmpty) {
-      await _secrets.write(key: 'voice_${config.id}', value: apiKey.trim());
+      await _withSecureStorage(
+        () => _secrets.write(key: 'voice_${config.id}', value: apiKey.trim()),
+      );
     } else if (config.textProviderId != null) {
-      await _secrets.delete(key: 'voice_${config.id}');
+      await _withSecureStorage(
+        () => _secrets.delete(key: 'voice_${config.id}'),
+      );
     }
     await saveSetting(
       'voice_providers',
@@ -889,7 +923,7 @@ class ChatStore {
 
   Future<String?> voiceApiKey(VoiceProviderConfig config) async {
     if (config.textProviderId case final id?) return apiKey(id);
-    return _secrets.read(key: 'voice_${config.id}');
+    return _withSecureStorage(() => _secrets.read(key: 'voice_${config.id}'));
   }
 
   Future<void> deleteVoiceProvider(String id) async {
@@ -899,7 +933,7 @@ class ChatStore {
       'voice_providers',
       jsonEncode(items.map((item) => item.toJson()).toList()),
     );
-    await _secrets.delete(key: 'voice_$id');
+    await _withSecureStorage(() => _secrets.delete(key: 'voice_$id'));
     if (await setting('voice_asr_id') == id) {
       await saveSetting('voice_asr_id', '');
     }
@@ -921,7 +955,7 @@ class ChatStore {
         whereArgs: ['last_chat_selection'],
       );
     }
-    await _secrets.delete(key: 'provider_$id');
+    await _withSecureStorage(() => _secrets.delete(key: 'provider_$id'));
   }
 
   /// Clears app-owned local data after explicit confirmation in the UI.
@@ -933,7 +967,7 @@ class ChatStore {
       await transaction.delete('settings');
       await transaction.delete('providers');
     });
-    await _secrets.deleteAll();
+    await _withSecureStorage(() => _secrets.deleteAll());
   }
 
   Future<String> globalPrompt() async {

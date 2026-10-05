@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build and update selected development apps without clearing device data.
+# Build and update selected phone, watch or local Mac apps without clearing data.
 set -Eeuo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"

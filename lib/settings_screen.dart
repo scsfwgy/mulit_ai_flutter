@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'api_key_help.dart';
+import 'app_platform.dart';
 
 import 'app_preferences.dart';
 import 'data.dart';
@@ -29,7 +30,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _preferences = AppPreferences.instance;
 
   Future<void> _chooseLanguage() async {
-    final choice = await showCupertinoModalPopup<AppLanguage>(
+    final choice = await showAppModalPopup<AppLanguage>(
       context: context,
       builder: (sheetContext) => CupertinoActionSheet(
         title: Text(tr('语言')),
@@ -60,12 +61,127 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _openPrivacy() async {
     final cleared = await Navigator.push<bool>(
       context,
-      CupertinoPageRoute(
+      appPageRoute(
         builder: (_) => PrivacyScreen(canClearData: widget.canClearData),
       ),
     );
     if (cleared == true) await _preferences.load();
     if (mounted) setState(() {});
+  }
+
+  Widget _desktopPreferences() {
+    Widget row(String label, Widget control) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 18),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              tr(label),
+              style: TextStyle(fontSize: 15, color: IosColors.label),
+            ),
+          ),
+          Expanded(child: control),
+        ],
+      ),
+    );
+    Future<void> save(Future<void> operation) async {
+      await operation;
+      if (mounted) setState(() {});
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(28, 18, 28, 28),
+      children: [
+        row(
+          '语言',
+          CupertinoSlidingSegmentedControl<AppLanguage>(
+            groupValue: _preferences.language,
+            children: {
+              for (final language in AppLanguage.values)
+                language: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text(_languageName(language)),
+                ),
+            },
+            onValueChanged: (value) {
+              if (value != null) save(_preferences.setLanguage(value));
+            },
+          ),
+        ),
+        Divider(color: IosColors.separator),
+        row(
+          '模式',
+          CupertinoSlidingSegmentedControl<AppAppearance>(
+            groupValue: _preferences.appearance,
+            children: {
+              for (final mode in AppAppearance.values)
+                mode: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    tr(switch (mode) {
+                      AppAppearance.system => '跟随系统',
+                      AppAppearance.light => '白天',
+                      AppAppearance.dark => '黑夜',
+                    }),
+                  ),
+                ),
+            },
+            onValueChanged: (value) {
+              if (value != null) save(_preferences.setAppearance(value));
+            },
+          ),
+        ),
+        Divider(color: IosColors.separator),
+        row(
+          '主题色',
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              for (final skin in AppSkin.values)
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: IosColors.surface,
+                    border: Border.all(
+                      color: _preferences.skin == skin
+                          ? IosColors.blue
+                          : IosColors.separator,
+                      width: _preferences.skin == skin ? 2 : 1,
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: CupertinoButton(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    onPressed: () => save(_preferences.setSkin(skin)),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          CupertinoIcons.circle_fill,
+                          color: skin.accent,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          tr(skin.label),
+                          style: TextStyle(
+                            color: IosColors.label,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   @override
@@ -78,113 +194,128 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onPressed: () => Navigator.pop(context),
       ),
     ),
-    body: SafeArea(
-      child: ListView(
-        children: [
-          IosSection(
-            children: [
-              IosRow(
-                title: tr('模型设置'),
-                leading: Icon(
-                  CupertinoIcons.square_stack,
-                  color: IosColors.blue,
-                ),
-                onTap: () => Navigator.push<void>(
-                  context,
-                  CupertinoPageRoute(
-                    builder: (_) => ModelSettingsScreen(
-                      canClearData: widget.canClearData,
-                      onPrivacy: _openPrivacy,
-                    ),
-                  ),
-                ),
-              ),
-              IosRow(
-                title: tr('语音服务'),
-                leading: Icon(CupertinoIcons.waveform, color: IosColors.blue),
-                onTap: () => Navigator.push<void>(
-                  context,
-                  CupertinoPageRoute(
-                    builder: (_) => const VoiceSettingsScreen(),
-                  ),
-                ),
-              ),
-              IosRow(
-                title: tr('联网搜索'),
-                leading: Icon(CupertinoIcons.search, color: IosColors.blue),
-                onTap: () => Navigator.push<void>(
-                  context,
-                  CupertinoPageRoute(
-                    builder: (_) => const SearchSettingsScreen(),
-                  ),
-                ),
-              ),
-              IosRow(
-                title: tr('手表'),
-                leading: Icon(
-                  CupertinoIcons.device_phone_portrait,
-                  color: IosColors.blue,
-                ),
-                onTap: () => Navigator.push<void>(
-                  context,
-                  CupertinoPageRoute(
-                    builder: (_) => const WatchSettingsScreen(),
-                  ),
-                ),
-              ),
-              IosRow(
-                title: tr('消息设置'),
-                leading: Icon(CupertinoIcons.info, color: IosColors.blue),
-                onTap: () => Navigator.push<void>(
-                  context,
-                  CupertinoPageRoute(
-                    builder: (_) => MessageSettingsScreen(
-                      canChangeSearch: widget.canClearData,
-                    ),
-                  ),
-                ),
-              ),
-              IosRow(
-                title: tr('语言'),
-                subtitle: _languageName(_preferences.language),
-                leading: Icon(CupertinoIcons.globe, color: IosColors.blue),
-                onTap: _chooseLanguage,
-              ),
-              IosRow(
-                title: tr('换肤'),
-                subtitle: tr(switch (_preferences.appearance) {
-                  AppAppearance.system => '跟随系统',
-                  AppAppearance.light => '白天',
-                  AppAppearance.dark => '黑夜',
-                }),
-                leading: Icon(CupertinoIcons.paintbrush, color: IosColors.blue),
-                onTap: () =>
-                    Navigator.push<void>(
-                      context,
-                      CupertinoPageRoute(
-                        builder: (_) => const AppearanceScreen(),
+    body: isDesktopApp
+        ? _desktopPreferences()
+        : SafeArea(
+            child: ListView(
+              children: [
+                IosSection(
+                  children: [
+                    IosRow(
+                      title: tr('模型设置'),
+                      leading: Icon(
+                        CupertinoIcons.square_stack,
+                        color: IosColors.blue,
                       ),
-                    ).then((_) {
-                      if (mounted) setState(() {});
-                    }),
-              ),
-              IosRow(
-                title: tr('关于'),
-                leading: Icon(
-                  CupertinoIcons.info_circle,
-                  color: IosColors.blue,
+                      onTap: () => Navigator.push<void>(
+                        context,
+                        appPageRoute(
+                          builder: (_) => ModelSettingsScreen(
+                            canClearData: widget.canClearData,
+                            onPrivacy: _openPrivacy,
+                          ),
+                        ),
+                      ),
+                    ),
+                    IosRow(
+                      title: tr('语音服务'),
+                      leading: Icon(
+                        CupertinoIcons.waveform,
+                        color: IosColors.blue,
+                      ),
+                      onTap: () => Navigator.push<void>(
+                        context,
+                        appPageRoute(
+                          builder: (_) => const VoiceSettingsScreen(),
+                        ),
+                      ),
+                    ),
+                    IosRow(
+                      title: tr('联网搜索'),
+                      leading: Icon(
+                        CupertinoIcons.search,
+                        color: IosColors.blue,
+                      ),
+                      onTap: () => Navigator.push<void>(
+                        context,
+                        appPageRoute(
+                          builder: (_) => const SearchSettingsScreen(),
+                        ),
+                      ),
+                    ),
+                    if (supportsWatchCompanion)
+                      IosRow(
+                        title: tr('手表'),
+                        leading: Icon(
+                          CupertinoIcons.device_phone_portrait,
+                          color: IosColors.blue,
+                        ),
+                        onTap: () => Navigator.push<void>(
+                          context,
+                          appPageRoute(
+                            builder: (_) => const WatchSettingsScreen(),
+                          ),
+                        ),
+                      ),
+                    IosRow(
+                      title: tr('消息设置'),
+                      leading: Icon(CupertinoIcons.info, color: IosColors.blue),
+                      onTap: () => Navigator.push<void>(
+                        context,
+                        appPageRoute(
+                          builder: (_) => MessageSettingsScreen(
+                            canChangeSearch: widget.canClearData,
+                          ),
+                        ),
+                      ),
+                    ),
+                    IosRow(
+                      title: tr('语言'),
+                      subtitle: _languageName(_preferences.language),
+                      leading: Icon(
+                        CupertinoIcons.globe,
+                        color: IosColors.blue,
+                      ),
+                      onTap: _chooseLanguage,
+                    ),
+                    IosRow(
+                      title: tr('换肤'),
+                      subtitle: tr(switch (_preferences.appearance) {
+                        AppAppearance.system => '跟随系统',
+                        AppAppearance.light => '白天',
+                        AppAppearance.dark => '黑夜',
+                      }),
+                      leading: Icon(
+                        CupertinoIcons.paintbrush,
+                        color: IosColors.blue,
+                      ),
+                      onTap: () =>
+                          Navigator.push<void>(
+                            context,
+                            appPageRoute(
+                              builder: (_) => const AppearanceScreen(),
+                            ),
+                          ).then((_) {
+                            if (mounted) setState(() {});
+                          }),
+                    ),
+                    IosRow(
+                      title: tr('关于'),
+                      leading: Icon(
+                        CupertinoIcons.info_circle,
+                        color: IosColors.blue,
+                      ),
+                      onTap: () => Navigator.push<void>(
+                        context,
+                        appPageRoute(builder: (_) => const AboutScreen()),
+                      ),
+                    ),
+                  ],
                 ),
-                onTap: () => Navigator.push<void>(
-                  context,
-                  CupertinoPageRoute(builder: (_) => const AboutScreen()),
-                ),
-              ),
-            ],
+                const SizedBox(height: 28),
+              ],
+            ),
           ),
-          const SizedBox(height: 28),
-        ],
-      ),
-    ),
   );
 }
 
@@ -238,7 +369,7 @@ class _MessageSettingsScreenState extends State<MessageSettingsScreen> {
         if (!mounted) return;
         await Navigator.push<void>(
           context,
-          CupertinoPageRoute(builder: (_) => const SearchSettingsScreen()),
+          appPageRoute(builder: (_) => const SearchSettingsScreen()),
         );
         if (!mounted || !await _searchConfigured()) return;
       }
@@ -376,7 +507,7 @@ class ModelSettingsScreen extends StatelessWidget {
                 ),
                 onTap: () => Navigator.push<void>(
                   context,
-                  CupertinoPageRoute(
+                  appPageRoute(
                     builder: (_) => ProviderScreen(canClearData: canClearData),
                   ),
                 ),
@@ -387,9 +518,7 @@ class ModelSettingsScreen extends StatelessWidget {
                 leading: Icon(CupertinoIcons.text_quote, color: IosColors.blue),
                 onTap: () => Navigator.push<void>(
                   context,
-                  CupertinoPageRoute(
-                    builder: (_) => const PromptSettingsScreen(),
-                  ),
+                  appPageRoute(builder: (_) => const PromptSettingsScreen()),
                 ),
               ),
               IosRow(
@@ -419,7 +548,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
   final _preferences = AppPreferences.instance;
 
   Future<void> _chooseMode() async {
-    final choice = await showCupertinoModalPopup<AppAppearance>(
+    final choice = await showAppModalPopup<AppAppearance>(
       context: context,
       builder: (sheetContext) => CupertinoActionSheet(
         title: Text(tr('模式')),
@@ -448,7 +577,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
   }
 
   Future<void> _chooseSkin() async {
-    final choice = await showCupertinoModalPopup<AppSkin>(
+    final choice = await showAppModalPopup<AppSkin>(
       context: context,
       builder: (sheetContext) => CupertinoActionSheet(
         title: Text(tr('主题色')),

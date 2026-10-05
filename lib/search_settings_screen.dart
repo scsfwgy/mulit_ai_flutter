@@ -53,13 +53,13 @@ class _SearchSettingsScreenState extends State<SearchSettingsScreen> {
   Future<void> _edit([SearchProviderConfig? service]) async {
     await Navigator.push<void>(
       context,
-      CupertinoPageRoute(builder: (_) => SearchServiceEditor(service: service)),
+      appPageRoute(builder: (_) => SearchServiceEditor(service: service)),
     );
     await _load();
   }
 
   Future<void> _select() async {
-    final value = await showCupertinoModalPopup<String>(
+    final value = await showAppModalPopup<String>(
       context: context,
       builder: (sheetContext) => CupertinoActionSheet(
         title: Text(tr('默认搜索服务')),
@@ -212,7 +212,7 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
   }
 
   Future<T?> _choose<T>(String title, Map<T, String> options) =>
-      showCupertinoModalPopup<T>(
+      showAppModalPopup<T>(
         context: context,
         builder: (sheetContext) => CupertinoActionSheet(
           title: Text(tr(title)),

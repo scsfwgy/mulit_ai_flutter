@@ -162,7 +162,7 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
     if (_providers.isEmpty) return;
     final selected = await Navigator.push<ChatModelSelection>(
       context,
-      CupertinoPageRoute(
+      appPageRoute(
         builder: (_) => ChatModelSelector(
           providers: _providers,
           topics: const [],
@@ -280,9 +280,7 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
                 leading: Icon(CupertinoIcons.waveform, color: IosColors.blue),
                 onTap: () => Navigator.push<void>(
                   context,
-                  CupertinoPageRoute(
-                    builder: (_) => const VoiceSettingsScreen(),
-                  ),
+                  appPageRoute(builder: (_) => const VoiceSettingsScreen()),
                 ),
               ),
             ],

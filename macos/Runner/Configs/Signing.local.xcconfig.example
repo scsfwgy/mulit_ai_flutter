@@ -1,0 +1,4 @@
+// Copy to Signing.local.xcconfig and use your installed Apple certificate/team.
+// Development signing provides a stable identity for local Keychain access.
+CODE_SIGN_IDENTITY = Apple Development
+DEVELOPMENT_TEAM = YOUR_TEAM_ID

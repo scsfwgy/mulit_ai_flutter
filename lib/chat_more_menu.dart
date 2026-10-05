@@ -25,7 +25,7 @@ class ChatMoreButton extends StatelessWidget {
 
   Future<void> _show(BuildContext context) async {
     FocusScope.of(context).unfocus();
-    final action = await showCupertinoModalPopup<ChatMoreAction>(
+    final action = await showAppModalPopup<ChatMoreAction>(
       context: context,
       builder: (sheetContext) => CupertinoActionSheet(
         title: Text(tr('更多')),

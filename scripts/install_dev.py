@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build and install AI Link on selected Android/iOS phones and watches."""
+"""Build and install AI Link on selected phones, watches and the local Mac."""
 
 import argparse
 from dataclasses import dataclass
@@ -17,6 +17,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 PHONE_ID = "com.maxhall.ailink.debug"
 WATCH_ID = PHONE_ID + ".watchkitapp"
+MACOS_ID = "com.maxhall.ailink.macos"
 
 
 @dataclass(frozen=True)
@@ -33,6 +34,7 @@ class Device:
             ("android", "watch"): "Wear OS 手表",
             ("ios", "phone"): "iPhone/iPad",
             ("ios", "watch"): "Apple Watch",
+            ("macos", "desktop"): "Mac 客户端",
         }[self.platform, self.kind]
 
 
@@ -118,6 +120,11 @@ def discover(platform, kind):
                 print("无法读取 Apple 设备，跳过；请检查 Xcode 和 Device Hub。", file=sys.stderr)
         elif platform == "ios":
             raise ValueError("缺少 xcrun；Apple 设备安装需要 Mac 和完整 Xcode。")
+    if platform in ("all", "macos"):
+        if sys.platform == "darwin":
+            devices.append(Device("macos", "desktop", "macos", "本机 Mac"))
+        elif platform == "macos":
+            raise ValueError("macOS 客户端只能在 Mac 上构建和安装。")
     return sorted(
         (device for device in devices if kind == "all" or device.kind == kind),
         key=lambda device: (device.platform, device.kind, device.identifier),
@@ -204,7 +211,7 @@ def development_team(explicit):
     return team
 
 
-def build(selected, ios_mode, team):
+def build(selected, ios_mode, team, macos_mode="debug"):
     artifacts = {}
     kinds = {(device.platform, device.kind) for device in selected}
     if ("android", "phone") in kinds:
@@ -241,23 +248,62 @@ def build(selected, ios_mode, team):
         run(["codesign", "--verify", "--deep", "--strict", phone])
         artifacts["ios", "phone"] = phone
         artifacts["ios", "watch"] = watch
+    if ("macos", "desktop") in kinds:
+        run(["flutter", "build", "macos", f"--{macos_mode}"])
+        mac = ROOT / "build/macos/Build/Products" / macos_mode.capitalize() / "AI Link.app"
+        with (mac / "Contents/Info.plist").open("rb") as stream:
+            info = plistlib.load(stream)
+        if info.get("CFBundleIdentifier") != MACOS_ID:
+            raise ValueError(f"Mac 安装包标识不匹配，已停止安装：{mac}")
+        run(["codesign", "--verify", "--deep", "--strict", mac])
+        artifacts["macos", "desktop"] = mac
     for path in artifacts.values():
         if not path.exists():
             raise ValueError(f"构建后未找到安装包：{path}")
     return artifacts
 
 
+def install_macos(source, directory):
+    """Replace only the app bundle, with rollback; sandbox and Keychain stay intact."""
+    directory = Path(directory).expanduser().resolve()
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / "AI Link.app"
+    if target.is_symlink():
+        raise ValueError(f"Mac 安装目标是符号链接，请指定实际安装目录：{target}")
+    if target.exists():
+        with (target / "Contents/Info.plist").open("rb") as stream:
+            if plistlib.load(stream).get("CFBundleIdentifier") != MACOS_ID:
+                raise ValueError(f"目标目录已有其他应用，已停止覆盖：{target}")
+    with tempfile.TemporaryDirectory(prefix=".ai-link-update-", dir=directory) as temp:
+        staged = Path(temp) / "AI Link.app"
+        backup = Path(temp) / "Previous.app"
+        run(["ditto", source, staged])
+        run(["codesign", "--verify", "--deep", "--strict", staged])
+        if target.exists():
+            target.rename(backup)
+        try:
+            staged.rename(target)
+        except OSError:
+            if backup.exists():
+                backup.rename(target)
+            raise
+    return target
+
+
 def main():
     parser = argparse.ArgumentParser(prog="./install-dev.sh", description="构建并覆盖安装 AI Link 开发版；保留现有应用数据。")
-    parser.add_argument("--platform", choices=("all", "android", "ios"), default="all", help="筛选平台，默认 all")
-    parser.add_argument("--target", choices=("all", "phone", "watch"), default="all", help="筛选手机/手表，默认 all")
+    parser.add_argument("--platform", choices=("all", "android", "ios", "macos"), default="all", help="筛选平台，默认 all；macos 为本机 Mac")
+    parser.add_argument("--target", choices=("all", "phone", "watch", "desktop"), default="all", help="筛选手机/手表/电脑，默认 all")
     choice = parser.add_mutually_exclusive_group()
     choice.add_argument("--select", metavar="序号", help="设备序号，例如 1,3（与 --list 显示顺序一致）")
     choice.add_argument("--device", action="append", metavar="设备ID", help="指定序列号/UDID，可重复传入")
     choice.add_argument("--all", action="store_true", help="安装到筛选后的全部设备")
     parser.add_argument("--list", action="store_true", help="只列设备，不构建或安装")
     parser.add_argument("--ios-mode", choices=("profile", "debug"), default="profile", help="默认 profile，可从桌面启动；debug 用于断点/热重载")
-    parser.add_argument("--team", metavar="AppleTeamID", help="Apple 签名团队；默认读取 Xcode Debug 配置")
+    parser.add_argument("--macos-mode", choices=("debug", "profile", "release"), default="debug", help="Mac 构建模式，默认 debug")
+    parser.add_argument("--macos-dir", default=str(Path.home() / "Applications"), metavar="目录", help="Mac 安装目录，默认 ~/Applications")
+    parser.add_argument("--launch", action="store_true", help="安装后打开 Mac 客户端；手机/手表行为不变")
+    parser.add_argument("--team", metavar="AppleTeamID", help="iPhone/Watch 签名团队；Mac 读取 Signing.local.xcconfig")
     parser.add_argument("legacy_serials", nargs="*", metavar="Android序列号", help="兼容旧用法：手机序列号 手表序列号")
     args = parser.parse_args()
     devices = discover(args.platform, args.target)
@@ -265,7 +311,7 @@ def main():
         name = " ".join(device.name.split())
         print(f"{index:2}. {device.label:14} {name} [{device.identifier}]", flush=True)
     if not devices:
-        raise ValueError("没有可安装的设备。Android 请检查 adb devices；Apple 请在 Device Hub 连接并开启开发者模式（不列出模拟器）。")
+        raise ValueError("没有可安装的设备。Android 请检查 adb devices；iPhone/Watch 请在 Device Hub 连接（不列模拟器）；Mac 请用 --platform macos --target desktop。")
     if args.list:
         return
     selected = select_devices(args, devices)
@@ -275,7 +321,7 @@ def main():
     print("\n本次安装：" + "；".join(f"{d.label} {d.name}" for d in selected), flush=True)
     if team:
         print(f"Apple 构建模式：{args.ios_mode}；签名团队：{team}", flush=True)
-    artifacts = build(selected, args.ios_mode, team)
+    artifacts = build(selected, args.ios_mode, team, args.macos_mode)
     # Build all required artifacts before updating the first selected device.
     installed = []
     for device in sorted(selected, key=lambda d: d.kind == "watch"):
@@ -284,15 +330,24 @@ def main():
         try:
             if device.platform == "android":
                 run(["adb", "-s", device.identifier, "install", "-r", path])
-            else:
+            elif device.platform == "ios":
                 run(["xcrun", "devicectl", "device", "install", "app", "--device", device.identifier, path])
-        except subprocess.CalledProcessError:
+            else:
+                path = install_macos(path, args.macos_dir)
+                print(f"Mac 应用位置：{path}", flush=True)
+                if args.launch:
+                    run(["open", "-a", path])
+        except (subprocess.CalledProcessError, OSError, ValueError):
             print(f"安装失败的设备：{device.label} {device.name} [{device.identifier}]", file=sys.stderr)
             if installed:
                 print("此前已安装成功：" + "；".join(installed), file=sys.stderr)
             if device.platform == "ios":
                 print("请保持设备解锁，检查 Device Hub 连接、开发者模式和开发者证书信任。", file=sys.stderr)
-            print(f"恢复连接后可单独重试：./install-dev.sh --device {device.identifier} --ios-mode {args.ios_mode}", file=sys.stderr)
+            if device.platform == "macos":
+                print("请检查安装目录权限和完整 Xcode；原有本机数据与钥匙串不会清空。", file=sys.stderr)
+                print(f"可单独重试：./install-dev.sh --platform macos --macos-mode {args.macos_mode}", file=sys.stderr)
+            else:
+                print(f"恢复连接后可单独重试：./install-dev.sh --device {device.identifier} --ios-mode {args.ios_mode}", file=sys.stderr)
             raise
         installed.append(device.name)
         print(f"安装完成：{device.name}", flush=True)

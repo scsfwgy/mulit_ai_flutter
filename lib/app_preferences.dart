@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'data.dart';
+import 'app_platform.dart';
 
 enum AppLanguage { system, zh, en }
 
@@ -87,6 +88,7 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _syncWatchLanguage() async {
+    if (!supportsWatchCompanion) return;
     try {
       await _companion.invokeMethod<void>('syncPreferences', {
         'language': english ? 'en' : 'zh',
@@ -253,6 +255,16 @@ const _englishPrefixes = <(String, String)>[
 ];
 
 const _english = <String, String>{
+  '聊天': 'Chat',
+  '无法访问 macOS 钥匙串。请解锁登录钥匙串，并在系统授权弹窗中允许 AI Link 访问密钥。若曾拒绝，请重新打开应用后再试，或重新填写并保存密钥。': 'Cannot access the macOS Keychain. Unlock your login Keychain and allow AI Link to access its keys in the system prompt. If access was denied, reopen the app and try again, or enter and save the key again.',
+  '发送消息，Shift+Enter 换行': 'Message, Shift+Enter for a new line',
+  '密钥保存在本机安全存储中，不写入聊天数据库。我们不设中转服务器，请求会直达你配置的 API 服务商。': 'Keys stay in secure local storage, outside the chat database. We do not operate a relay server; requests go directly to your configured API provider.',
+  '按住录音，左滑取消，右滑转文字后确认，直接松手发送。朗读声音由 AI 生成。': 'Hold to record, slide left to cancel, slide right to transcribe and confirm, or release to send. Read-aloud voices are AI generated.',
+  '识别内容仅用于填写或导入配置。密钥保存在本机安全存储中。': 'Scanned content is only used to fill in or import configuration. Keys stay in secure local storage.',
+  '本机的话题、聊天记录、服务配置、API Key 和提示词会被删除。其他设备的数据不会被删除。此操作无法撤销。': 'Topics, messages, service settings, API keys, and prompts on this computer will be deleted. Data on other devices will remain. This cannot be undone.',
+  '开启联网搜索后，当前问题与搜索密钥直接发送到所选搜索服务，网页资料随后发送给文本模型。回复的来源资料保存在本机明文数据库中。': 'When web search is enabled, your question and search key go directly to the selected search provider. Web material is then sent to the text model. Reply sources are stored in the unencrypted local database.',
+  'macOS 版未接入 Firebase Analytics 使用统计。':
+      'The macOS app does not use Firebase Analytics.',
   '联网搜索': 'Web search',
   '联网搜索已开启': 'Web search enabled',
   '正在搜索网页…': 'Searching the web…',
@@ -479,6 +491,8 @@ const _english = <String, String>{
   '切换模型': 'Switch model',
   '模型服务': 'Model services',
   '设置': 'Settings',
+  '通用设置': 'General',
+  '返回聊天': 'Back to chat',
   '联系与反馈': 'Contact and feedback',
   '邮箱已复制': 'Email address copied',
   '取消': 'Cancel',

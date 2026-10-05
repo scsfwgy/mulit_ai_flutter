@@ -11,6 +11,7 @@ class TopicScreen extends StatefulWidget {
     super.key,
     this.selectedId,
     this.generatingTopicId,
+    this.persistent = false,
     required this.onClose,
     required this.onSelect,
     required this.onNew,
@@ -20,6 +21,7 @@ class TopicScreen extends StatefulWidget {
 
   final int? selectedId;
   final int? generatingTopicId;
+  final bool persistent;
   final VoidCallback onClose;
   final ValueChanged<int> onSelect;
   final VoidCallback onNew;
@@ -55,7 +57,7 @@ class _TopicScreenState extends State<TopicScreen> {
   }
 
   Future<void> _actions(ChatTopic topic) async {
-    final action = await showCupertinoModalPopup<String>(
+    final action = await showAppModalPopup<String>(
       context: context,
       builder: (context) => CupertinoActionSheet(
         title: Text(topic.title),
@@ -166,13 +168,16 @@ class _TopicScreenState extends State<TopicScreen> {
             height: 56,
             child: Row(
               children: [
-                IosNavButton(
-                  icon: CupertinoIcons.xmark,
-                  onPressed: widget.onClose,
-                ),
+                if (!widget.persistent)
+                  IosNavButton(
+                    icon: CupertinoIcons.xmark,
+                    onPressed: widget.onClose,
+                  )
+                else
+                  const SizedBox(width: 16),
                 Expanded(
                   child: Text(
-                    tr('对话列表'),
+                    tr(widget.persistent ? 'AI Link' : '对话列表'),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: IosColors.label,

@@ -28,5 +28,9 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>AI Link 使用麦克风录制语音，录音直接发送到你选择的语音服务进行识别。</string>
+	<key>NSCameraUsageDescription</key>
+	<string>AI Link 使用相机扫描服务配置或 API Key 二维码。</string>
 </dict>
 </plist>

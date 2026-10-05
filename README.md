@@ -32,6 +32,8 @@ iOS 的配置文件位于 `ios/Runner/GoogleService-Info.plist`，已加入 Runn
 
 ## 运行
 
+macOS 客户端可使用 `flutter run -d macos` 运行，支持首页左侧历史会话与右侧聊天、设置页左侧分类与右侧详情、键盘快捷键、云端语音、扫码配置和富文本复制。运行、数据与本地打包说明见 [macOS 客户端](doc/macos/README.md)。Mac 与手机分别保存本机数据，暂不自动同步。
+
 ```bash
 flutter pub get
 flutter run
@@ -47,7 +49,7 @@ flutter run
 
 ### 开发构建与安装
 
-运行 `./install-dev.sh`，脚本会按序号列出已连接的 Android 手机、Wear OS 手表、真实 iPhone/iPad 和 Apple Watch。只有一台设备时自动选中；多台设备时输入 `1`、`1,3` 或 `all`，支持跨平台一次选择多个设备。Android 模拟器也可选择；Apple 模拟器不在此脚本的安装范围内。
+运行 `./install-dev.sh`，脚本会按序号列出已连接的 Android 手机、Wear OS 手表、真实 iPhone/iPad、Apple Watch，以及本机 Mac。只有一台设备时自动选中；多台设备时输入 `1`、`1,3` 或 `all`，支持跨平台一次选择多个设备。Android 模拟器也可选择；Apple 模拟器不在此脚本的安装范围内。
 
 ```bash
 ./install-dev.sh                                  # 列出设备并按序号选择
@@ -55,6 +57,10 @@ flutter run
 ./install-dev.sh --select 1,3                      # 构建并安装到指定序号
 ./install-dev.sh --platform android --all          # 所有已连接 Android 设备
 ./install-dev.sh --platform ios --all              # 所有已连接 iPhone 与 Apple Watch
+./install-dev.sh --platform macos                  # 构建 Mac Debug，安装到 ~/Applications
+./install-dev.sh --platform macos --launch         # 安装后打开 Mac 客户端
+./install-dev.sh --device macos --macos-mode release # 安装 Mac Release
+./install-dev.sh --target desktop --macos-dir /自选目录
 ./install-dev.sh --target watch                   # 只列出手表并选择
 ./install-dev.sh --platform ios --target phone --ios-mode debug
 ./install-dev.sh --device <序列号或UDID>           # 可重复传 --device 选择多台
@@ -64,7 +70,9 @@ flutter run
 
 脚本需要 Python 3、Flutter 和所选平台的工具链。Android 使用 `adb` 与 Gradle 构建 Debug APK。Apple 使用完整 Xcode、已配对且开启开发者模式的真机；默认读取 Xcode Debug 目标中的开发团队，也可传 `--team <TeamID>` 或设置 `IOS_DEVELOPMENT_TEAM`。iPhone 和 Apple Watch 通过同一次 Flutter iOS 构建生成配套安装包，再用 `devicectl` 分别安装；仅选手表时也需要准备配套 iPhone 构建。
 
-两端开发安装都叫「AI Link Debug」并沿用开发包标识。Apple 默认使用 Profile 模式，可从桌面启动；`--ios-mode debug` 用于 Flutter 断点和热重载，手机需要通过 `flutter run` 或 Xcode 启动。Profile 与 Debug 可覆盖更新并保留数据，Release 保持正式标识。脚本先完成所需构建，再覆盖安装所选设备，不执行卸载或数据清空；安装失败会停止并保留已成功安装的设备。安装成功不代表语音、配对和后台流程验证通过。
+Mac 使用完整 Xcode 构建，默认 Debug，可选 `--macos-mode profile` / `release`；安装到 `~/Applications/AI Link.app`，`--macos-dir` 可改目录。复制后验证签名，再替换应用包；替换失败会恢复旧包，不清空 SQLite 或钥匙串。Mac 的 Debug/Profile/Release 共用 `com.maxhall.ailink.macos` 和本机数据；签名读取忽略的 `Signing.local.xcconfig`，详见 [Mac 说明](doc/macos/README.md)。默认仅安装，`--launch` 打开 Mac 应用。
+
+Android/iOS 两端开发安装都叫「AI Link Debug」并沿用开发包标识。Apple 默认使用 Profile 模式，可从桌面启动；`--ios-mode debug` 用于 Flutter 断点和热重载，手机需要通过 `flutter run` 或 Xcode 启动。Profile 与 Debug 可覆盖更新并保留数据，Release 保持正式标识。脚本先完成所需构建，再覆盖安装所选设备，不执行卸载或数据清空；安装失败会停止并保留已成功安装的设备。安装成功不代表语音、配对和后台流程验证通过。
 
 ### Wear OS 手表
 

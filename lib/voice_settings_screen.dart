@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'app_preferences.dart';
+import 'app_platform.dart';
 import 'api_key_help.dart';
 import 'data.dart';
 import 'ios_style.dart';
@@ -54,7 +55,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
       _services.where((item) => item.id == id).firstOrNull?.name ?? tr('未设置');
 
   Future<void> _choose(bool asr) async {
-    final value = await showCupertinoModalPopup<String>(
+    final value = await showAppModalPopup<String>(
       context: context,
       builder: (context) => CupertinoActionSheet(
         title: Text(tr(asr ? '语音识别服务' : '语音朗读服务')),
@@ -86,7 +87,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
   Future<void> _edit([VoiceProviderConfig? service]) async {
     await Navigator.push<void>(
       context,
-      CupertinoPageRoute(builder: (_) => VoiceServiceEditor(service: service)),
+      appPageRoute(builder: (_) => VoiceServiceEditor(service: service)),
     );
     await _load();
   }
@@ -106,7 +107,9 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
         children: [
           IosSection(
             footer: tr(
-              '手机按住录音，左滑取消，右滑转文字后确认，直接松手发送。手表左上滑取消，右上滑确认。朗读声音由 AI 生成。',
+              isDesktopApp
+                  ? '按住录音，左滑取消，右滑转文字后确认，直接松手发送。朗读声音由 AI 生成。'
+                  : '手机按住录音，左滑取消，右滑转文字后确认，直接松手发送。手表左上滑取消，右上滑确认。朗读声音由 AI 生成。',
             ),
             children: [
               IosRow(
@@ -243,7 +246,7 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
   }
 
   Future<void> _pickProtocol() async {
-    final value = await showCupertinoModalPopup<VoiceProtocol>(
+    final value = await showAppModalPopup<VoiceProtocol>(
       context: context,
       builder: (context) => CupertinoActionSheet(
         title: Text(tr('接口协议')),
@@ -272,7 +275,7 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
                   Uri.tryParse(item.baseUrl)?.host == 'api.xiaomimimo.com'),
         )
         .toList();
-    final selected = await showCupertinoModalPopup<int>(
+    final selected = await showAppModalPopup<int>(
       context: context,
       builder: (context) => CupertinoActionSheet(
         title: Text(tr('密钥来源')),
@@ -306,7 +309,7 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
   Future<void> _scanKey() async {
     final value = await Navigator.push<String>(
       context,
-      CupertinoPageRoute(
+      appPageRoute(
         builder: (_) =>
             const ProviderQrScanner(mode: ProviderQrScanMode.apiKey),
       ),
@@ -353,7 +356,7 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
 
     final result = await Navigator.push<String>(
       context,
-      CupertinoPageRoute(
+      appPageRoute(
         builder: (_) => VoiceCatalogPicker(
           title: kind == VoiceCatalogKind.voice ? '选择音色' : '选择模型',
           initialValue: controller.text,

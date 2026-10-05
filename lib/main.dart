@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:audioplayers/audioplayers.dart';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +14,8 @@ import 'package:record/record.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'api_client.dart';
+import 'app_platform.dart';
+import 'desktop_chat.dart';
 import 'app_preferences.dart';
 import 'assistant_markdown.dart';
 import 'chat_more_menu.dart';
@@ -25,6 +28,7 @@ import 'data.dart';
 import 'ios_style.dart';
 import 'message_copy.dart';
 import 'provider_screen.dart';
+import 'prompt_screen.dart';
 import 'privacy_screen.dart';
 import 'settings_screen.dart';
 import 'search_service.dart';
@@ -96,7 +100,7 @@ class ModelChatApp extends StatelessWidget {
       ),
       theme: ThemeData(
         useMaterial3: false,
-        platform: TargetPlatform.iOS,
+        platform: isDesktopApp ? defaultTargetPlatform : TargetPlatform.iOS,
         scaffoldBackgroundColor: IosColors.background,
         primaryColor: IosColors.blue,
         colorScheme: ColorScheme.fromSeed(
@@ -112,7 +116,7 @@ class ModelChatApp extends StatelessWidget {
       ),
       darkTheme: ThemeData(
         useMaterial3: false,
-        platform: TargetPlatform.iOS,
+        platform: isDesktopApp ? defaultTargetPlatform : TargetPlatform.iOS,
         brightness: Brightness.dark,
         scaffoldBackgroundColor: IosColors.background,
         primaryColor: IosColors.blue,
@@ -146,7 +150,79 @@ class ChatHome extends StatefulWidget {
 
 class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   static const _watchUpdates = MethodChannel('between_models/watch_updates');
+  static const _desktopMenu = MethodChannel('between_models/desktop_menu');
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  final _desktopNavigator = GlobalKey<NavigatorState>();
+  final _desktopRevision = ValueNotifier<int>(0);
+  DesktopSection _desktopSection = DesktopSection.chat;
+  bool _desktopWide = false;
+  late final _desktopObserver = DesktopNavigationObserver(() {
+    if (mounted) setState(() => _desktopSection = DesktopSection.chat);
+  });
+
+  NavigatorState get _navigation =>
+      isDesktopApp ? _desktopNavigator.currentState! : Navigator.of(context);
+
+  Future<T?> _pushRoute<T>(PageRoute<T> route, {DesktopSection? section}) {
+    if (isDesktopApp && section != null) {
+      _inputFocus.unfocus();
+      _navigation.popUntil((route) => route.isFirst);
+      setState(() => _desktopSection = section);
+    }
+    return _navigation.push(route);
+  }
+
+  void _showDesktopChat() {
+    if (!isDesktopApp) return;
+    _navigation.popUntil((route) => route.isFirst);
+    setState(() => _desktopSection = DesktopSection.chat);
+  }
+
+  void _selectDesktopSection(DesktopSection section) {
+    switch (section) {
+      case DesktopSection.chat:
+        _showDesktopChat();
+      case DesktopSection.providers:
+        _openProviders();
+      case DesktopSection.voice:
+        _openVoiceSettings();
+      case DesktopSection.search:
+        _openSearchSettings();
+      case DesktopSection.settings:
+        _openSettings();
+      case DesktopSection.prompts:
+        _pushRoute<void>(
+          appPageRoute(builder: (_) => const PromptSettingsScreen()),
+          section: section,
+        );
+      case DesktopSection.messages:
+        _pushRoute<void>(
+          appPageRoute(
+            builder: (_) =>
+                MessageSettingsScreen(canChangeSearch: _canChangeSearch),
+          ),
+          section: section,
+        );
+      case DesktopSection.privacy:
+        _pushRoute<bool>(
+          appPageRoute(
+            builder: (_) => PrivacyScreen(canClearData: _canClearData),
+          ),
+          section: section,
+        ).then((cleared) async {
+          if (cleared == true) {
+            await AppPreferences.instance.load();
+            await _load();
+          }
+        });
+      case DesktopSection.about:
+        _pushRoute<void>(
+          appPageRoute(builder: (_) => const AboutScreen()),
+          section: section,
+        );
+    }
+  }
+
   final _input = TextEditingController();
   final _inputFocus = FocusNode();
   final _recorder = AudioRecorder();
@@ -209,17 +285,26 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    if (isDesktopApp) {
+      _desktopMenu.setMethodCallHandler((call) async {
+        if (!mounted || Navigator.of(context).canPop()) return;
+        if (call.method == 'newConversation') await _newTopic();
+        if (call.method == 'settings') await _openSettings();
+      });
+    }
     _watchUpdates.setMethodCallHandler((call) async {
       if (call.method == 'changed' && mounted && !_sending && !_starting) {
         await _load();
       }
     });
     WidgetsBinding.instance.addObserver(this);
-    _watchConfigSubscription = ChatStore.instance.watchConfigurationChanges
-        .listen((_) {
-          unawaited(_syncWatchConfiguration());
-        });
-    unawaited(_syncWatchConfiguration());
+    if (supportsWatchCompanion) {
+      _watchConfigSubscription = ChatStore.instance.watchConfigurationChanges
+          .listen((_) {
+            unawaited(_syncWatchConfiguration());
+          });
+      unawaited(_syncWatchConfiguration());
+    }
     unawaited(_removeStaleVoiceFiles(DateTime.now()));
     _playbackCompletion = _player.onPlayerComplete.listen((_) {
       final path = _playingPath;
@@ -255,6 +340,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    if (isDesktopApp) _desktopMenu.setMethodCallHandler(null);
+    _desktopRevision.dispose();
     _watchUpdates.setMethodCallHandler(null);
     unawaited(_watchConfigSubscription?.cancel());
     WidgetsBinding.instance.removeObserver(this);
@@ -304,6 +391,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   }
 
   Future<void> _syncWatchConfiguration() async {
+    if (!supportsWatchCompanion) return;
     _watchConfigPending = true;
     if (_watchConfigSyncing) return;
     _watchConfigSyncing = true;
@@ -330,8 +418,10 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     try {
       bool watchProcessing = false;
       try {
-        watchProcessing =
-            await _watchUpdates.invokeMethod<bool>('isProcessing') ?? false;
+        if (supportsWatchCompanion) {
+          watchProcessing =
+              await _watchUpdates.invokeMethod<bool>('isProcessing') ?? false;
+        }
       } on MissingPluginException {
         // Wear OS integration is only installed in the Android phone app.
       }
@@ -395,29 +485,25 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   }
 
   Future<void> _openProviders() async {
-    await Navigator.push<bool>(
-      context,
-      CupertinoPageRoute(
-        builder: (_) => ProviderScreen(canClearData: _canClearData),
-      ),
+    await _pushRoute<bool>(
+      appPageRoute(builder: (_) => ProviderScreen(canClearData: _canClearData)),
+      section: DesktopSection.providers,
     );
     await _load();
   }
 
   Future<void> _openSettings() async {
-    await Navigator.push<void>(
-      context,
-      CupertinoPageRoute(
-        builder: (_) => SettingsScreen(canClearData: _canClearData),
-      ),
+    await _pushRoute<void>(
+      appPageRoute(builder: (_) => SettingsScreen(canClearData: _canClearData)),
+      section: DesktopSection.settings,
     );
     await _load();
   }
 
   Future<void> _openSearchSettings() async {
-    await Navigator.push<void>(
-      context,
-      CupertinoPageRoute(builder: (_) => const SearchSettingsScreen()),
+    await _pushRoute<void>(
+      appPageRoute(builder: (_) => const SearchSettingsScreen()),
+      section: DesktopSection.search,
     );
     await _load();
   }
@@ -426,9 +512,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       !_sending && !_starting && !_recording && !_transcribing;
 
   Future<void> _openMessageSettings() async {
-    await Navigator.push<void>(
-      context,
-      CupertinoPageRoute(
+    await _pushRoute<void>(
+      appPageRoute(
         builder: (_) =>
             MessageSettingsScreen(canChangeSearch: _canChangeSearch),
       ),
@@ -437,9 +522,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   }
 
   Future<void> _openModelSettings() async {
-    await Navigator.push<void>(
-      context,
-      CupertinoPageRoute(
+    await _pushRoute<void>(
+      appPageRoute(
         builder: (_) => ModelSettingsScreen(
           canClearData: _canClearData,
           onPrivacy: _openPrivacy,
@@ -450,19 +534,16 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   }
 
   Future<void> _openPrivacy() async {
-    final cleared = await Navigator.push<bool>(
-      context,
-      CupertinoPageRoute(
-        builder: (_) => PrivacyScreen(canClearData: _canClearData),
-      ),
+    final cleared = await _pushRoute<bool>(
+      appPageRoute(builder: (_) => PrivacyScreen(canClearData: _canClearData)),
     );
     if (cleared == true) await AppPreferences.instance.load();
   }
 
   Future<void> _openVoiceSettings() async {
-    await Navigator.push<void>(
-      context,
-      CupertinoPageRoute(builder: (_) => const VoiceSettingsScreen()),
+    await _pushRoute<void>(
+      appPageRoute(builder: (_) => const VoiceSettingsScreen()),
+      section: DesktopSection.voice,
     );
     await _load();
   }
@@ -484,6 +565,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
 
   Future<void> _chooseTopic(int id) async {
     _closeTopics();
+    _showDesktopChat();
     await _selectTopic(id);
   }
 
@@ -498,6 +580,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   }
 
   Future<void> _newTopic() async {
+    _showDesktopChat();
     if (_providers.isEmpty) {
       await _openProviders();
       if (!mounted || _providers.isEmpty) return;
@@ -557,9 +640,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       _notify(tr('请先停止当前回复，再切换模型'));
       return;
     }
-    final selection = await Navigator.push<ChatModelSelection>(
-      context,
-      CupertinoPageRoute(
+    final selection = await _pushRoute<ChatModelSelection>(
+      appPageRoute(
         builder: (_) => ChatModelSelector(
           providers: _providers,
           topics: _topics,
@@ -621,9 +703,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       await _openProviders();
       return;
     }
-    final changed = await Navigator.push<bool>(
-      context,
-      CupertinoPageRoute(builder: (_) => ProviderEditor(config: provider)),
+    final changed = await _pushRoute<bool>(
+      appPageRoute(builder: (_) => ProviderEditor(config: provider)),
     );
     await _load();
     if (changed == true && mounted) {
@@ -649,9 +730,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         .where((item) => item.id == id)
         .firstOrNull;
     if (service == null && openSettings && mounted) {
-      await Navigator.push<void>(
-        context,
-        CupertinoPageRoute(builder: (_) => const VoiceSettingsScreen()),
+      await _pushRoute<void>(
+        appPageRoute(builder: (_) => const VoiceSettingsScreen()),
       );
     }
     return service;
@@ -1337,8 +1417,65 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     }
   }
 
+  Widget _topicsPanel({bool persistent = false}) => TopicScreen(
+    key: ValueKey(
+      Object.hashAll(
+        _topics.map((topic) => Object.hash(topic.id, topic.title)),
+      ),
+    ),
+    persistent: persistent,
+    selectedId: _topic?.id,
+    generatingTopicId: _sendingTopicId,
+    onClose: _closeTopics,
+    onSelect: _chooseTopic,
+    onNew: _newFromDrawer,
+    onSettings: _settingsFromDrawer,
+    onChanged: _load,
+  );
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final wide = isDesktopApp && constraints.maxWidth >= 900;
+      if (!isDesktopApp) return _buildChat(context, false);
+      _desktopWide = wide;
+      _desktopRevision.value++;
+      bool current() =>
+          !Navigator.of(context).canPop() && !_navigation.canPop();
+      return DesktopChatKeyboard(
+        controller: _input,
+        inputFocus: _inputFocus,
+        onSend: () {
+          if (current() && !_voiceMode) _send();
+        },
+        onNew: _newTopic,
+        onSettings: _openSettings,
+        child: DesktopChatLayout(
+          showSidebar: wide,
+          sidebar: _desktopSection == DesktopSection.chat
+              ? _topicsPanel(persistent: true)
+              : DesktopNavigationMenu(
+                  selected: _desktopSection,
+                  onSelect: _selectDesktopSection,
+                ),
+          chat: Navigator(
+            key: _desktopNavigator,
+            observers: [_desktopObserver],
+            onGenerateRoute: (_) => PageRouteBuilder<void>(
+              transitionDuration: Duration.zero,
+              reverseTransitionDuration: Duration.zero,
+              pageBuilder: (context, _, _) => ValueListenableBuilder<int>(
+                valueListenable: _desktopRevision,
+                builder: (context, _, _) => _buildChat(context, _desktopWide),
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+  );
+
+  Widget _buildChat(BuildContext context, bool wide) {
     final provider = _providers
         .where((item) => item.id == _currentProviderId)
         .firstOrNull;
@@ -1350,31 +1487,25 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       key: _scaffoldKey,
       // Subscribe to theme changes so the entire chat follows system appearance.
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      drawer: SizedBox(
-        width:
-            MediaQuery.sizeOf(context).width.clamp(0.0, 420.0).toDouble() * .86,
-        child: TopicScreen(
-          key: ValueKey(
-            Object.hashAll(
-              _topics.map((topic) => Object.hash(topic.id, topic.title)),
+      drawer: wide
+          ? null
+          : SizedBox(
+              width:
+                  MediaQuery.sizeOf(context).width
+                      .clamp(0.0, 420.0)
+                      .toDouble() *
+                  .86,
+              child: _topicsPanel(),
             ),
-          ),
-          selectedId: _topic?.id,
-          generatingTopicId: _sendingTopicId,
-          onClose: _closeTopics,
-          onSelect: _chooseTopic,
-          onNew: _newFromDrawer,
-          onSettings: _settingsFromDrawer,
-          onChanged: _load,
-        ),
-      ),
       appBar: iosAppBar(
         title: title,
         backgroundColor: IosColors.chatChrome,
-        leading: IosNavButton(
-          icon: CupertinoIcons.line_horizontal_3,
-          onPressed: _openTopics,
-        ),
+        leading: wide
+            ? null
+            : IosNavButton(
+                icon: CupertinoIcons.line_horizontal_3,
+                onPressed: _openTopics,
+              ),
         titleWidget: ChatModelTitle(
           label: title,
           providerName: provider?.name,
@@ -1394,23 +1525,29 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CupertinoActivityIndicator(radius: 14))
-          : Column(
-              children: [
-                Expanded(
-                  child: Listener(
-                    behavior: HitTestBehavior.opaque,
-                    onPointerDown: (_) => _inputFocus.unfocus(),
-                    child: _topic == null && !_hasDraft
-                        ? _welcome()
-                        : _chatList(),
-                  ),
+      body: Align(
+        alignment: Alignment.topCenter,
+        child: SizedBox(
+          width: isDesktopApp ? 960 : double.infinity,
+          child: _loading
+              ? const Center(child: CupertinoActivityIndicator(radius: 14))
+              : Column(
+                  children: [
+                    Expanded(
+                      child: Listener(
+                        behavior: HitTestBehavior.opaque,
+                        onPointerDown: (_) => _inputFocus.unfocus(),
+                        child: _topic == null && !_hasDraft
+                            ? _welcome()
+                            : _chatList(),
+                      ),
+                    ),
+                    if (_error != null) _errorCard(),
+                    _composer(),
+                  ],
                 ),
-                if (_error != null) _errorCard(),
-                _composer(),
-              ],
-            ),
+        ),
+      ),
     );
   }
 
@@ -1591,7 +1728,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     String content, {
     required bool renderMarkdown,
   }) async {
-    final format = await showCupertinoModalPopup<MessageCopyFormat>(
+    final format = await showAppModalPopup<MessageCopyFormat>(
       context: context,
       builder: (sheetContext) => CupertinoActionSheet(
         title: Text(tr('复制消息')),
@@ -1646,7 +1783,10 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           Flexible(
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                maxWidth: MediaQuery.sizeOf(context).width * .86,
+                maxWidth: (MediaQuery.sizeOf(context).width * .86).clamp(
+                  0.0,
+                  760.0,
+                ),
               ),
               child: Column(
                 crossAxisAlignment: user
@@ -1794,12 +1934,14 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                     minLines: 1,
                     maxLines: 5,
                     textAlignVertical: TextAlignVertical.center,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => _send(),
+                    textInputAction: isDesktopApp
+                        ? TextInputAction.newline
+                        : TextInputAction.send,
+                    onSubmitted: isDesktopApp ? null : (_) => _send(),
                     textCapitalization: TextCapitalization.sentences,
                     placeholder: _providers.isEmpty
                         ? tr('先接入模型服务')
-                        : tr('发送消息'),
+                        : tr(isDesktopApp ? '发送消息，Shift+Enter 换行' : '发送消息'),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 14,
                       vertical: 11,

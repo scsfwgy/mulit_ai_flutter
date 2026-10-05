@@ -41,7 +41,7 @@ class _PromptSettingsScreenState extends State<PromptSettingsScreen> {
   Future<void> _edit({ModelPrompt? modelPrompt, bool global = false}) async {
     await Navigator.push<bool>(
       context,
-      CupertinoPageRoute(
+      appPageRoute(
         builder: (_) => PromptEditor(
           globalText: global ? _global : null,
           providers: global ? null : _providers,
@@ -174,7 +174,7 @@ class _PromptEditorState extends State<PromptEditor> {
   }
 
   Future<void> _chooseProvider() async {
-    final selected = await showCupertinoModalPopup<int>(
+    final selected = await showAppModalPopup<int>(
       context: context,
       builder: (context) => CupertinoActionSheet(
         title: Text(tr('选择服务')),

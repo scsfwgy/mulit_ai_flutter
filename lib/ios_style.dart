@@ -4,6 +4,60 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'app_preferences.dart';
+import 'app_platform.dart';
+
+/// Phone routes keep Cupertino transitions; desktop pages change immediately.
+PageRoute<T> appPageRoute<T>({required WidgetBuilder builder}) => isDesktopApp
+    ? PageRouteBuilder<T>(
+        pageBuilder: (context, _, _) =>
+            DesktopDetailFrame(child: builder(context)),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+      )
+    : CupertinoPageRoute<T>(builder: builder);
+
+/// Desktop detail pages stay inside the right pane with a readable content width.
+class DesktopDetailFrame extends StatelessWidget {
+  const DesktopDetailFrame({super.key, required this.child});
+  final Widget child;
+  @override
+  Widget build(BuildContext context) => ColoredBox(
+    color: IosColors.background,
+    child: Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 920),
+        child: child,
+      ),
+    ),
+  );
+}
+
+/// Desktop choices are centered and do not slide in from the phone's bottom edge.
+Future<T?> showAppModalPopup<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+}) {
+  if (!isDesktopApp) {
+    return showCupertinoModalPopup<T>(context: context, builder: builder);
+  }
+  return showGeneralDialog<T>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+    barrierColor: Colors.black54,
+    transitionDuration: Duration.zero,
+    pageBuilder: (context, _, _) => Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 560,
+          maxHeight: MediaQuery.sizeOf(context).height - 48,
+        ),
+        child: builder(context),
+      ),
+    ),
+  );
+}
 
 abstract final class IosColors {
   static bool get _dark => AppPreferences.instance.dark;
@@ -63,18 +117,18 @@ AppBar iosAppBar({
   title:
       titleWidget ??
       Text(tr(title), maxLines: 1, overflow: TextOverflow.ellipsis),
-  centerTitle: true,
+  centerTitle: !isDesktopApp,
   leading: leading,
-  leadingWidth: leading == null ? null : 90,
+  leadingWidth: leading == null ? null : (isDesktopApp ? 56 : 90),
   actions: actions,
   backgroundColor: backgroundColor ?? IosColors.surface,
   foregroundColor: IosColors.label,
   elevation: 0,
   scrolledUnderElevation: 0,
-  toolbarHeight: 54,
+  toolbarHeight: isDesktopApp ? 64 : 54,
   titleTextStyle: TextStyle(
     color: IosColors.label,
-    fontSize: 17,
+    fontSize: isDesktopApp ? 21 : 17,
     fontWeight: FontWeight.w600,
   ),
   shape: Border(bottom: BorderSide(color: IosColors.separator, width: .5)),

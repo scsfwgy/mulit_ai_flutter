@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'data.dart';
 import 'app_preferences.dart';
+import 'app_platform.dart';
 import 'ios_style.dart';
 
 class PrivacyScreen extends StatefulWidget {
@@ -32,7 +33,9 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
         title: Text(tr('清空本地数据？')),
         content: Text(
           tr(
-            '手机上的话题、聊天记录、服务配置、API Key 和提示词会被删除。手表上的配置、密钥和问答不会自动清除；Wear OS 需卸载手表应用，Apple Watch 请在手表设置中清除配置和问答。此操作无法撤销。',
+            isDesktopApp
+                ? '本机的话题、聊天记录、服务配置、API Key 和提示词会被删除。其他设备的数据不会被删除。此操作无法撤销。'
+                : '手机上的话题、聊天记录、服务配置、API Key 和提示词会被删除。手表上的配置、密钥和问答不会自动清除；Wear OS 需卸载手表应用，Apple Watch 请在手表设置中清除配置和问答。此操作无法撤销。',
           ),
         ),
         actions: [
@@ -100,19 +103,22 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
               _PrivacyRow(
                 title: '联网搜索',
                 detail: tr(
-                  '开启联网搜索后，当前问题与搜索密钥直接发送到所选搜索服务，网页资料随后发送给文本模型。手机回复的来源资料保存在本机明文数据库中。联网开关、所选搜索服务及密钥经配对通道同步到手表；Wear OS 加密保存，Apple Watch 使用钥匙串。手表问答重连后同步到手机。',
+                  isDesktopApp
+                      ? '开启联网搜索后，当前问题与搜索密钥直接发送到所选搜索服务，网页资料随后发送给文本模型。回复的来源资料保存在本机明文数据库中。'
+                      : '开启联网搜索后，当前问题与搜索密钥直接发送到所选搜索服务，网页资料随后发送给文本模型。手机回复的来源资料保存在本机明文数据库中。联网开关、所选搜索服务及密钥经配对通道同步到手表；Wear OS 加密保存，Apple Watch 使用钥匙串。手表问答重连后同步到手机。',
                 ),
               ),
-              _PrivacyRow(
-                title: '手表数据',
-                detail: tr(
-                  '手表安全保存所选服务密钥和问答。Apple Watch 优先在手表请求，手表网络不可用时再尝试手机；Wear OS 优先通过手机请求，不可达时使用手表网络。Wear OS 使用加密存储，Apple Watch 使用钥匙串；问答重连后同步到手机。清空手机数据不会自动清除手表数据。',
+              if (supportsWatchCompanion)
+                _PrivacyRow(
+                  title: '手表数据',
+                  detail: tr(
+                    '手表安全保存所选服务密钥和问答。Apple Watch 优先在手表请求，手表网络不可用时再尝试手机；Wear OS 优先通过手机请求，不可达时使用手表网络。Wear OS 使用加密存储，Apple Watch 使用钥匙串；问答重连后同步到手机。清空手机数据不会自动清除手表数据。',
+                  ),
                 ),
-              ),
               _PrivacyRow(
                 title: tr('使用统计'),
                 detail: tr(
-                  'Android 和 iOS 正式版使用 Firebase Analytics 记录应用使用事件、应用实例标识与设备信息，不收集广告标识符。不会主动上传聊天内容、API Key、录音或服务地址。调试和测试版停用统计；手表暂未接入。',
+                  isDesktopApp ? 'macOS 版未接入 Firebase Analytics 使用统计。' : 'Android 和 iOS 正式版使用 Firebase Analytics 记录应用使用事件、应用实例标识与设备信息，不收集广告标识符。不会主动上传聊天内容、API Key、录音或服务地址。调试和测试版停用统计；手表暂未接入。',
                 ),
               ),
             ],

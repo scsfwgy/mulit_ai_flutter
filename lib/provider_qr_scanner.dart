@@ -6,6 +6,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import 'data.dart';
 import 'app_preferences.dart';
+import 'app_platform.dart';
 import 'ios_style.dart';
 
 enum ProviderQrScanMode { config, apiKey }
@@ -133,7 +134,9 @@ class _ProviderQrScannerState extends State<ProviderQrScanner>
             padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
             child: Text(
               tr(
-                widget.mode == ProviderQrScanMode.apiKey
+                isDesktopApp
+                    ? '识别内容仅用于填写或导入配置。密钥保存在本机安全存储中。'
+                    : widget.mode == ProviderQrScanMode.apiKey
                     ? '扫描仅包含 API Key 字符串的二维码，识别后自动填入。'
                     : '扫描包含完整服务配置 JSON 的二维码，识别成功后自动导入。',
               ),
