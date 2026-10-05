@@ -30,6 +30,7 @@ import 'settings_screen.dart';
 import 'search_service.dart';
 import 'search_settings_screen.dart';
 import 'search_sources.dart';
+import 'startup_screen.dart';
 import 'topic_screen.dart';
 import 'voice_client.dart';
 import 'voice_recording.dart';
@@ -39,7 +40,7 @@ import 'watch_chat.dart';
 
 enum _ChatErrorAction { none, configure, model, request, retry, search }
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
   assert(() {
     // Inspector paint diagnostics can persist across hot restarts in debug.
@@ -49,11 +50,6 @@ Future<void> main() async {
     debugRepaintRainbowEnabled = false;
     return true;
   }());
-  try {
-    await AppPreferences.instance.load();
-  } catch (_) {
-    // ChatHome reports storage errors; keep the app open with default appearance.
-  }
   runApp(const ModelChatApp());
 }
 
@@ -133,13 +129,17 @@ class ModelChatApp extends StatelessWidget {
         ),
       ),
       themeMode: AppPreferences.instance.themeMode,
-      home: const ChatHome(),
+      home: StartupScreen(
+        initialize: AppPreferences.instance.load,
+        homeBuilder: (onReady) => ChatHome(onReady: onReady),
+      ),
     ),
   );
 }
 
 class ChatHome extends StatefulWidget {
-  const ChatHome({super.key});
+  const ChatHome({super.key, this.onReady});
+  final VoidCallback? onReady;
   @override
   State<ChatHome> createState() => _ChatHomeState();
 }
@@ -326,6 +326,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   }
 
   Future<void> _load() async {
+    final initialLoad = _loading;
     try {
       bool watchProcessing = false;
       try {
@@ -357,7 +358,6 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           ? <ChatMessage>[]
           : await ChatStore.instance.messages(selected.id);
       if (!mounted) return;
-      final initialLoad = _loading;
       setState(() {
         _providers = providers;
         _searchEnabled = searchEnabled;
@@ -389,6 +389,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           _errorAction = _ChatErrorAction.none;
         });
       }
+    } finally {
+      if (initialLoad && mounted) widget.onReady?.call();
     }
   }
 

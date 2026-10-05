@@ -80,8 +80,8 @@ struct WatchContentView: View {
     VStack(spacing: 10) {
       Text(label("长按屏幕说话，松手发送；左上滑取消，右上滑转文字后确认。",
         "Hold to speak, release to send. Slide up-left to cancel, up-right to review text."))
-      Text(label("双击聊天进入设置，上下滑动查看聊天。",
-        "Double-tap the chat for settings. Swipe up or down to read."))
+      Text(label("双击切换聊天与设置，设置页右滑返回；上下滑动查看内容。",
+        "Double-tap to switch chat and settings. Swipe right to leave settings; swipe up or down to read."))
     }.font(.system(size: 13)).foregroundStyle(.secondary).multilineTextAlignment(.center)
   }
 
@@ -160,9 +160,12 @@ struct WatchContentView: View {
   private var settingsPage: some View {
     ScrollView {
       VStack(spacing: 10) {
-        Button { page = 0 } label: {
-          Text(label("‹  设置", "‹  Settings")).font(.headline)
-        }.buttonStyle(.plain)
+        VStack(spacing: 4) {
+          Text(label("设置", "Settings")).font(.headline)
+          Text(label("双击或右滑返回聊天", "Double-tap or swipe right to chat"))
+            .font(.system(size: 10)).foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+        }
         Text(session.connectionLabel).font(.system(size: 12)).foregroundStyle(.secondary)
           .multilineTextAlignment(.center)
         Button(label("开启新话题", "Start new topic")) {
@@ -178,6 +181,10 @@ struct WatchContentView: View {
             recordingMode(label("新手模式", "Beginner"), simple: false)
             recordingMode(label("简洁模式", "Simple"), simple: true)
           }
+          Text(label("新手：显示方向提示、波形和计时。\n简洁：仅显示语音图标和音量环。\n两种模式的录音手势相同。",
+            "Beginner: hints, waveform and timer.\nSimple: voice icon and volume ring.\nBoth use the same recording gestures."))
+            .font(.system(size: 10)).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
         }.frame(maxWidth: .infinity, alignment: .leading)
         serviceDetails(label("文本模型", "Text model"),
           provider: session.configuration?.providerName, model: session.configuration?.model)
@@ -216,8 +223,21 @@ struct WatchContentView: View {
           .font(.system(size: 10)).foregroundStyle(.secondary).multilineTextAlignment(.center)
         Button(label("清除手表配置和问答", "Clear watch settings and chats"), role: .destructive) { confirmClear = true }
           .disabled(session.busy || session.recording || session.syncingSettings)
+        Button(label("返回聊天", "Back to chat")) { page = 0 }
+          .buttonStyle(.plain).foregroundStyle(accent).padding(.vertical, 8)
       }.font(.system(size: 13)).padding(.horizontal, 8)
     }
+    .contentShape(Rectangle())
+    .highPriorityGesture(TapGesture(count: 2).onEnded { page = 0 })
+    .simultaneousGesture(
+      DragGesture(minimumDistance: 20).onEnded { value in
+        let translation = value.translation
+        if translation.width > 48 && translation.width > abs(translation.height) * 1.5 {
+          page = 0
+        }
+      }
+    )
+    .accessibilityHint(label("双击或右滑返回聊天", "Double-tap or swipe right to chat"))
   }
 
   private var speechIndicator: some View {

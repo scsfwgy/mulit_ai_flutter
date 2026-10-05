@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'api_key_help.dart';
+
 import 'app_preferences.dart';
 import 'data.dart';
 import 'ios_style.dart';
@@ -497,6 +499,7 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
                     ? null
                     : () => _openProviderPage(_service.pricingUrl),
               ),
+              ApiKeyHelpRow(url: '$apiKeyTutorialUrl#search', enabled: !_busy),
             ],
           ),
           IosSection(

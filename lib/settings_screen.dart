@@ -4,6 +4,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'api_key_help.dart';
+
 import 'app_preferences.dart';
 import 'data.dart';
 import 'ios_style.dart';
@@ -616,6 +618,7 @@ class _AboutScreenState extends State<AboutScreen> {
                 leading: Icon(CupertinoIcons.globe, color: IosColors.blue),
                 onTap: _openWebsite,
               ),
+              const ApiKeyHelpRow(url: apiKeyTutorialUrl),
               IosRow(
                 title: tr('联系与反馈'),
                 subtitle: 'mateolim93@gmail.com',

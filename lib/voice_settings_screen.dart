@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'app_preferences.dart';
+import 'api_key_help.dart';
 import 'data.dart';
 import 'ios_style.dart';
 import 'provider_qr_scanner.dart';
@@ -592,6 +593,14 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
               if (_textProviderId == null)
                 _field('API Key（留空保留原密钥）', _key, secret: true),
             ],
+          ),
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: _url,
+            builder: (context, value, _) => ApiKeyHelpSection(
+              category: 'voice',
+              officialUrl: voiceApiKeyUrlForEndpoint(_protocol, value.text),
+              enabled: !_saving,
+            ),
           ),
           IosSection(
             title: '语音模型',

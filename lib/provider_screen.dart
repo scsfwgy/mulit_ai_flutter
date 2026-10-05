@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'app_preferences.dart';
 
 import 'api_client.dart';
+import 'api_key_help.dart';
 import 'data.dart';
 import 'ios_style.dart';
 import 'model_picker.dart';
@@ -681,6 +682,27 @@ class _ProviderEditorState extends State<ProviderEditor> {
                       ),
                     ],
                   ),
+                AnimatedBuilder(
+                  animation: Listenable.merge([_baseUrl, _json]),
+                  builder: (context, _) {
+                    var endpoint = _baseUrl.text;
+                    if (_jsonMode) {
+                      try {
+                        final value = jsonDecode(_json.text);
+                        endpoint = value is Map && value['baseUrl'] is String
+                            ? value['baseUrl'] as String
+                            : '';
+                      } catch (_) {
+                        endpoint = '';
+                      }
+                    }
+                    return ApiKeyHelpSection(
+                      category: 'text',
+                      officialUrl: textApiKeyUrlForEndpoint(endpoint),
+                      enabled: !_busy,
+                    );
+                  },
+                ),
                 IosSection(
                   title: '模型',
                   footer: '优先显示本地缓存，可在列表中刷新。获取失败时仍可手动填写模型 ID。',

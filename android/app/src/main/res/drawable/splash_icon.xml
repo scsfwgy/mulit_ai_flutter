@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12 draws the icon in a 288dp box and masks its central 192dp.
+     Keep our 96dp launch artwork fully inside that mask. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/launch_logo"
+    android:insetLeft="33.3333%"
+    android:insetTop="33.3333%"
+    android:insetRight="33.3333%"
+    android:insetBottom="33.3333%" />

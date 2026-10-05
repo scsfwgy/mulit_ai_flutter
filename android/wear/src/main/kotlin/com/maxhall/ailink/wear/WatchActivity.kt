@@ -96,6 +96,8 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
     private val localizedLabels = mutableMapOf<TextView, String>()
     private var page = 0
     private var consumeDoubleTap = false
+    private var pendingSettingsTap: MotionEvent? = null
+    private var settingsTapConsumed = false
     private var holdingChat = false
     private var chatBusy = false
     private var showingGuide = false
@@ -331,6 +333,8 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
     }
 
     override fun onDestroy() {
+        pendingSettingsTap?.recycle()
+        pendingSettingsTap = null
         if (Build.VERSION.SDK_INT >= 33) {
             backCallback?.let { onBackInvokedDispatcher.unregisterOnBackInvokedCallback(it) }
         }
@@ -960,15 +964,37 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             }
             return true
         }
-        if (page != 0 || showingGuide) return super.dispatchTouchEvent(event)
+        if (showingGuide) return super.dispatchTouchEvent(event)
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
             pressStartX = event.rawX
             pressStartY = event.rawY
             holdingChat = false
             recordingOverlay.releaseAction = WatchReleaseAction.SEND
         }
+        settingsTapConsumed = false
         chatGestures.onTouchEvent(event)
-        if (consumeDoubleTap) return true
+        if (consumeDoubleTap) {
+            if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                consumeDoubleTap = false
+            }
+            return true
+        }
+        if (settingsTapConsumed) return true
+        if (page != 0) {
+            if (event.actionMasked == MotionEvent.ACTION_MOVE &&
+                WatchSettingsGesture.shouldReturnToChat(
+                    (event.rawX - pressStartX) / resources.displayMetrics.density,
+                    (event.rawY - pressStartY) / resources.displayMetrics.density,
+                )) {
+                val cancel = MotionEvent.obtain(event).apply { action = MotionEvent.ACTION_CANCEL }
+                super.dispatchTouchEvent(cancel)
+                cancel.recycle()
+                consumeDoubleTap = true
+                showPage(0)
+                return true
+            }
+            return super.dispatchTouchEvent(event)
+        }
         if (holdingChat) {
             when (event.actionMasked) {
                 MotionEvent.ACTION_MOVE -> {
@@ -998,6 +1024,8 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
     }
 
     private fun showPage(index: Int) {
+        pendingSettingsTap?.recycle()
+        pendingSettingsTap = null
         if (index != 0 && recording) cancelRecording()
         page = index
         showingGuide = index == 0 && !watchSettings.getBoolean("gestureGuideSeen", false)
@@ -1093,9 +1121,27 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         chatGestures = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(event: MotionEvent): Boolean = true
 
+            override fun onSingleTapUp(event: MotionEvent): Boolean {
+                if (page != 1) return false
+                pendingSettingsTap?.recycle()
+                pendingSettingsTap = MotionEvent.obtain(event)
+                settingsTapConsumed = true
+                return true
+            }
+
+            override fun onSingleTapConfirmed(event: MotionEvent): Boolean {
+                // Wait for the double-tap decision before activating settings
+                // controls, including the new-topic action and recording mode.
+                val tap = pendingSettingsTap ?: return false
+                pendingSettingsTap = null
+                if (page == 1) super@WatchActivity.dispatchTouchEvent(tap)
+                tap.recycle()
+                return true
+            }
+
             override fun onDoubleTap(event: MotionEvent): Boolean {
                 consumeDoubleTap = true
-                showPage(1)
+                showPage(if (page == 0) 1 else 0)
                 // Prevent the second tap from also activating a control below it.
                 val cancel = MotionEvent.obtain(event).apply { action = MotionEvent.ACTION_CANCEL }
                 super@WatchActivity.dispatchTouchEvent(cancel)
@@ -1171,8 +1217,9 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(38, 30, 38, 48)
         }
-        settingsPage.addView(uiLabel("‹  设置", 18f, primaryColor, true).apply {
-            setOnClickListener { showPage(0) }
+        settingsPage.addView(uiLabel("设置", 18f, primaryColor, true))
+        settingsPage.addView(uiLabel("双击或右滑返回聊天", 10f, secondaryColor).apply {
+            setPadding(0, 6, 0, 4)
         })
         settingsStatus = label(watchText("正在检查手机连接…"), 12f, secondaryColor)
         settingsStatus.setPadding(0, 7, 0, 10)
@@ -1212,6 +1259,10 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         modes.addView(beginnerMode)
         modes.addView(simpleMode)
         settingsPage.addView(modes)
+        settingsPage.addView(uiLabel("新手：显示方向提示、波形和计时。\n简洁：仅显示语音图标和音量环。\n两种模式的录音手势相同。", 10f, secondaryColor).apply {
+            gravity = Gravity.START
+            setPadding(0, 0, 0, (12 * resources.displayMetrics.density).toInt())
+        })
         configSummary = label(watchText("等待手机配置"), 12f, mutedColor)
         configSummary.setPadding(0, 0, 0, 8)
         settingsPage.addView(configSummary)
@@ -1256,7 +1307,11 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         settingsPage.addView(sound)
         settingsPage.addView(uiLabel("模型、语音与联网服务在手机端设置", 11f, secondaryColor))
         settingsPage.addView(uiLabel("长按屏幕说话，松手发送；左上滑取消，右上滑转文字后确认。", 11f, secondaryColor))
-        settingsPage.addView(uiLabel("双击聊天进入设置，上下滑动查看聊天。", 11f, secondaryColor))
+        settingsPage.addView(uiLabel("双击切换聊天与设置，设置页右滑返回；上下滑动查看内容。", 11f, secondaryColor))
+        settingsPage.addView(uiLabel("返回聊天", 13f, accentColor, true).apply {
+            setPadding(0, 12, 0, 8)
+            setOnClickListener { showPage(0) }
+        })
         settingsScroll.addView(settingsPage)
         val guide = ScrollView(this).apply { setBackgroundColor(backgroundColor) }
         guide.addView(LinearLayout(this).apply {
@@ -1265,7 +1320,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             val density = resources.displayMetrics.density
             setPadding((26 * density).toInt(), (20 * density).toInt(), (26 * density).toInt(), (24 * density).toInt())
             addView(uiLabel("开始聊天", 18f, primaryColor, true))
-            for (key in listOf("长按屏幕说话，松手发送；左上滑取消，右上滑转文字后确认。", "双击聊天进入设置，上下滑动查看聊天。")) {
+            for (key in listOf("长按屏幕说话，松手发送；左上滑取消，右上滑转文字后确认。", "双击切换聊天与设置，设置页右滑返回；上下滑动查看内容。")) {
                 addView(uiLabel(key, 13f, secondaryColor).apply { setPadding(0, 10, 0, 10) })
             }
             addView(uiLabel("知道了", 15f, accentColor, true).apply {
