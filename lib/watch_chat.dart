@@ -10,6 +10,7 @@ import 'package:flutter/widgets.dart';
 import 'api_client.dart';
 import 'data.dart';
 import 'message_copy.dart';
+import 'search_service.dart';
 import 'voice_client.dart';
 import 'voice_send_preference.dart';
 
@@ -78,6 +79,8 @@ void startWatchWorker() {
           args['providerId'] as int,
           args['model'] as String,
           requireComplete: args['requireComplete'] == true,
+          searchEnabled: args['searchEnabled'] == true,
+          searchProviderId: args['searchProviderId'] as String?,
           onUpdate: publish,
         );
       } else if (kind == 'remote-tts') {
@@ -96,6 +99,7 @@ void startWatchWorker() {
         WatchChatException() => error.message,
         VoiceException() => error.message,
         ApiException() => error.message,
+        SearchException() => error.message,
         _ => '手机处理请求失败，请重试',
       };
       await publish({
@@ -116,12 +120,14 @@ bool _isNetworkFailure(Object error) =>
     error is TimeoutException ||
     error is HttpException ||
     error is http.ClientException ||
+    (error is SearchException && error.networkFailure) ||
     (error is ApiException && error.kind == ApiErrorKind.network);
 
 /// A refused connection or DNS lookup failed before a request reached a service.
 /// Socket timeouts, resets and generic HTTP client errors are ambiguous.
 bool watchRetrySafe(Object error) =>
     (error is ApiException && error.retrySafe) ||
+    (error is SearchException && error.retrySafe) ||
     (error is SocketException && [8, 61].contains(error.osError?.errorCode));
 
 typedef WatchAudio = ({Uint8List bytes, String format});
@@ -157,6 +163,8 @@ class WatchChatProcessor {
     int providerId,
     String model, {
     bool requireComplete = false,
+    bool searchEnabled = false,
+    String? searchProviderId,
     required WatchUpdate onUpdate,
   }) async {
     final source = jsonDecode(rawHistory);
@@ -198,6 +206,7 @@ class WatchChatProcessor {
     final client = ModelApiClient(provider, key);
     final answer = StringBuffer();
     var lastPublished = 0;
+    var searched = false;
     final clock = Stopwatch()..start();
     try {
       await for (final chunk in client.streamReply(
@@ -205,6 +214,11 @@ class WatchChatProcessor {
         model,
         systemPrompt: await store.systemPrompt(providerId, model),
         requireComplete: requireComplete,
+        webSearch: await _webSearch(
+          enabled: searchEnabled,
+          providerId: searchProviderId,
+        ),
+        onSearchResults: (_) => searched = true,
       )) {
         answer.write(chunk);
         if (answer.length > 100000) throw const WatchChatException('模型回复过长');
@@ -218,9 +232,15 @@ class WatchChatProcessor {
     } catch (error) {
       await onUpdate({
         'stage': 'error',
-        'error': error is ApiException ? error.message : '手机模型请求失败',
-        'networkFailure': answer.isEmpty && _isNetworkFailure(error),
-        'retrySafe': answer.isEmpty && watchRetrySafe(error),
+        'error': switch (error) {
+          ApiException() => error.message,
+          SearchException() => error.message,
+          WatchChatException() => error.message,
+          _ => '手机模型请求失败',
+        },
+        'networkFailure':
+            answer.isEmpty && !searched && _isNetworkFailure(error),
+        'retrySafe': answer.isEmpty && !searched && watchRetrySafe(error),
       });
     } finally {
       clock.stop();
@@ -285,6 +305,14 @@ class WatchChatProcessor {
       };
     }
 
+    final search = await store.selectedSearchProvider();
+    final searchKey = search == null
+        ? null
+        : await store.searchApiKey(search.id);
+    final searchReady =
+        search != null &&
+        searchKey?.trim().isNotEmpty == true &&
+        _validEndpoint(search.endpoint);
     final asr = await voice('voice_asr_id');
     final textReady =
         provider != null &&
@@ -297,6 +325,10 @@ class WatchChatProcessor {
       'model': model,
       'textReady': textReady,
       'asrReady': asr != null,
+      'searchEnabled': await store.setting('search_enabled') == '1',
+      'searchReady': searchReady,
+      'searchProviderName': search?.name ?? '',
+      'searchService': search?.service.name ?? '',
       if (includeKeys) ...{
         'version': 1,
         'providerId': provider?.id,
@@ -309,12 +341,34 @@ class WatchChatProcessor {
             : await store.systemPrompt(provider.id, model),
         'asr': asr,
         'tts': await voice('voice_tts_id'),
+        'search': search == null
+            ? null
+            : {...search.toJson(), 'apiKey': searchKey},
       },
       'autoSend': VoiceSendPreference.autoSend(
         await store.setting(VoiceSendPreference.key),
       ),
       'speak': await store.setting('watch_tts_enabled') == '1',
     };
+  }
+
+  Future<({SearchProviderConfig config, String apiKey})?> _webSearch({
+    bool? enabled,
+    String? providerId,
+  }) async {
+    if (!(enabled ?? (await store.setting('search_enabled') == '1'))) {
+      return null;
+    }
+    final config = providerId == null
+        ? await store.selectedSearchProvider()
+        : (await store.searchProviders())
+              .where((item) => item.id == providerId)
+              .firstOrNull;
+    final key = config == null ? null : await store.searchApiKey(config.id);
+    if (config == null || key == null || key.trim().isEmpty) {
+      throw const WatchChatException('请先在手机端配置联网搜索并同步手表');
+    }
+    return (config: config, apiKey: key);
   }
 
   Future<void> syncTurn(String raw) async {
@@ -449,6 +503,7 @@ class WatchChatProcessor {
     final client = ModelApiClient(provider, key);
     final clock = Stopwatch()..start();
     ReplyUsage? usage;
+    List<SearchSource> sources = const [];
     int? firstTokenMs;
     final answer = StringBuffer();
     var lastPublished = 0;
@@ -458,6 +513,8 @@ class WatchChatProcessor {
         model,
         systemPrompt: systemPrompt,
         onUsage: (value) => usage = (usage ?? const ReplyUsage()).merge(value),
+        webSearch: await _webSearch(),
+        onSearchResults: (value) => sources = value,
       )) {
         firstTokenMs ??= clock.elapsedMilliseconds;
         answer.write(chunk);
@@ -484,6 +541,7 @@ class WatchChatProcessor {
           totalMs: clock.elapsedMilliseconds,
           inputTokens: usage?.inputTokens,
           outputTokens: usage?.outputTokens,
+          searchSources: sources,
         );
       }
     }

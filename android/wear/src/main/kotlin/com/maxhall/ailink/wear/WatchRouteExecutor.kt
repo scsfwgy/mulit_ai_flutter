@@ -15,11 +15,13 @@ class WatchRouteExecutor {
         onPhone: (fallback: Boolean) -> Unit = {},
         onWatch: (fallback: Boolean) -> Unit = {},
     ): T {
+        if (Thread.currentThread().isInterrupted) throw InterruptedException()
         if (connectedPhone != null) {
             onPhone(false)
             try {
                 return phone(connectedPhone)
             } catch (error: PhoneRelayException) {
+                if (Thread.currentThread().isInterrupted) throw InterruptedException()
                 if (!error.networkFailure) throw error
                 onWatch(true)
                 try {
@@ -33,6 +35,7 @@ class WatchRouteExecutor {
         try {
             return watch()
         } catch (error: IOException) {
+            if (Thread.currentThread().isInterrupted) throw InterruptedException()
             val node = reconnectPhone() ?: throw error
             onPhone(true)
             try {

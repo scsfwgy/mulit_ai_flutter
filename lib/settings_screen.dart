@@ -5,11 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'app_preferences.dart';
+import 'data.dart';
 import 'ios_style.dart';
 import 'privacy_screen.dart';
 import 'prompt_screen.dart';
 import 'provider_screen.dart';
 import 'voice_settings_screen.dart';
+import 'search_settings_screen.dart';
 import 'watch_settings_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -106,6 +108,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               IosRow(
+                title: tr('联网搜索'),
+                leading: Icon(CupertinoIcons.search, color: IosColors.blue),
+                onTap: () => Navigator.push<void>(
+                  context,
+                  CupertinoPageRoute(
+                    builder: (_) => const SearchSettingsScreen(),
+                  ),
+                ),
+              ),
+              IosRow(
                 title: tr('手表'),
                 leading: Icon(
                   CupertinoIcons.device_phone_portrait,
@@ -119,12 +131,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               IosRow(
-                title: tr('消息信息'),
+                title: tr('消息设置'),
                 leading: Icon(CupertinoIcons.info, color: IosColors.blue),
                 onTap: () => Navigator.push<void>(
                   context,
                   CupertinoPageRoute(
-                    builder: (_) => const MessageInfoSettingsScreen(),
+                    builder: (_) => MessageSettingsScreen(
+                      canChangeSearch: widget.canClearData,
+                    ),
                   ),
                 ),
               ),
@@ -172,8 +186,85 @@ class _SettingsScreenState extends State<SettingsScreen> {
   );
 }
 
-class MessageInfoSettingsScreen extends StatelessWidget {
-  const MessageInfoSettingsScreen({super.key});
+class MessageSettingsScreen extends StatefulWidget {
+  const MessageSettingsScreen({super.key, this.canChangeSearch});
+
+  final bool Function()? canChangeSearch;
+
+  @override
+  State<MessageSettingsScreen> createState() => _MessageSettingsScreenState();
+}
+
+class _MessageSettingsScreenState extends State<MessageSettingsScreen> {
+  bool _searchEnabled = false;
+  bool _loadingSearch = true;
+  bool _savingSearch = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSearch();
+  }
+
+  Future<void> _loadSearch() async {
+    try {
+      final enabled = await ChatStore.instance.setting('search_enabled') == '1';
+      if (mounted) setState(() => _searchEnabled = enabled);
+    } catch (_) {
+      // Keep settings accessible if local storage is temporarily unavailable.
+    } finally {
+      if (mounted) setState(() => _loadingSearch = false);
+    }
+  }
+
+  Future<bool> _searchConfigured() async {
+    final store = ChatStore.instance;
+    final provider = await store.selectedSearchProvider();
+    return provider != null &&
+        (await store.searchApiKey(provider.id))?.trim().isNotEmpty == true;
+  }
+
+  Future<void> _setSearchEnabled(bool enabled) async {
+    if (_loadingSearch ||
+        _savingSearch ||
+        !(widget.canChangeSearch?.call() ?? true)) {
+      return;
+    }
+    setState(() => _savingSearch = true);
+    try {
+      if (enabled && !await _searchConfigured()) {
+        if (!mounted) return;
+        await Navigator.push<void>(
+          context,
+          CupertinoPageRoute(builder: (_) => const SearchSettingsScreen()),
+        );
+        if (!mounted || !await _searchConfigured()) return;
+      }
+      if (!(widget.canChangeSearch?.call() ?? true)) return;
+      await ChatStore.instance.saveSetting(
+        'search_enabled',
+        enabled ? '1' : '0',
+      );
+      if (mounted) setState(() => _searchEnabled = enabled);
+    } catch (_) {
+      if (mounted) {
+        await showCupertinoDialog<void>(
+          context: context,
+          builder: (dialogContext) => CupertinoAlertDialog(
+            content: Text(tr('无法保存搜索配置，请重试。')),
+            actions: [
+              CupertinoDialogAction(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: Text(tr('好')),
+              ),
+            ],
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingSearch = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
@@ -181,7 +272,7 @@ class MessageInfoSettingsScreen extends StatelessWidget {
     builder: (context, _) => Scaffold(
       backgroundColor: IosColors.background,
       appBar: iosAppBar(
-        title: tr('消息信息'),
+        title: tr('消息设置'),
         leading: IosNavButton(
           icon: CupertinoIcons.back,
           onPressed: () => Navigator.pop(context),
@@ -202,6 +293,20 @@ class MessageInfoSettingsScreen extends StatelessWidget {
                     value: AppPreferences.instance.simpleMessageInfo,
                     activeTrackColor: IosColors.blue,
                     onChanged: AppPreferences.instance.setSimpleMessageInfo,
+                  ),
+                ),
+                IosRow(
+                  title: '联网搜索',
+                  chevron: false,
+                  trailing: CupertinoSwitch(
+                    value: _searchEnabled,
+                    activeTrackColor: IosColors.blue,
+                    onChanged:
+                        _loadingSearch ||
+                            _savingSearch ||
+                            !(widget.canChangeSearch?.call() ?? true)
+                        ? null
+                        : _setSearchEnabled,
                   ),
                 ),
                 IosRow(
@@ -492,6 +597,15 @@ class _AboutScreenState extends State<AboutScreen> {
                 detail: tr('话题和消息保存在设备的 SQLite 数据库中。API Key 保存在系统安全存储中。'),
               ),
               _AboutNote(title: tr('请求直连'), detail: tr('请求从设备直接发送到你配置的模型服务商。')),
+              IosRow(
+                title: tr('隐私协议'),
+                subtitle: 'tools24.uk/app/ai-link/privacy',
+                leading: Icon(CupertinoIcons.doc_text, color: IosColors.blue),
+                onTap: () => launchUrl(
+                  Uri.parse('https://www.tools24.uk/app/ai-link/privacy'),
+                  mode: LaunchMode.externalApplication,
+                ),
+              ),
             ],
           ),
           IosSection(

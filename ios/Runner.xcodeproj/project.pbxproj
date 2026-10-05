@@ -32,6 +32,8 @@
 		AA4400000000000000000011 /* FirebaseAnalyticsCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA4400000000000000000002 /* FirebaseAnalyticsCore */; };
 		AA4400000000000000000012 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA4400000000000000000003 /* FirebaseCore */; };
 		AA4400000000000000000013 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = AA4400000000000000000004 /* GoogleService-Info.plist */; };
+		AA5500000000000000000011 /* WatchMarkdownDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA5500000000000000000001 /* WatchMarkdownDocument.swift */; };
+		AA5500000000000000000012 /* WatchMarkdownView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA5500000000000000000002 /* WatchMarkdownView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -110,6 +112,8 @@
 		AA3300000000000000000002 /* WatchNetworkClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchNetworkClient.swift; sourceTree = "<group>"; };
 		AA3300000000000000000003 /* WatchPhoneRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchPhoneRelay.swift; sourceTree = "<group>"; };
 		AA4400000000000000000004 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
+		AA5500000000000000000001 /* WatchMarkdownDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchMarkdownDocument.swift; sourceTree = "<group>"; };
+		AA5500000000000000000002 /* WatchMarkdownView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchMarkdownView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -205,6 +209,8 @@
 				AA3300000000000000000003 /* WatchPhoneRelay.swift */,
 				AA1100000000000000000002 /* WatchChatSession.swift */,
 				AA1100000000000000000003 /* WatchContentView.swift */,
+				AA5500000000000000000002 /* WatchMarkdownView.swift */,
+				AA5500000000000000000001 /* WatchMarkdownDocument.swift */,
 				AA2200000000000000000006 /* Info.plist */,
 				AA1100000000000000000004 /* Assets.xcassets */,
 			);
@@ -449,6 +455,8 @@
 				AA3300000000000000000013 /* WatchPhoneRelay.swift in Sources */,
 				AA1100000000000000000012 /* WatchChatSession.swift in Sources */,
 				AA1100000000000000000013 /* WatchContentView.swift in Sources */,
+				AA5500000000000000000012 /* WatchMarkdownView.swift in Sources */,
+				AA5500000000000000000011 /* WatchMarkdownDocument.swift in Sources */,
 				AA2200000000000000000012 /* WatchChatShortcut.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

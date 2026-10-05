@@ -13,6 +13,7 @@ import com.google.android.gms.wearable.Wearable
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import org.json.JSONObject
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -43,6 +44,31 @@ class MainActivity : FlutterActivity() {
                                 runOnUiThread { result.success(null) }
                             } catch (_: Exception) {
                                 runOnUiThread { result.error("sync_unavailable", "Watch preferences sync unavailable", null) }
+                            }
+                        }
+                    }
+                    "syncConfiguration" -> {
+                        val config = call.argument<Map<String, Any?>>("configuration")
+                        val bytes = config?.let { JSONObject(it).toString().toByteArray(Charsets.UTF_8) }
+                        if (bytes == null || bytes.size > 60000 || config?.get("version") != 1) {
+                            result.error("bad_config", "Invalid watch configuration", null)
+                        } else companionExecutor.execute {
+                            try {
+                                // Persist only a change marker. Credentials use the paired message channel,
+                                // and a reconnecting watch requests the latest snapshot from the phone.
+                                val request = PutDataMapRequest.create("/between-models/config-changed")
+                                request.dataMap.putLong("updated", System.currentTimeMillis())
+                                Tasks.await(Wearable.getDataClient(this).putDataItem(
+                                    request.asPutDataRequest().setUrgent()), 15, TimeUnit.SECONDS)
+                                val nodes = Tasks.await(Wearable.getNodeClient(this).connectedNodes)
+                                val installed = Tasks.await(Wearable.getCapabilityClient(this).getCapability(
+                                    "between_models_watch_app", CapabilityClient.FILTER_REACHABLE)).nodes.map { it.id }.toSet()
+                                for (node in nodes.filter { it.id in installed }) {
+                                    Tasks.await(Wearable.getMessageClient(this).sendMessage(node.id, "/between-models/config", bytes))
+                                }
+                                runOnUiThread { result.success(null) }
+                            } catch (_: Exception) {
+                                runOnUiThread { result.error("sync_unavailable", "Watch configuration sync unavailable", null) }
                             }
                         }
                     }

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -22,10 +23,11 @@ void main() {
   testWidgets('message details settings exposes each display switch', (
     tester,
   ) async {
-    await tester.pumpWidget(
-      const MaterialApp(home: MessageInfoSettingsScreen()),
-    );
-    expect(find.byType(CupertinoSwitch), findsNWidgets(9));
+    await tester.pumpWidget(const MaterialApp(home: MessageSettingsScreen()));
+    expect(find.byType(CupertinoSwitch), findsNWidgets(10));
+    expect(find.text('消息设置'), findsOneWidget);
+    expect(find.text('联网搜索'), findsOneWidget);
+    expect(find.text('消息信息'), findsNothing);
     expect(find.text('简洁模式'), findsOneWidget);
     expect(find.text('回复完成后自动朗读'), findsOneWidget);
     expect(find.text('复制按钮'), findsOneWidget);
@@ -79,6 +81,28 @@ void main() {
     expect(find.byType(SvgPicture), findsNWidgets(2));
     expect(find.text('3 字'), findsOneWidget);
     expect(find.textContaining('—'), findsNothing);
+  });
+
+  testWidgets('about privacy policy opens the official URL in the browser', (
+    tester,
+  ) async {
+    const channel = MethodChannel('plugins.flutter.io/url_launcher');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    String? opened;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      final args = call.arguments as Map;
+      opened = args['url'] as String;
+      expect(args['useWebView'], false);
+      return true;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    await tester.pumpWidget(const MaterialApp(home: AboutScreen()));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('隐私协议'));
+    await tester.tap(find.text('隐私协议'));
+    await tester.pumpAndSettle();
+    expect(opened, 'https://www.tools24.uk/app/ai-link/privacy');
   });
 
   testWidgets('settings exposes model, language, appearance, and about', (
@@ -213,8 +237,10 @@ void main() {
               ChatMoreButton(
                 onNewTopic: () => selected.add('new'),
                 onModel: () => selected.add('model'),
-                onProviders: () => selected.add('providers'),
-                canChangeModel: true,
+                onModelSettings: () => selected.add('models'),
+                onVoiceSettings: () => selected.add('voice'),
+                onSearch: () => selected.add('search'),
+                onMessageSettings: () => selected.add('messages'),
               ),
             ],
           ),
@@ -227,10 +253,14 @@ void main() {
     for (final (label, expected) in [
       ('新对话', 'new'),
       ('切换模型', 'model'),
-      ('模型服务', 'providers'),
+      ('消息设置', 'messages'),
+      ('模型设置', 'models'),
+      ('语音服务', 'voice'),
+      ('联网搜索', 'search'),
     ]) {
       await tester.tap(find.byIcon(CupertinoIcons.ellipsis));
       await tester.pumpAndSettle();
+      expect(find.byType(CupertinoSwitch), findsNothing);
       await tester.tap(find.text(label));
       await tester.pumpAndSettle();
       expect(selected.last, expected);
@@ -239,28 +269,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
-    expect(selected.length, 3);
-  });
-
-  testWidgets('More omits model switch before a service is configured', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: ChatMoreButton(
-            onNewTopic: () {},
-            onModel: () {},
-            onProviders: () {},
-            canChangeModel: false,
-          ),
-        ),
-      ),
-    );
-    await tester.tap(find.byIcon(CupertinoIcons.ellipsis));
-    await tester.pumpAndSettle();
-    expect(find.text('切换模型'), findsNothing);
-    expect(find.text('模型服务'), findsOneWidget);
+    expect(selected.length, 6);
   });
 
   test('loading duration shows milliseconds and seconds plus milliseconds', () {

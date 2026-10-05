@@ -113,6 +113,23 @@ void main() {
       settings['watch_sequence_11111111-1111-1111-1111-111111111111'],
       '2',
     );
+    // Starting a topic on either watch keeps the old phone history intact.
+    for (final apple in [true, false]) {
+      final conversationId = apple
+          ? '22222222-2222-2222-2222-222222222222'
+          : '33333333-3333-3333-3333-333333333333';
+      final first = {
+        ...turn(0, apple: apple),
+        'id': conversationId,
+        'conversationId': conversationId,
+      };
+      await store.saveWatchTurn(first);
+      await store.saveWatchTurn(first);
+      expect(settings['watch_sequence_$conversationId'], '1');
+    }
+    expect(topics.length, 3);
+    expect(messages.length, 8);
+    expect(messages.take(4).map((m) => m['content']), ['q0', 'a0', 'q1', 'a1']);
     // Only mock test data is cleared, never a simulator or device database.
     settings.clear();
     topics.clear();

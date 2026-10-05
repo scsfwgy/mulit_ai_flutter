@@ -1,8 +1,11 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
+
+import 'search_service.dart';
 
 enum ApiProtocol {
   openAi('openai_chat', 'OpenAI 兼容'),
@@ -461,6 +464,7 @@ class ChatMessage {
     this.totalMs,
     this.inputTokens,
     this.outputTokens,
+    this.searchSources = const [],
   });
   final int id;
   final int topicId;
@@ -475,6 +479,7 @@ class ChatMessage {
   final int? totalMs;
   final int? inputTokens;
   final int? outputTokens;
+  final List<SearchSource> searchSources;
 
   factory ChatMessage.fromMap(Map<String, Object?> map) => ChatMessage(
     id: map['id'] as int,
@@ -490,6 +495,7 @@ class ChatMessage {
     totalMs: map['total_ms'] as int?,
     inputTokens: map['input_tokens'] as int?,
     outputTokens: map['output_tokens'] as int?,
+    searchSources: SearchSource.decode(map['search_sources'] as String?),
   );
 }
 
@@ -594,6 +600,9 @@ class VoiceProviderConfig {
 class ChatStore {
   ChatStore._();
   static final ChatStore instance = ChatStore._();
+  final _watchConfigurationChanges = StreamController<void>.broadcast();
+  Stream<void> get watchConfigurationChanges =>
+      _watchConfigurationChanges.stream;
   static const _secrets = FlutterSecureStorage();
   Database? _database;
 
@@ -602,7 +611,7 @@ class ChatStore {
     final path = p.join(await getDatabasesPath(), 'model_chat.db');
     _database = await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: (db, _) async {
         await db.execute('''CREATE TABLE providers (
@@ -633,7 +642,8 @@ class ChatStore {
           first_token_ms INTEGER,
           total_ms INTEGER,
           input_tokens INTEGER,
-          output_tokens INTEGER
+          output_tokens INTEGER,
+          search_sources TEXT
         )''');
         await db.execute(
           'CREATE INDEX messages_topic ON messages(topic_id, id)',
@@ -667,6 +677,11 @@ class ChatStore {
           );
           await db.execute(
             'ALTER TABLE messages ADD COLUMN provider_preset_id TEXT',
+          );
+        }
+        if (oldVersion < 5) {
+          await db.execute(
+            'ALTER TABLE messages ADD COLUMN search_sources TEXT',
           );
         }
       },
@@ -717,6 +732,127 @@ class ChatStore {
 
   Future<String?> apiKey(int providerId) =>
       _secrets.read(key: 'provider_$providerId');
+
+  Future<List<SearchProviderConfig>> searchProviders() async {
+    final raw = await setting('search_providers');
+    if (raw == null) return [];
+    return (jsonDecode(raw) as List)
+        .map(
+          (item) => SearchProviderConfig.fromJson(item as Map<String, dynamic>),
+        )
+        .toList();
+  }
+
+  Future<SearchProviderConfig?> selectedSearchProvider() async {
+    final id = await setting('search_provider_id');
+    return (await searchProviders()).where((item) => item.id == id).firstOrNull;
+  }
+
+  Future<String?> searchApiKey(String id) => _secrets.read(key: 'search_$id');
+
+  Future<void> saveSearchProvider(
+    SearchProviderConfig config, {
+    String? apiKey,
+  }) async {
+    final previous = (await searchProviders())
+        .where((item) => item.id == config.id)
+        .firstOrNull;
+    final key = apiKey?.trim() ?? '';
+    if (config.name.trim().isEmpty ||
+        config.id.isEmpty ||
+        config.maxResults < 1 ||
+        config.maxResults > 10) {
+      throw const FormatException('请填写服务名称，搜索结果数量须为 1 至 10');
+    }
+    validateBaseUrl(config.endpoint);
+    if (key.isEmpty &&
+        (previous == null ||
+            previous.service != config.service ||
+            previous.endpoint != config.endpoint ||
+            (await searchApiKey(config.id))?.isNotEmpty != true)) {
+      throw const FormatException('请填写搜索服务 API Key；更换服务类型或地址时须重新填写。');
+    }
+    if (key.contains(RegExp(r'[\x00-\x1F]'))) {
+      throw const FormatException('API Key 不能包含换行或控制字符');
+    }
+    if (key.isNotEmpty) {
+      await _secrets.write(key: 'search_${config.id}', value: key);
+    }
+    final database = await db;
+    await database.transaction((txn) async {
+      final rows = await txn.query(
+        'settings',
+        where: 'key = ?',
+        whereArgs: ['search_providers'],
+      );
+      final items = rows.isEmpty
+          ? <SearchProviderConfig>[]
+          : (jsonDecode(rows.single['value'] as String) as List)
+                .map(
+                  (item) => SearchProviderConfig.fromJson(
+                    item as Map<String, dynamic>,
+                  ),
+                )
+                .toList();
+      items.removeWhere((item) => item.id == config.id);
+      items.add(config);
+      await txn.insert('settings', {
+        'key': 'search_providers',
+        'value': jsonEncode(items.map((item) => item.toJson()).toList()),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      final selected = await txn.query(
+        'settings',
+        where: 'key = ?',
+        whereArgs: ['search_provider_id'],
+      );
+      if (selected.isEmpty || (selected.single['value'] as String).isEmpty) {
+        await txn.insert('settings', {
+          'key': 'search_provider_id',
+          'value': config.id,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+    });
+    _watchConfigurationChanges.add(null);
+  }
+
+  Future<void> deleteSearchProvider(String id) async {
+    await (await db).transaction((txn) async {
+      final rows = await txn.query(
+        'settings',
+        where: 'key = ?',
+        whereArgs: ['search_providers'],
+      );
+      final items = rows.isEmpty
+          ? <SearchProviderConfig>[]
+          : (jsonDecode(rows.single['value'] as String) as List)
+                .map(
+                  (item) => SearchProviderConfig.fromJson(
+                    item as Map<String, dynamic>,
+                  ),
+                )
+                .toList();
+      items.removeWhere((item) => item.id == id);
+      await txn.insert('settings', {
+        'key': 'search_providers',
+        'value': jsonEncode(items.map((item) => item.toJson()).toList()),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      final selected = await txn.query(
+        'settings',
+        where: 'key = ?',
+        whereArgs: ['search_provider_id'],
+      );
+      if (selected.isNotEmpty && selected.single['value'] == id) {
+        for (final key in ['search_provider_id', 'search_enabled']) {
+          await txn.insert('settings', {
+            'key': key,
+            'value': key == 'search_enabled' ? '0' : '',
+          }, conflictAlgorithm: ConflictAlgorithm.replace);
+        }
+      }
+    });
+    await _secrets.delete(key: 'search_$id');
+    _watchConfigurationChanges.add(null);
+  }
 
   Future<List<VoiceProviderConfig>> voiceProviders() async {
     final raw = await setting('voice_providers');
@@ -820,6 +956,9 @@ class ChatStore {
       'key': key,
       'value': value,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
+    if (key == 'search_enabled' || key == 'search_provider_id') {
+      _watchConfigurationChanges.add(null);
+    }
   }
 
   Future<ChatSelection?> lastChatSelection() async =>
@@ -1159,6 +1298,7 @@ class ChatStore {
     int? totalMs,
     int? inputTokens,
     int? outputTokens,
+    List<SearchSource> searchSources = const [],
   }) async {
     final database = await db;
     final id = await database.insert('messages', {
@@ -1176,6 +1316,9 @@ class ChatStore {
       'total_ms': totalMs,
       'input_tokens': inputTokens,
       'output_tokens': outputTokens,
+      'search_sources': searchSources.isEmpty
+          ? null
+          : jsonEncode(searchSources.map((source) => source.toJson()).toList()),
     });
     await updateTopic(topicId);
     return id;

@@ -8,11 +8,24 @@ import 'package:mulit_ai_flutter/data.dart';
 import 'package:mulit_ai_flutter/api_client.dart';
 import 'package:mulit_ai_flutter/voice_recording.dart';
 import 'package:mulit_ai_flutter/watch_chat.dart';
+import 'package:mulit_ai_flutter/search_service.dart';
 
 class _Store extends Fake implements ChatStore {
   final values = <String, String>{};
   final services = <ProviderConfig>[];
   final voices = <VoiceProviderConfig>[];
+  final searches = <SearchProviderConfig>[];
+  final searchKeys = <String, String>{};
+
+  @override
+  Future<List<SearchProviderConfig>> searchProviders() async => searches;
+
+  @override
+  Future<SearchProviderConfig?> selectedSearchProvider() async =>
+      searches.where((s) => s.id == values['search_provider_id']).firstOrNull;
+
+  @override
+  Future<String?> searchApiKey(String id) async => searchKeys[id];
   final textKeys = <int, String?>{};
   String? voiceKey = 'test-key';
 
@@ -109,8 +122,157 @@ void main() {
     expect(revoked['asr'], isNull);
   });
 
+  test('search snapshot carries selected key, follows phone toggle and revokes deleted service', () async {
+    final store = _configuredStore();
+    const search = SearchProviderConfig(
+      id: 'search',
+      name: 'My Tavily',
+      service: SearchService.tavily,
+      endpoint: 'https://api.tavily.com/search',
+      maxResults: 3,
+      detailed: true,
+      timeRange: SearchTimeRange.week,
+    );
+    store.searches.add(search);
+    store.searchKeys[search.id] = 'test-search-key';
+    store.values.addAll({
+      'search_enabled': '1',
+      'search_provider_id': search.id,
+    });
+    final processor = WatchChatProcessor(store: store);
+    final snapshot = await processor.configuration();
+    expect(snapshot['searchEnabled'], true);
+    expect(snapshot['searchReady'], true);
+    expect((snapshot['search'] as Map)['apiKey'], 'test-search-key');
+    expect((snapshot['search'] as Map)['maxResults'], 3);
+    final display = await processor.preferences();
+    expect(display['searchProviderName'], 'My Tavily');
+    expect(display['searchService'], 'tavily');
+    expect(jsonEncode(display), isNot(contains('test-search-key')));
+    store.values['search_enabled'] = '0';
+    expect((await processor.configuration())['searchEnabled'], false);
+    store.searches.clear();
+    final revoked = await processor.configuration();
+    expect(revoked['search'], isNull);
+    expect(revoked['searchReady'], false);
+  });
+
+  test('watch phone route searches once before both model protocols and stops on search errors', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    var searches = 0, models = 0, fail = false;
+    server.listen((request) async {
+      final body = jsonDecode(await utf8.decoder.bind(request).join()) as Map;
+      if (request.uri.path == '/search') {
+        searches++;
+        expect(
+          request.headers.value('authorization'),
+          'Bearer test-search-key',
+        );
+        expect(body['query'], 'question');
+        if (fail) {
+          request.response.statusCode = 401;
+        } else {
+          request.response.write(
+            jsonEncode({
+              'results': [
+                {
+                  'title': 'Source',
+                  'url': 'https://example.com/source',
+                  'content': 'real evidence',
+                },
+              ],
+            }),
+          );
+        }
+      } else {
+        models++;
+        expect(jsonEncode(body['messages']), contains('real evidence'));
+        request.response.headers.contentType = ContentType(
+          'text',
+          'event-stream',
+        );
+        if (request.uri.path.endsWith('/messages')) {
+          expect(body['system'], contains('web search evidence'));
+          request.response.write(
+            'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"answer"}}\n\ndata: {"type":"message_stop"}\n\n',
+          );
+        } else {
+          request.response.write(
+            'data: {"choices":[{"delta":{"content":"answer"}}]}\n\ndata: [DONE]\n\n',
+          );
+        }
+      }
+      await request.response.close();
+    });
+    try {
+      final root = 'http://127.0.0.1:${server.port}';
+      final store = _configuredStore();
+      store.searches.add(
+        SearchProviderConfig(
+          id: 'search',
+          name: 'Tavily',
+          service: SearchService.tavily,
+          endpoint: '$root/search',
+        ),
+      );
+      store.searchKeys['search'] = 'test-search-key';
+      for (final protocol in ApiProtocol.values) {
+        store.services[0] = ProviderConfig(
+          id: 1,
+          name: 'Test',
+          baseUrl: root,
+          model: 'chat',
+          protocol: protocol,
+        );
+        final updates = <Map<String, Object?>>[];
+        await WatchChatProcessor(store: store).remoteReply(
+          '[{"role":"user","content":"question"}]',
+          1,
+          'chat',
+          searchEnabled: true,
+          searchProviderId: 'search',
+          requireComplete: true,
+          onUpdate: (u) async {
+            updates.add(u);
+          },
+        );
+        expect(updates.last['stage'], 'complete', reason: jsonEncode(updates));
+      }
+      expect(searches, 2);
+      expect(models, 2);
+      fail = true;
+      final updates = <Map<String, Object?>>[];
+      await WatchChatProcessor(store: store).remoteReply(
+        '[{"role":"user","content":"question"}]',
+        1,
+        'chat',
+        searchEnabled: true,
+        searchProviderId: 'search',
+        onUpdate: (u) async {
+          updates.add(u);
+        },
+      );
+      expect(models, 2);
+      expect(updates.last['stage'], 'error');
+      expect(updates.last['retrySafe'], false);
+      expect(jsonEncode(updates), isNot(contains('test-search-key')));
+    } finally {
+      await server.close(force: true);
+    }
+  });
+
   test('ambiguous timeout and transport resets cannot switch watch routes', () {
     expect(watchRetrySafe(TimeoutException('unknown')), false);
+    expect(
+      watchRetrySafe(const SearchException('timeout', networkFailure: true)),
+      false,
+    );
+    expect(
+      watchRetrySafe(
+        const SearchException('refused', networkFailure: true, retrySafe: true),
+      ),
+      true,
+    );
     expect(
       watchRetrySafe(
         const SocketException('reset', osError: OSError('reset', 54)),
@@ -275,6 +437,10 @@ void main() {
       'speak': true,
       'textReady': true,
       'asrReady': false,
+      'searchEnabled': false,
+      'searchReady': false,
+      'searchProviderName': '',
+      'searchService': '',
     });
   });
 
@@ -302,6 +468,10 @@ void main() {
         'speak': false,
         'textReady': true,
         'asrReady': false,
+        'searchEnabled': false,
+        'searchReady': false,
+        'searchProviderName': '',
+        'searchService': '',
       });
     },
   );
@@ -314,6 +484,10 @@ void main() {
       'speak': false,
       'textReady': false,
       'asrReady': false,
+      'searchEnabled': false,
+      'searchReady': false,
+      'searchProviderName': '',
+      'searchService': '',
     });
   });
   test(

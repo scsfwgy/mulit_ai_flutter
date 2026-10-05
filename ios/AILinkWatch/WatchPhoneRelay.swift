@@ -19,35 +19,40 @@ final class WatchPhoneRelay {
       throw WatchRequestError("手机不可达", "Phone unavailable", retrySafe: true)
     }
     let id = UUID().uuidString.lowercased()
-    return try await withCheckedThrowingContinuation { continuation in
-      pending[id] = Pending(continuation: continuation, onText: onText, audio: kind == "remote-tts")
-      var message = arguments
-      message["id"] = id
-      message["kind"] = kind
-      message["expiresAt"] = Date().addingTimeInterval(30).timeIntervalSince1970
-      do {
-        // Histories and recordings can exceed the interactive message size limit.
-        if audio != nil || kind == "remote-chat" {
-          let url = FileManager.default.temporaryDirectory.appendingPathComponent("relay-\(id).\(audio == nil ? "json" : "wav")")
-          try (audio ?? JSONSerialization.data(withJSONObject: message)).write(to: url, options: .atomic)
-          files[session.transferFile(url, metadata: ["kind": audio == nil ? "remote-request" : kind,
-            "id": id, "expiresAt": message["expiresAt"]!])] = url
-        } else {
-          session.sendMessage(message, replyHandler: { reply in
-            if reply["accepted"] as? Bool != true {
-              Task { @MainActor in self.fail(id, WatchRequestError("手机拒绝请求，请同步配置", "Phone rejected request; sync settings")) }
-            }
-          }, errorHandler: { _ in
-            // Delivery status is ambiguous; never automatically resubmit.
-            Task { @MainActor in self.fail(id, WatchRequestError("手机响应状态不明，请稍后重试", "Phone delivery status unknown; check before retrying")) }
-          })
+    return try await withTaskCancellationHandler(operation: {
+      try Task.checkCancellation()
+      return try await withCheckedThrowingContinuation { continuation in
+        pending[id] = Pending(continuation: continuation, onText: onText, audio: kind == "remote-tts")
+        var message = arguments
+        message["id"] = id
+        message["kind"] = kind
+        message["expiresAt"] = Date().addingTimeInterval(30).timeIntervalSince1970
+        do {
+          // Histories and recordings can exceed the interactive message size limit.
+          if audio != nil || kind == "remote-chat" {
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("relay-\(id).\(audio == nil ? "json" : "wav")")
+            try (audio ?? JSONSerialization.data(withJSONObject: message)).write(to: url, options: .atomic)
+            files[session.transferFile(url, metadata: ["kind": audio == nil ? "remote-request" : kind,
+              "id": id, "expiresAt": message["expiresAt"]!])] = url
+          } else {
+            session.sendMessage(message, replyHandler: { reply in
+              if reply["accepted"] as? Bool != true {
+                Task { @MainActor in self.fail(id, WatchRequestError("手机拒绝请求，请同步配置", "Phone rejected request; sync settings")) }
+              }
+            }, errorHandler: { _ in
+              // Delivery status is ambiguous; never automatically resubmit.
+              Task { @MainActor in self.fail(id, WatchRequestError("手机响应状态不明，请稍后重试", "Phone delivery status unknown; check before retrying")) }
+            })
+          }
+        } catch { fail(id, WatchRequestError("请求传输失败", "Request transfer failed")) }
+        Task { @MainActor in
+          try? await Task.sleep(for: .seconds(kind == "remote-asr" ? 90 : 240))
+          self.fail(id, WatchRequestError("手机处理超时，状态不明；请稍后检查再重试", "Phone timed out; check before retrying"))
         }
-      } catch { fail(id, WatchRequestError("请求传输失败", "Request transfer failed")) }
-      Task { @MainActor in
-        try? await Task.sleep(for: .seconds(kind == "remote-asr" ? 90 : 240))
-        self.fail(id, WatchRequestError("手机处理超时，状态不明；请稍后检查再重试", "Phone timed out; check before retrying"))
       }
-    }
+    }, onCancel: {
+      Task { @MainActor in self.fail(id, CancellationError()) }
+    })
   }
 
   @discardableResult

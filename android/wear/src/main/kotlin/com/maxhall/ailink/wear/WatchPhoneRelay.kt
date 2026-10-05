@@ -36,13 +36,15 @@ class WatchPhoneRelay(private val context: Context, private val phoneNodeId: Str
     }
 
     fun reply(history: ByteArray, providerId: Int, model: String,
-              onText: (String) -> Unit): String {
+              searchEnabled: Boolean, searchProviderId: String?, onText: (String) -> Unit): String {
         var receivedText = false
         val result = try {
             request("remote-chat", 240_000, {
                 it.dataMap.putAsset("history", Asset.createFromBytes(history))
                 it.dataMap.putInt("providerId", providerId)
                 it.dataMap.putString("model", model)
+                it.dataMap.putBoolean("searchEnabled", searchEnabled)
+                it.dataMap.putString("searchProviderId", searchProviderId ?: "")
             }) { partial ->
                 if (partial.isNotEmpty()) receivedText = true
                 onText(partial)
@@ -72,6 +74,7 @@ class WatchPhoneRelay(private val context: Context, private val phoneNodeId: Str
         onText: (String) -> Unit = {},
     ): PhoneRelayResult {
         val nodes = try { Tasks.await(Wearable.getNodeClient(context).connectedNodes) }
+        catch (error: InterruptedException) { throw error }
         catch (_: Exception) { throw PhoneRelayException("手机连接不可用", true) }
         if (nodes.none { it.id == phoneNodeId }) {
             throw PhoneRelayException("手机已断开连接", true)
@@ -95,6 +98,9 @@ class WatchPhoneRelay(private val context: Context, private val phoneNodeId: Str
         try {
             Tasks.await(client.addListener(listener))
             requestUri = Tasks.await(client.putDataItem(request.asPutDataRequest().setUrgent())).uri
+        } catch (error: InterruptedException) {
+            client.removeListener(listener)
+            throw error
         } catch (_: Exception) {
             client.removeListener(listener)
             throw PhoneRelayException("无法将请求发送到手机", true)

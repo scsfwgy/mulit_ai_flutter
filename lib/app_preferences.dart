@@ -198,6 +198,10 @@ String tr(String chinese) {
   if (!AppPreferences.instance.english) return chinese;
   final direct = _english[chinese];
   if (direct != null) return direct;
+  final searchHttp = RegExp(r'^搜索请求失败（HTTP (\d+)），').firstMatch(chinese);
+  if (searchHttp != null) {
+    return 'Search request failed (HTTP ${searchHttp.group(1)}). Check the key, quota and endpoint.';
+  }
   final voiceHttp = RegExp(r'^(语音服务|语音识别|语音朗读)请求失败（HTTP (\d+)），(.+)$')
       .firstMatch(chinese);
   if (voiceHttp != null) {
@@ -249,6 +253,79 @@ const _englishPrefixes = <(String, String)>[
 ];
 
 const _english = <String, String>{
+  '联网搜索': 'Web search',
+  '联网搜索已开启': 'Web search enabled',
+  '正在搜索网页…': 'Searching the web…',
+  '默认搜索服务': 'Default search service',
+  '搜索服务': 'Search services',
+  '添加搜索服务': 'Add search service',
+  '编辑搜索服务': 'Edit search service',
+  '搜索服务类型': 'Search provider',
+  '搜索接口地址': 'Search endpoint',
+  '搜索选项': 'Search options',
+  '申请与费用': 'API key & pricing',
+  '申请 API Key': 'Get an API key',
+  '查看价格与免费额度': 'Pricing & free credits',
+  '按量付费': 'Pay as you go',
+  '有免费额度': 'Free credits available',
+  '按量计费，使用前需充值或领取可用赠送额度。免费额度视活动与账号而定，不保证每个账号都有。': 'Usage-based pricing. Add funds or claim available promotional credits before use. Free credits depend on promotions and your account; they are not guaranteed for every account.',
+  '每月 1,000 免费积分，无需绑定信用卡。普通搜索每次 1 积分，深入搜索每次 2 积分；更多用量需购买付费方案。': '1,000 free credits per month; no credit card required. Basic search uses 1 credit per request and detailed search uses 2. More usage requires a paid plan.',
+  '每月 10 美元免费额度，另有 10 美元新账户奖励，无需添加付款方式。额度按接口用量消耗，更多用量需开通按量付费。': r'US$10 in free credits per month, plus a US$10 onboarding bonus; no payment method required. Credits are consumed by API usage. More usage requires pay-as-you-go billing.',
+  '免费额度和价格可能调整，以官网及账号实际额度为准。搜索与文本模型分别计费。': 'Free credits and prices may change. Check the official site and your account balance. Search and text models are billed separately.',
+  '无法打开浏览器': 'Could not open a browser',
+  '复制网址': 'Copy URL',
+  '结果数量': 'Result count',
+  '时间范围': 'Time range',
+  '不限时间': 'Any time',
+  '最近一天': 'Past day',
+  '最近一周': 'Past week',
+  '最近一个月': 'Past month',
+  '最近一年': 'Past year',
+  '深入搜索': 'Detailed search',
+  '测试搜索': 'Test search',
+  '搜索成功，配置可用。': 'Search succeeded. The configuration works.',
+  '删除搜索服务': 'Delete search service',
+  '删除搜索服务？': 'Delete search service?',
+  '同时删除其密钥；历史消息中的搜索来源保留。':
+      'Its key will also be deleted. Sources in past messages are kept.',
+  '检查搜索配置': 'Check search settings',
+  '搜索来源': 'Search sources',
+  '开启联网后，先搜索网页，再由当前文本模型回答。联网设置会自动同步到配对手表。': 'When enabled, web search runs before the current text model answers. Search settings sync automatically to paired watches.',
+  '搜索服务只需独立 API Key，无需模型 ID。查询直接发送到所选搜索服务，检索资料随后发送给文本模型；搜索和模型请求可能分别计费。': 'Search services need their own API key, with no model ID. Queries go directly to the selected search provider; retrieved content then goes to the text model. Search and model requests may be billed separately.',
+  '接口地址自动填写；修改为代理地址时，请确认可信并重新填写密钥。': 'The endpoint is filled automatically. If you use a proxy, make sure you trust it and enter the key again.',
+  '更多结果和深入搜索可能增加费用与等待时间。':
+      'More results and detailed search may increase cost and waiting time.',
+  '测试会向搜索服务发送“Flutter”，可能产生搜索费用；不会保存配置。': 'Testing sends “Flutter” to the search provider and may incur a search charge. It does not save the configuration.',
+  '无法读取搜索配置，请重试。': 'Could not read search settings. Try again.',
+  '无法保存搜索配置，请重试。': 'Could not save search settings. Try again.',
+  '无法删除搜索服务，请重试。': 'Could not delete the search service. Try again.',
+  '请填写服务名称': 'Enter a service name',
+  '请填写服务名称，搜索结果数量须为 1 至 10':
+      'Enter a service name and choose 1 to 10 search results',
+  '请填写搜索服务 API Key；更换服务类型或地址时须重新填写。': 'Enter the search API key. Enter it again when changing the provider type or endpoint.',
+  'API Key 不能包含换行或控制字符':
+      'API keys cannot contain line breaks or control characters',
+  '测试搜索失败，请检查配置。': 'Search test failed. Check the settings.',
+  '联网搜索超时，请重试或关闭联网搜索。':
+      'Web search timed out. Try again or turn off web search.',
+  '无法连接搜索服务，请检查网络。':
+      'Could not connect to the search service. Check your network.',
+  '搜索服务 HTTPS 证书验证失败。':
+      'The search service HTTPS certificate could not be verified.',
+  '搜索服务返回格式无效，请检查服务类型和接口地址。':
+      'Invalid search response. Check the provider type and endpoint.',
+  '搜索接口地址必须使用 HTTPS；本机地址可用 HTTP。':
+      'Search endpoints require HTTPS. Local addresses may use HTTP.',
+  '请先配置搜索服务 API Key。': 'Configure a search service and its API key first.',
+  '搜索结果数量须为 1 至 10': 'Choose 1 to 10 search results',
+  '搜索内容不能为空': 'The search query cannot be empty',
+  '搜索响应过大，请减少结果数量。': 'Search response too large. Reduce the result count.',
+  '搜索服务返回错误，请检查密钥和额度。':
+      'The search service returned an error. Check the key and quota.',
+  '未找到可用网页资料，请修改问题或关闭联网搜索。': 'No usable web content was found. Change the question or turn off web search.',
+  '联网搜索已停止': 'Web search stopped',
+  '回复已停止': 'Reply stopped',
+  '开启联网搜索后，当前问题与搜索密钥直接发送到所选搜索服务，网页资料随后发送给文本模型。手机回复的来源资料保存在本机明文数据库中。联网开关、所选搜索服务及密钥经配对通道同步到手表；Wear OS 加密保存，Apple Watch 使用钥匙串。手表问答重连后同步到手机。': 'When web search is enabled, the current question and search key go directly to the selected search provider, then retrieved evidence goes to the text model. Phone reply sources are saved in the unencrypted local database. The search toggle, selected service and key sync over the paired connection; Wear OS encrypts them and Apple Watch uses Keychain. Watch chats sync to the phone after reconnecting.',
   '手表': 'Watch',
   '手表数据': 'Watch data',
   '手表安全保存所选服务密钥和问答。Apple Watch 优先在手表请求，手表网络不可用时再尝试手机；Wear OS 优先通过手机请求，不可达时使用手表网络。Wear OS 使用加密存储，Apple Watch 使用钥匙串；问答重连后同步到手机。清空手机数据不会自动清除手表数据。': 'Watches securely store selected service keys and chats. Apple Watch uses its own requests first, then tries the phone when unavailable. Wear OS uses the phone first, then its own network. Wear OS uses encrypted storage; Apple Watch uses Keychain. Chats sync to the phone after reconnecting. Clearing phone data does not erase watch data.',
@@ -382,7 +459,6 @@ const _english = <String, String>{
   '录音中': 'Recording',
   '正在识别语音…': 'Transcribing…',
   '取消录音': 'Cancel recording',
-  '识别完成，请检查文字后发送': 'Review the transcript, then send',
   '按住录音，松开后转写。转写后是否直接发送同时适用于手机和手表；朗读声音由 AI 生成。': 'Hold to record and release to transcribe. Automatic sending applies to both phone and watch; spoken replies are AI-generated.',
   '请允许麦克风权限后重试': 'Allow microphone access and try again',
   '无法开始录音，请检查麦克风权限': 'Could not record. Check microphone access',
@@ -424,7 +500,7 @@ const _english = <String, String>{
   '白天': 'Light',
   '黑夜': 'Dark',
   '模型设置': 'Model settings',
-  '消息信息': 'Message details',
+  '消息设置': 'Message settings',
   '首帧耗时': 'Time to first text',
   '首帧': 'First text',
   '总耗时': 'Total time',
@@ -452,6 +528,7 @@ const _english = <String, String>{
   '使用统计': 'Usage analytics',
   'Android 和 iOS 正式版使用 Firebase Analytics 记录应用使用事件、应用实例标识与设备信息，不收集广告标识符。不会主动上传聊天内容、API Key、录音或服务地址。调试和测试版停用统计；手表暂未接入。': 'Android and iOS production builds use Firebase Analytics for app usage events, app instance identifiers and device information, without advertising IDs. Chats, API keys, recordings and provider URLs are not intentionally uploaded. Analytics is disabled in debug and test builds; watch apps are not integrated yet.',
   '完整隐私政策': 'Full privacy policy',
+  '隐私协议': 'Privacy policy',
   '官方网站': 'Official website',
   '提示词': 'Prompts',
   '全局和单模型提示词': 'Global and model prompts',

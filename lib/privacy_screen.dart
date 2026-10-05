@@ -98,6 +98,12 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
                 detail: tr('对话内容、提示词和 API Key 从设备直接发送到你选择的服务地址，由该服务处理。'),
               ),
               _PrivacyRow(
+                title: '联网搜索',
+                detail: tr(
+                  '开启联网搜索后，当前问题与搜索密钥直接发送到所选搜索服务，网页资料随后发送给文本模型。手机回复的来源资料保存在本机明文数据库中。联网开关、所选搜索服务及密钥经配对通道同步到手表；Wear OS 加密保存，Apple Watch 使用钥匙串。手表问答重连后同步到手机。',
+                ),
+              ),
+              _PrivacyRow(
                 title: '手表数据',
                 detail: tr(
                   '手表安全保存所选服务密钥和问答。Apple Watch 优先在手表请求，手表网络不可用时再尝试手机；Wear OS 优先通过手机请求，不可达时使用手表网络。Wear OS 使用加密存储，Apple Watch 使用钥匙串；问答重连后同步到手机。清空手机数据不会自动清除手表数据。',

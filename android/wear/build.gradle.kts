@@ -42,6 +42,8 @@ android {
     defaultConfig {
         applicationId = "com.maxhall.ailink"
         manifestPlaceholders["appLabel"] = "AI Link"
+        testInstrumentationRunner = providers.gradleProperty("watchTestRunner")
+            .getOrElse("com.maxhall.ailink.wear.WatchSearchFixtureInstrumentation")
         minSdk = 30
         targetSdk = 36
         versionCode = watchBuildCode
@@ -96,5 +98,9 @@ kotlin {
 dependencies {
     implementation("com.google.android.gms:play-services-wearable:20.0.1")
     implementation("androidx.wear:wear-remote-interactions:1.2.0")
+    implementation("io.noties.markwon:core:4.6.2")
+    implementation("com.atlassian.commonmark:commonmark-ext-gfm-tables:0.13.0")
+    implementation("io.noties.markwon:ext-strikethrough:4.6.2")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

@@ -7,12 +7,12 @@ struct WatchNetworkTests {
     func expect(_ value: @autoclosure () -> Bool, _ message: String) throws {
       if !value() { throw NSError(domain: message, code: 1) }
     }
-    func config(model: String = "chat", protocolName: String = "openai_chat", voice: String = "openAi") -> WatchNetworkConfiguration {
+    func config(model: String = "chat", protocolName: String = "openai_chat", voice: String = "openAi", search: WatchSearchConfiguration? = nil, searchEnabled: Bool? = nil) -> WatchNetworkConfiguration {
       let speech = WatchVoiceConfiguration(protocolName: voice, baseUrl: base,
         apiKey: "watch-test-key", asrModel: "asr", ttsModel: "tts", voice: "voice")
       return WatchNetworkConfiguration(version: 1, providerId: 7, providerName: "Test", providerPresetId: nil,
         protocolName: protocolName, baseUrl: base, apiKey: "watch-test-key", model: model,
-        systemPrompt: "system", textReady: true, asrReady: true, asr: speech, tts: speech)
+        systemPrompt: "system", textReady: true, asrReady: true, asr: speech, tts: speech, searchEnabled: searchEnabled, search: search)
     }
     let client = WatchNetworkClient()
     defer { client.close() }
@@ -22,6 +22,28 @@ struct WatchNetworkTests {
       let answer = try await client.reply(history: history, config: config(protocolName: proto)) { partial = $0 }
       try expect(answer == "你好👋" && partial == answer, "streamed Unicode reply")
     }
+    for service in ["bocha", "tavily", "exa"] {
+      let search = WatchSearchConfiguration(id: "search", name: "Search", service: service,
+        endpoint: base + "/search/" + service, apiKey: "watch-search-key", maxResults: 3, detailed: true, timeRange: "week")
+      for proto in ["openai_chat", "anthropic_messages"] {
+        let answer = try await client.reply(history: history, config: config(model: "grounded", protocolName: proto,
+          search: search, searchEnabled: true)) { _ in }
+        try expect(answer == "你好👋", "grounded answer for \(service) / \(proto)")
+      }
+    }
+    for failure in ["redirect", "rejected", "empty", "huge"] {
+      let search = WatchSearchConfiguration(id: "search", name: "Search", service: "tavily",
+        endpoint: base + "/search/" + failure, apiKey: "watch-search-key", maxResults: 3, detailed: true, timeRange: "week")
+      do {
+        _ = try await client.reply(history: history, config: config(model: "grounded", search: search, searchEnabled: true)) { _ in }
+        throw NSError(domain: "failed search reached model", code: 1)
+      } catch let error as WatchRequestError {
+        try expect(!error.retrySafe && !error.chinese.contains("watch-search-key"), "no automatic retry or credential leak on search failure")
+      }
+    }
+    let oldSnapshot = try JSONEncoder().encode(config())
+    let oldConfig = try JSONDecoder().decode(WatchNetworkConfiguration.self, from: oldSnapshot)
+    try expect(oldConfig.searchEnabled == nil && oldConfig.search == nil, "old snapshots default to search off")
     for proto in ["openAi", "mimo", "doubao"] {
       let c = config(voice: proto)
       let transcript = try await client.transcribe(Data([82, 73, 70, 70]), config: c)
@@ -100,6 +122,23 @@ struct WatchNetworkTests {
     try restored.append(id: UUID().uuidString.lowercased(), config: config(model: "other"), question: "new", answer: "a")
     try expect(restored.snapshot.sequence == 1 && restored.snapshot.pending.first?.sequence == 0,
       "new model starts separate conversation")
+    let oldConversation = restored.snapshot.conversationId
+    let pendingID = restored.snapshot.pending.first!.id
+    restored.startNewTopic()
+    let newTopic = WatchHistoryStore(defaults: defaults)
+    try expect(newTopic.snapshot.conversationId != oldConversation && newTopic.snapshot.sequence == 0,
+      "new topic persists a fresh conversation ID and sequence")
+    try expect(newTopic.snapshot.recent.isEmpty && newTopic.snapshot.pending.first?.id == pendingID,
+      "new topic clears display but preserves offline outbox")
+    try expect(newTopic.history(for: config(model: "other"), question: "next").count == 1,
+      "new topic excludes previous model context")
+    try newTopic.append(id: UUID().uuidString.lowercased(), config: config(model: "other"), question: "next", answer: "a")
+    try expect(newTopic.snapshot.pending.count == 2 && newTopic.snapshot.pending.last?.sequence == 0
+      && newTopic.snapshot.pending.last?.conversationId == newTopic.snapshot.conversationId,
+      "old and new topics keep separate phone history with independent sequence")
+    newTopic.acknowledge(pendingID)
+    try expect(newTopic.snapshot.pending.count == 1 && newTopic.snapshot.recent.count == 1,
+      "late old topic acknowledgement leaves new topic intact")
     let saved = String(decoding: defaults.data(forKey: "ai_link_watch_independent_history_v1")!, as: UTF8.self)
     try expect(!saved.contains("watch-test-key") && !saved.contains("apiKey"), "history contains no credentials")
     restored.clear()

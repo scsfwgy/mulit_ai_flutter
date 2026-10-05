@@ -37,6 +37,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
   @Published private(set) var language = UserDefaults.standard.string(forKey: "ai_link_phone_language") ?? "zh"
   @Published private(set) var speak = false
   @Published private(set) var playing = false
+  @Published private(set) var loadingAudio = false
   @Published private(set) var syncingSettings = false
   @Published private(set) var settingsStatus = ""
   @Published private(set) var modelSummary = ""
@@ -45,7 +46,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
   @Published private(set) var textReady = false
   @Published private(set) var asrReady = false
   private var recordingPreflight = false
-  private var phase = "idle"
+  @Published private var phase = "idle"
   private var settingsSync = WatchSettingsSync()
   private var settingsRequestID: String? { settingsSync.requestID }
   private var statusLabels: (String, String)?
@@ -67,6 +68,8 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
   private var turnConfiguration: WatchNetworkConfiguration?
   private var syncID: String?
   private var processingTask: Task<Void, Never>?
+  private var speechTask: Task<Void, Never>?
+  private var speechID: UUID?
   @MainActor private lazy var relay = WatchPhoneRelay()
   private let historyKey = "ai_link_watch_history_v1"
 
@@ -101,6 +104,13 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
 
   var visibleHistory: [WatchTurn] { turns.filter { $0.id != activeID } }
   var chinese: Bool { language == "zh" }
+
+  var processingLabel: String? {
+    guard busy else { return nil }
+    if phase == "transcribing" { return localized("语音识别中", "Transcribing") }
+    if phase == "replying" { return localized("正在回答", "Answering") }
+    return localized("正在思考", "Thinking")
+  }
 
   var connectionLabel: String {
     phoneAvailable ? localized("手机已连接", "Phone connected") : localized("手机未连接 · 使用手表网络", "Phone offline · using watch network")
@@ -206,6 +216,17 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     scrollGeneration += 1
   }
 
+  func startNewTopic() {
+    guard !busy && !recording && !recordingPreflight && !permissionPending else { return }
+    stopPlayback()
+    independentHistory.startNewTopic()
+    turns = []
+    UserDefaults.standard.removeObject(forKey: historyKey)
+    turnConfiguration = nil
+    resetForRecording()
+    syncPendingTurns()
+  }
+
   func cancelRecording() {
     recordingPreflight = false
     stopRecording(action: .cancel)
@@ -215,6 +236,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     pressActive = true
     releaseAction = .send
     guard !recording && !busy && !permissionPending && !recordingPreflight else { return }
+    stopPlayback()
     guard independentHistory.snapshot.pending.count < 100 else {
       setStatus("请先连接手机同步已有问答", "Reconnect iPhone to sync pending chats first")
       return
@@ -359,10 +381,10 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     processingTask = Task { @MainActor in await self.sendTurn(id: id, config: config) }
   }
 
-  @MainActor private func routed<T>(phone: () async throws -> T, watch: () async throws -> T) async throws -> T {
+  @MainActor private func routed<T>(updateStatus: Bool = true, phone: () async throws -> T, watch: () async throws -> T) async throws -> T {
     try await WatchRequestRouting.execute(phoneAvailable: { self.phoneAvailable },
       hasPartial: { ["thinking", "replying"].contains(self.phase) && !self.answer.isEmpty }, onRoute: { phone in
-        if self.phase == "thinking" {
+        if updateStatus && self.phase == "thinking" {
           self.setStatus(phone ? "手机正在请求模型…" : "手表正在请求模型…",
                          phone ? "Phone requesting model…" : "Watch requesting model…")
         }
@@ -383,6 +405,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
         let data = try JSONSerialization.data(withJSONObject: history)
         let response = try await self.relay.request("remote-chat", arguments: [
           "history": String(decoding: data, as: UTF8.self), "providerId": config.providerId!, "model": config.model,
+          "searchEnabled": config.searchEnabled == true, "searchProviderId": config.search?.id ?? "",
         ], onText: onText)
         guard let answer = response["answer"] as? String, !answer.isEmpty else {
           throw WatchRequestError("模型回复无效", "Invalid model reply")
@@ -397,24 +420,42 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
       phase = "complete"
       setStatus("", "")
       syncPendingTurns()
-      if speak, config.tts != nil {
-        do {
-          let audio: (Data, String)? = try await routed(phone: {
-            let text = String(String.UnicodeScalarView(result.unicodeScalars.prefix(1800)))
-            let reply = try await self.relay.request("remote-tts", arguments: ["text": text])
-            guard let url = reply["audioURL"] as? URL else { return nil }
-            defer { try? FileManager.default.removeItem(at: url) }
-            return (try Data(contentsOf: url), url.pathExtension)
-          }, watch: { try await self.networkClient.synthesize(result, config: config) })
-          if let (data, format) = audio {
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent("speech-\(UUID().uuidString).\(format)")
-            try data.write(to: url, options: .atomic)
-            playAudio(at: url)
-          }
-        } catch { setStatus("文字已保存，朗读失败", "Text saved; speech failed") }
-      }
       busy = false
+      if speak, config.tts != nil {
+        startSpeech(result, config: config)
+      }
     } catch { failRequest(error) }
+  }
+
+  private func startSpeech(_ result: String, config: WatchNetworkConfiguration) {
+    stopPlayback()
+    let id = UUID()
+    speechID = id
+    loadingAudio = true
+    scrollGeneration += 1
+    speechTask = Task { @MainActor in
+      do {
+        let audio: (Data, String)? = try await routed(updateStatus: false, phone: {
+          try Task.checkCancellation()
+          let text = String(String.UnicodeScalarView(result.unicodeScalars.prefix(1800)))
+          let reply = try await self.relay.request("remote-tts", arguments: ["text": text])
+          guard let url = reply["audioURL"] as? URL else { return nil }
+          defer { try? FileManager.default.removeItem(at: url) }
+          return (try Data(contentsOf: url), url.pathExtension)
+        }, watch: { try await self.networkClient.synthesize(result, config: config) })
+        guard speechID == id, !Task.isCancelled, speak, !recording else { return }
+        loadingAudio = false
+        if let (data, format) = audio {
+          let url = FileManager.default.temporaryDirectory.appendingPathComponent("speech-\(UUID().uuidString).\(format)")
+          try data.write(to: url, options: .atomic)
+          playAudio(at: url)
+        }
+      } catch {
+        guard speechID == id, !Task.isCancelled else { return }
+        loadingAudio = false
+        setStatus("文字已保存，朗读失败", "Text saved; speech failed")
+      }
+    }
   }
 
   @MainActor private func failRequest(_ error: Error) {
@@ -530,6 +571,10 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
   }
 
   func stopPlayback() {
+    speechID = nil
+    speechTask?.cancel()
+    speechTask = nil
+    loadingAudio = false
     player?.stop()
     if let url = playbackURL { try? FileManager.default.removeItem(at: url) }
     playbackURL = nil
@@ -539,7 +584,9 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
   }
 
   nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-    DispatchQueue.main.async { self.stopPlayback() }
+    DispatchQueue.main.async {
+      if self.player === player { self.stopPlayback() }
+    }
   }
 
   private func localized(_ chinese: String, _ english: String) -> String {

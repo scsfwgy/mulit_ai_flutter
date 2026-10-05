@@ -66,6 +66,8 @@ class WatchRequestWorker(context: Context, params: WorkerParameters) : Coroutine
                         "history" to String(bytes, Charsets.UTF_8),
                         "providerId" to data.getInt("providerId"),
                         "model" to (data.getString("model") ?: error("Missing model")),
+                        "searchEnabled" to data.getBoolean("searchEnabled", false),
+                        "searchProviderId" to (data.getString("searchProviderId") ?: ""),
                     )
                 } else if (kind == "remote-tts") {
                     val text = data.getString("text") ?: error("Missing speech text")

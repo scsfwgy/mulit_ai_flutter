@@ -22,6 +22,11 @@ struct WatchContentView: View {
       if page == 1 { settingsPage }
       else if !guideSeen { introduction }
     }
+    .safeAreaInset(edge: .top, spacing: 4) {
+      if page == 0 && guideSeen && (session.processingLabel != nil || session.loadingAudio || session.playing) {
+        speechIndicator.frame(height: 26).allowsHitTesting(false)
+      }
+    }
     .tint(accent)
     .blur(radius: session.recording ? 4 : 0)
     .overlay {
@@ -85,7 +90,7 @@ struct WatchContentView: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 10) {
           Color.clear.frame(height: 0).id("top")
-          if !session.status.isEmpty {
+          if !session.status.isEmpty && session.processingLabel == nil {
             Text(session.status).font(.system(size: 12)).foregroundStyle(.secondary)
               .fixedSize(horizontal: false, vertical: true)
           }
@@ -94,7 +99,7 @@ struct WatchContentView: View {
               .font(.system(size: 12)).foregroundStyle(.secondary)
           }
           if !session.answer.isEmpty {
-            Text(session.answer).font(.system(size: 15)).fixedSize(horizontal: false, vertical: true)
+            WatchMarkdownView(session.answer)
               .padding(.bottom, 8)
           }
           if session.awaitingConfirmation {
@@ -111,7 +116,7 @@ struct WatchContentView: View {
             VStack(alignment: .leading, spacing: 4) {
               Text("\(label("我", "Me")) · \(turn.question)")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
-              Text(turn.answer).font(.system(size: 15)).fixedSize(horizontal: false, vertical: true)
+              WatchMarkdownView(turn.answer)
             }.padding(.bottom, 8)
           }
         }
@@ -160,6 +165,13 @@ struct WatchContentView: View {
         }.buttonStyle(.plain)
         Text(session.connectionLabel).font(.system(size: 12)).foregroundStyle(.secondary)
           .multilineTextAlignment(.center)
+        Button(label("开启新话题", "Start new topic")) {
+          session.startNewTopic()
+          page = 0
+        }.disabled(session.busy || session.recording)
+        Text(label("清空当前聊天；历史问答同步保存到手机，离线记录将在重连后同步。",
+          "Clears the current chat. History is saved to your phone; offline chats sync after reconnecting."))
+          .font(.system(size: 10)).foregroundStyle(.secondary).multilineTextAlignment(.center)
         VStack(alignment: .leading, spacing: 6) {
           Text(label("录音界面", "Recording view")).font(.system(size: 12)).foregroundStyle(.secondary)
           HStack(spacing: 4) {
@@ -174,6 +186,14 @@ struct WatchContentView: View {
         serviceDetails(label("语音朗读", "Speech synthesis"),
           provider: session.configuration?.tts?.providerName, model: session.configuration?.tts?.ttsModel,
           voice: session.configuration?.tts?.voice, showVoice: true)
+        VStack(alignment: .leading, spacing: 3) {
+          Text(label("联网搜索", "Web search")).font(.system(size: 13, weight: .semibold))
+          serviceField(label("状态", "Status"), value: session.configuration?.searchEnabled == true
+            ? label("已开启", "Enabled") : label("已关闭", "Disabled"))
+          serviceField(label("提供商", "Provider"), value: session.configuration?.search?.name)
+          serviceField(label("搜索服务", "Search service"), value: session.configuration?.search?.service == "bocha"
+            ? label("博查", "Bocha") : session.configuration?.search?.serviceLabel)
+        }.frame(maxWidth: .infinity, alignment: .leading)
         if !session.textReady || !session.asrReady {
           Text(session.configurationGuidance).font(.system(size: 11)).foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
@@ -186,17 +206,43 @@ struct WatchContentView: View {
           Text(session.settingsStatus).font(.system(size: 11)).foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
         }
-        if session.playing {
+        if session.playing || session.loadingAudio {
           Button(label("停止播放", "Stop playback")) { session.stopPlayback() }
         }
         gestureInstructions
-        Text(label("模型与语音服务在手机端设置", "Set up text and voice services on phone"))
+        Text(label("模型、语音与联网服务在手机端设置", "Set up text, voice and search services on phone"))
           .font(.system(size: 11)).foregroundStyle(.secondary).multilineTextAlignment(.center)
         Text(label("优先由手表请求；手表网络不可用时尝试手机。密钥保存在手表钥匙串。", "Uses the watch first, then tries the phone if the watch network is unavailable. Credentials are stored in watch Keychain."))
           .font(.system(size: 10)).foregroundStyle(.secondary).multilineTextAlignment(.center)
         Button(label("清除手表配置和问答", "Clear watch settings and chats"), role: .destructive) { confirmClear = true }
           .disabled(session.busy || session.recording || session.syncingSettings)
       }.font(.system(size: 13)).padding(.horizontal, 8)
+    }
+  }
+
+  private var speechIndicator: some View {
+    TimelineView(.animation(minimumInterval: 0.08)) { timeline in
+      let time = timeline.date.timeIntervalSinceReferenceDate
+      HStack(spacing: 6) {
+        if session.processingLabel != nil || session.loadingAudio {
+          Circle().trim(from: 0.15, to: 0.95)
+            .stroke(accent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+            .frame(width: 14, height: 14)
+            .rotationEffect(.degrees(time * 260))
+        } else {
+          HStack(spacing: 2) {
+            ForEach(0..<5) { index in
+              Capsule().fill(accent)
+                .frame(width: 3, height: 5 + 11 * (sin(time * 7 + Double(index) * 1.3) + 1) / 2)
+            }
+          }.frame(width: 23, height: 18)
+        }
+        Text(session.processingLabel ?? (session.loadingAudio ? label("语音加载中", "Loading audio") : label("播放语音中", "Playing audio")))
+          .font(.system(size: 10))
+      }.frame(height: 18).fixedSize(horizontal: true, vertical: true)
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(.regularMaterial, in: Capsule())
+        .accessibilityElement(children: .combine)
     }
   }
 

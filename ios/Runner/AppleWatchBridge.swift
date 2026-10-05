@@ -7,6 +7,7 @@ import WatchConnectivity
 final class AppleWatchBridge: NSObject, WCSessionDelegate {
   static let shared = AppleWatchBridge()
 
+  private var pendingConfiguration: [String: Any]?
   private var workerEngine: FlutterEngine?
   private var workerChannel: FlutterMethodChannel?
   private var workerReady = false
@@ -51,6 +52,17 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
         UserDefaults.standard.set(language, forKey: "ai_link_watch_language")
         self.syncPreferences()
         result(nil)
+      case "syncConfiguration":
+        guard let arguments = call.arguments as? [String: Any],
+              let config = arguments["configuration"] as? [String: Any],
+              config["version"] as? Int == 1,
+              let data = try? JSONSerialization.data(withJSONObject: config), data.count <= 60_000 else {
+          result(FlutterError(code: "bad_config", message: "Invalid watch configuration", details: nil))
+          return
+        }
+        self.pendingConfiguration = config
+        self.sendPendingConfiguration()
+        result(nil)
       case "watchStatus":
         let paired = session.isPaired
         let installed = session.isWatchAppInstalled
@@ -71,6 +83,16 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
         result(FlutterMethodNotImplemented)
       }
     }
+  }
+
+  private func sendPendingConfiguration() {
+    let session = WCSession.default
+    guard session.activationState == .activated, session.isPaired, session.isWatchAppInstalled,
+          let config = pendingConfiguration else { return }
+    pendingConfiguration = nil
+    sendUpdate(["kind": "preferences", "configuration": config,
+      "textReady": config["textReady"] ?? false, "asrReady": config["asrReady"] ?? false,
+      "speak": config["speak"] ?? false, "autoSend": config["autoSend"] ?? true])
   }
 
   private func syncPreferences() {
@@ -233,15 +255,15 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
     _ session: WCSession, activationDidCompleteWith state: WCSessionActivationState,
     error: Error?
   ) {
-    DispatchQueue.main.async { self.syncPreferences() }
+    DispatchQueue.main.async { self.sendPendingConfiguration(); self.syncPreferences() }
   }
 
   func sessionWatchStateDidChange(_ session: WCSession) {
-    DispatchQueue.main.async { self.syncPreferences() }
+    DispatchQueue.main.async { self.sendPendingConfiguration(); self.syncPreferences() }
   }
 
   func sessionReachabilityDidChange(_ session: WCSession) {
-    DispatchQueue.main.async { self.syncPreferences() }
+    DispatchQueue.main.async { self.sendPendingConfiguration(); self.syncPreferences() }
   }
 
   func sessionDidBecomeInactive(_ session: WCSession) {}

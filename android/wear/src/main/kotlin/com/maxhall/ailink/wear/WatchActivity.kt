@@ -49,6 +49,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.UUID
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 import org.json.JSONArray
 import org.json.JSONObject
@@ -56,6 +57,14 @@ import org.json.JSONObject
 class WatchActivity : Activity(), DataClient.OnDataChangedListener,
     MessageClient.OnMessageReceivedListener {
     private val executor = Executors.newSingleThreadExecutor()
+    // Speech must never hold up a new recording's ASR/model request.
+    private val speechExecutor = Executors.newCachedThreadPool()
+    private var speechTask: Future<*>? = null
+    @Volatile private var speechClient: WatchModelClient? = null
+    private var speechGeneration = 0
+    private var loadingAudio = false
+    private var requestStage: String? = null
+    private lateinit var speechIndicator: WatchSpeechIndicator
     private val darkMode: Boolean
         get() = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
     private val backgroundColor: Int get() = if (darkMode) Color.rgb(9, 12, 19) else Color.rgb(247, 248, 251)
@@ -68,6 +77,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
     private lateinit var status: TextView
     private lateinit var transcript: TextView
     private lateinit var answer: TextView
+    private val markdown by lazy { WatchMarkdown(this, primaryColor, accentColor) }
     private lateinit var confirmation: TextView
     private lateinit var retry: TextView
     private lateinit var sound: TextView
@@ -103,7 +113,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
     private var recordingThread: Thread? = null
     @Volatile private var recording = false
     private var recordingStartedAtMs = 0L
-    private var requestId: String? = null
+    @Volatile private var requestId: String? = null
     private var pendingTranscript: String? = null
     private var awaitingConfirmation = false
     private var pressStartX = 0f
@@ -138,6 +148,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         if (getPreferences(MODE_PRIVATE).getBoolean("pending", false)) {
             status.text = watchText("正在等待手机回复…")
             chatBusy = true
+            setRequestStage("正在思考")
             val sentAt = getPreferences(MODE_PRIVATE).getLong("sentAt", 0)
             handler.postDelayed(
                 requestTimeout,
@@ -299,6 +310,8 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
                         if (item.uri.path == "/between-models/preferences") {
                             val language = DataMapItem.fromDataItem(item).dataMap.getString("language")
                             handler.post { applyPhoneLanguage(language) }
+                        } else if (item.uri.path == "/between-models/config-changed") {
+                            requestConfiguration()
                         } else if (id != null && item.uri.path == "/between-models/reply/$id") {
                             renderResponse(item)
                         }
@@ -324,6 +337,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         handler.removeCallbacks(requestTimeout)
         stopPlayback()
         executor.shutdown()
+        speechExecutor.shutdownNow()
         super.onDestroy()
     }
 
@@ -339,6 +353,8 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             if (event.dataItem.uri.path == "/between-models/preferences") {
                 val language = DataMapItem.fromDataItem(event.dataItem).dataMap.getString("language")
                 handler.post { applyPhoneLanguage(language) }
+            } else if (event.dataItem.uri.path == "/between-models/config-changed") {
+                requestConfiguration()
             } else if (id != null &&
                 event.dataItem.uri.path == "/between-models/reply/$id") {
                 val item = event.dataItem.freeze()
@@ -365,7 +381,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
                 if (requestId != id) return@post
                 if (!spoken.isNullOrEmpty()) transcript.text = "${watchText("我")}: $spoken"
                 if (!spoken.isNullOrEmpty()) pendingTranscript = spoken
-                if (!reply.isNullOrEmpty()) answer.text = reply
+                if (!reply.isNullOrEmpty()) markdown.render(answer, reply)
                 status.text = when (stage) {
                     "transcribing" -> watchText("正在识别语音…")
                     "transcribed", "thinking" -> watchText("模型正在思考…")
@@ -377,6 +393,12 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
                 }
                 awaitingConfirmation = stage == "awaiting_confirmation"
                 chatBusy = stage != "awaiting_confirmation" && stage != "complete" && stage != "error"
+                setRequestStage(when (stage) {
+                    "transcribing" -> "语音识别中"
+                    "transcribed", "thinking" -> "正在思考"
+                    "replying" -> "正在回答"
+                    else -> null
+                })
                 setConfirmationVisible(awaitingConfirmation)
                 if (stage == "complete" || stage == "error" || awaitingConfirmation) {
                     handler.removeCallbacks(requestTimeout)
@@ -408,6 +430,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
 
     private fun startRecording() {
         if (recording) return
+        stopPlayback()
         if (!requireRecordingSetup()) return
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 10)
@@ -521,6 +544,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         status.text = watchText("正在选择网络并识别语音…")
         historyScroll.post { historyScroll.fullScroll(View.FOCUS_UP) }
         chatBusy = true
+        setRequestStage("语音识别中")
         val id = UUID.randomUUID().toString()
         requestId = id
         lastAudioId = null
@@ -548,6 +572,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
                             awaitingConfirmation = true
                             status.text = watchText("请确认识别文字")
                             chatBusy = false
+                            setRequestStage(null)
                             setConfirmationVisible(true)
                         }
                     }
@@ -591,6 +616,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         setConfirmationVisible(false)
         status.text = watchText("正在请求模型…")
         chatBusy = true
+        setRequestStage("正在思考")
         directBusy = true
         executor.execute {
             try {
@@ -622,7 +648,10 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             history.put(JSONObject().put("role", "assistant").put("content", turn.getString("answer")))
         }
         history.put(JSONObject().put("role", "user").put("content", text))
-        handler.post { if (requestId == id) status.text = watchText("模型正在回答…") }
+        handler.post { if (requestId == id) {
+            status.text = watchText("正在请求模型…")
+            setRequestStage("正在思考")
+        } }
         var lastUpdate = 0L
         var receivedText = false
         val onText: (String) -> Unit = { current ->
@@ -630,7 +659,10 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             val now = System.currentTimeMillis()
             if (now - lastUpdate >= 250) {
                 lastUpdate = now
-                handler.post { if (requestId == id) answer.text = readable(current) }
+                handler.post { if (requestId == id) {
+                    markdown.render(answer, current)
+                    setRequestStage("正在回答")
+                } }
             }
         }
         val reply = routed(
@@ -638,7 +670,8 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             watchText("正在通过手表网络请求模型…"),
             phone = { node -> WatchPhoneRelay(this, node).reply(
                 history.toString().toByteArray(Charsets.UTF_8),
-                config.optInt("providerId"), config.optString("model"), onText) },
+                config.optInt("providerId"), config.optString("model"),
+                config.optBoolean("searchEnabled", false), config.optJSONObject("search")?.optString("id"), onText) },
             watch = { network ->
                 try {
                     WatchModelClient(config, network).reply(history, onText)
@@ -674,29 +707,54 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         } catch (_: Exception) {
             // The answer is already saved locally. Retry history sync on next resume.
         }
-        directBusy = false
         handler.post {
             if (requestId == id) {
+                directBusy = false
                 renderHistory()
                 transcript.text = ""
                 answer.text = ""
                 status.text = ""
                 chatBusy = false
+                setRequestStage(null)
+                if (watchSettings.getBoolean("speak", config.optBoolean("speak", false)) &&
+                    config.optJSONObject("tts") != null) startSpeech(id, readable(reply).take(1800), config)
             }
         }
-        if (watchSettings.getBoolean("speak", config.optBoolean("speak", false))) {
+    }
+
+    private fun startSpeech(id: String, speech: String, config: JSONObject) {
+        stopPlayback()
+        val generation = speechGeneration
+        loadingAudio = true
+        updateActivityIndicator()
+        sound.visibility = View.VISIBLE
+        speechTask = speechExecutor.submit {
             try {
-                val speech = readable(reply).take(1800)
                 val audio = routed(
                     watchText("正在通过手机网络生成语音…"),
                     watchText("正在通过手表网络生成语音…"),
                     phone = { node -> WatchPhoneRelay(this, node).speak(speech) },
-                    watch = { network -> WatchModelClient(config, network).synthesize(speech) },
+                    watch = { network ->
+                        val client = WatchModelClient(config, network)
+                        speechClient = client
+                        try { client.synthesize(speech) }
+                        finally { if (speechClient === client) speechClient = null }
+                    },
+                    updateStatus = false,
                 )
-                if (audio != null) handler.post {
-                    if (requestId == id) playAudio(audio.first, audio.second)
+                handler.post {
+                    if (requestId != id || generation != speechGeneration) return@post
+                    if (audio != null && !recording) playAudio(audio.first, audio.second)
+                    else stopPlayback()
                 }
-            } catch (_: Exception) { /* Text remains available if speech fails. */ }
+            } catch (_: Exception) {
+                handler.post {
+                    if (requestId == id && generation == speechGeneration) {
+                        stopPlayback()
+                        status.text = watchText("文字已保存，朗读失败")
+                    }
+                }
+            }
         }
     }
 
@@ -712,6 +770,8 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             "between_models_phone_app", CapabilityClient.FILTER_REACHABLE,
         )).nodes.map { it.id }.toSet()
         nodes.firstOrNull { it.id in installed }?.id
+    } catch (error: InterruptedException) {
+        throw error
     } catch (_: Exception) { null }
 
     private fun <T> routed(
@@ -719,18 +779,26 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         watchStatus: String,
         phone: (String) -> T,
         watch: (android.net.Network) -> T,
-    ): T = WatchRouteExecutor().run(
-        connectedPhone = connectedPhone(),
-        reconnectPhone = ::connectedPhone,
-        phone = phone,
-        watch = { WatchNetworkSelector(this).use(watch) },
-        onPhone = { fallback -> handler.post {
-            status.text = if (fallback) watchText("手表网络失败，正在切换手机网络…") else phoneStatus
-        } },
-        onWatch = { fallback -> handler.post {
-            status.text = if (fallback) watchText("手机网络失败，正在切换手表网络…") else watchStatus
-        } },
-    )
+        updateStatus: Boolean = true,
+    ): T {
+        val id = requestId
+        return WatchRouteExecutor().run(
+            connectedPhone = connectedPhone(),
+            reconnectPhone = ::connectedPhone,
+            phone = phone,
+            watch = { WatchNetworkSelector(this).use(watch) },
+            onPhone = { fallback -> handler.post {
+                if (updateStatus && requestId == id) {
+                    status.text = if (fallback) watchText("手表网络失败，正在切换手机网络…") else phoneStatus
+                }
+            } },
+            onWatch = { fallback -> handler.post {
+                if (updateStatus && requestId == id) {
+                    status.text = if (fallback) watchText("手机网络失败，正在切换手表网络…") else watchStatus
+                }
+            } },
+        )
+    }
 
     private fun readable(source: String): String = source
         .replace(Regex("\\[([^]]+)]\\([^)]+\\)"), "$1")
@@ -772,6 +840,24 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         setConfirmationVisible(false)
         status.text = ""
         chatBusy = false
+        setRequestStage(null)
+    }
+
+    private fun startNewTopic() {
+        if (chatBusy || directBusy || recording) return
+        stopPlayback()
+        requestId = null
+        getPreferences(MODE_PRIVATE).edit().remove("requestId").putBoolean("pending", false).apply()
+        // Keep pendingTurns: the Data Layer will deliver the old topic to phone.
+        conversation.edit().putString("turns", "[]")
+            .putString("conversationId", UUID.randomUUID().toString())
+            .putInt("sequence", 0).apply()
+        transcript.text = ""
+        answer.text = ""
+        resetForRecording()
+        renderHistory()
+        syncPendingTurns()
+        showPage(0)
     }
 
     private fun wav(pcm: ByteArray): ByteArray {
@@ -799,9 +885,21 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             playingFile = file
             player = MediaPlayer().apply {
                 setDataSource(file.absolutePath)
-                setOnCompletionListener { stopPlayback() }
-                prepare()
-                start()
+                setOnCompletionListener { completed -> if (player === completed) stopPlayback() }
+                setOnErrorListener { failed, _, _ ->
+                    if (player === failed) stopPlayback()
+                    true
+                }
+                setOnPreparedListener { prepared ->
+                    if (player === prepared && !recording) {
+                        prepared.start()
+                        loadingAudio = false
+                        updateActivityIndicator()
+                    }
+                }
+                loadingAudio = true
+                updateActivityIndicator()
+                prepareAsync()
             }
             sound.visibility = View.VISIBLE
         } catch (_: Exception) {
@@ -809,13 +907,39 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         }
     }
 
+    private fun setRequestStage(stage: String?) {
+        requestStage = stage
+        status.visibility = if (stage != null || status.text.isEmpty()) View.GONE else View.VISIBLE
+        updateActivityIndicator()
+    }
+
+    private fun updateActivityIndicator() {
+        if (!::speechIndicator.isInitialized) return
+        val stage = requestStage
+        if (page != 0 || showingGuide || stage == null && !loadingAudio && player == null) {
+            speechIndicator.visibility = View.GONE
+            historyScroll.setPadding(0, 0, 0, 0)
+            return
+        }
+        speechIndicator.show(loading = stage != null || loadingAudio,
+            labelKey = stage ?: if (loadingAudio) "语音加载中" else "播放语音中")
+        historyScroll.setPadding(0, (16 * resources.displayMetrics.density).toInt(), 0, 0)
+    }
+
     private fun stopPlayback() {
+        speechGeneration += 1
+        speechTask?.cancel(true)
+        speechTask = null
+        speechClient?.cancel()
+        speechClient = null
+        loadingAudio = false
         try { player?.stop() } catch (_: Exception) { }
         player?.release()
         player = null
         playingFile?.delete()
         playingFile = null
         if (::sound.isInitialized) sound.visibility = View.GONE
+        updateActivityIndicator()
     }
 
     private fun showError(message: String) {
@@ -823,6 +947,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         getPreferences(MODE_PRIVATE).edit().putBoolean("pending", false).apply()
         status.text = watchText(message)
         chatBusy = false
+        setRequestStage(null)
         awaitingConfirmation = false
         setConfirmationVisible(false)
     }
@@ -880,6 +1005,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         pages.getChildAt(1).visibility = if (index == 1) View.VISIBLE else View.GONE
         pages.getChildAt(2).visibility = if (showingGuide) View.VISIBLE else View.GONE
         if (index == 1) refreshSettings()
+        updateActivityIndicator()
     }
 
     private fun setConfirmationVisible(visible: Boolean) {
@@ -902,7 +1028,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         configSummary.text = configStore.recordingIssue(config)?.let(::watchText) ?: ""
         configSummary.visibility = if (configSummary.text.isEmpty()) View.GONE else View.VISIBLE
         serviceDetails.removeAllViews()
-        fun section(title: String, service: JSONObject?, modelKey: String, showVoice: Boolean = false) {
+        fun section(title: String, service: JSONObject?, modelKey: String, showVoice: Boolean = false, search: Boolean = false) {
             serviceDetails.addView(label(watchText(title), 13f, primaryColor, true).apply {
                 gravity = Gravity.START
                 setPadding(0, 10, 0, 5)
@@ -917,14 +1043,18 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
                     setPadding(0, 2, 0, 6)
                 })
             }
-            field("提供商", service?.optString("providerName"),
+            if (search) field("状态", if (config?.optBoolean("searchEnabled", false) == true) watchText("已开启") else watchText("已关闭"))
+            field("提供商", service?.optString(if (search) "name" else "providerName"),
                 if (service?.optString(modelKey)?.isNotBlank() == true) "同步后显示" else "未配置")
-            field("模型 ID", service?.optString(modelKey))
+            field(if (search) "搜索服务" else "模型 ID", service?.optString(modelKey)?.let {
+                if (search && it == "bocha") watchText("博查") else if (search && it == "tavily") "Tavily" else if (search && it == "exa") "Exa" else it
+            })
             if (showVoice) field("音色", service?.optString("voice"))
         }
         section("文本模型", config, "model")
         section("语音识别", config?.optJSONObject("asr"), "asrModel")
         section("语音朗读", config?.optJSONObject("tts"), "ttsModel", showVoice = true)
+        section("联网搜索", config?.optJSONObject("search"), "service", search = true)
         updatingSettings = true
         speakSwitch.isChecked = watchSettings.getBoolean(
             "speak", config?.optBoolean("speak", false) ?: false)
@@ -942,9 +1072,10 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
                 12f, secondaryColor).apply {
                 gravity = Gravity.START
             })
-            history.addView(label(readable(turn.optString("answer")), 15f, primaryColor).apply {
+            history.addView(label("", 15f, primaryColor).apply {
                 gravity = Gravity.START
                 setPadding(0, 4, 0, 18)
+                markdown.render(this, turn.optString("answer"))
             })
         }
         updateEmptyChat()
@@ -996,7 +1127,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             val bottom = (if (round) 40 else 24) * density
             setPadding(horizontal.toInt(), top.toInt(), horizontal.toInt(), bottom.toInt())
         }
-        status = label("", 12f, secondaryColor, hideWhenEmpty = true)
+        status = label("", 12f, secondaryColor, hideWhenEmpty = true, suppressWhileProcessing = true)
         status.setPadding(0, 0, 0, 8)
         content.addView(status)
         transcript = label("", 12f, mutedColor, hideWhenEmpty = true).apply {
@@ -1046,6 +1177,17 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         settingsStatus = label(watchText("正在检查手机连接…"), 12f, secondaryColor)
         settingsStatus.setPadding(0, 7, 0, 10)
         settingsPage.addView(settingsStatus)
+        settingsPage.addView(uiLabel("开启新话题", 14f, accentColor, true).apply {
+            setPadding(0, 8, 0, 8)
+            setOnClickListener {
+                if (chatBusy || directBusy || recording) {
+                    settingsStatus.text = watchText("请等待当前回答完成")
+                } else startNewTopic()
+            }
+        })
+        settingsPage.addView(uiLabel("清空当前聊天；历史问答同步保存到手机，离线记录将在重连后同步。", 10f, secondaryColor).apply {
+            setPadding(0, 0, 0, 12)
+        })
         settingsPage.addView(uiLabel("录音界面", 12f, secondaryColor).apply {
             gravity = Gravity.START
             setPadding(0, 0, 0, 6)
@@ -1085,7 +1227,10 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             textSize = 13f
             setTextColor(primaryColor)
             setOnCheckedChangeListener { _, checked ->
-                if (!updatingSettings) watchSettings.edit().putBoolean("speak", checked).apply()
+                if (!updatingSettings) {
+                    watchSettings.edit().putBoolean("speak", checked).apply()
+                    if (!checked) stopPlayback()
+                }
             }
         }
         settingsPage.addView(speakSwitch)
@@ -1109,7 +1254,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             setOnClickListener { stopPlayback() }
         }
         settingsPage.addView(sound)
-        settingsPage.addView(uiLabel("模型与语音服务在手机端设置", 11f, secondaryColor))
+        settingsPage.addView(uiLabel("模型、语音与联网服务在手机端设置", 11f, secondaryColor))
         settingsPage.addView(uiLabel("长按屏幕说话，松手发送；左上滑取消，右上滑转文字后确认。", 11f, secondaryColor))
         settingsPage.addView(uiLabel("双击聊天进入设置，上下滑动查看聊天。", 11f, secondaryColor))
         settingsScroll.addView(settingsPage)
@@ -1134,6 +1279,11 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         pages.addView(historyScroll)
         pages.addView(settingsScroll)
         pages.addView(guide)
+        speechIndicator = WatchSpeechIndicator(this, { accentColor }, ::watchText)
+        pages.addView(speechIndicator, FrameLayout.LayoutParams(-2,
+            (28 * resources.displayMetrics.density).toInt(), Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
+            topMargin = ((if (resources.configuration.isScreenRound) 16 else 4) * resources.displayMetrics.density).toInt()
+        })
         recordingOverlay = WatchRecordingOverlay(this, { darkMode }, ::watchText).apply {
             visibility = View.GONE
         }
@@ -1156,6 +1306,8 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         pendingTranscript?.let { transcript.text = "${watchText("我")}: $it" }
         refreshSettings()
         recordingOverlay.invalidate()
+        speechIndicator.invalidate()
+        speechIndicator.requestLayout()
     }
 
     private fun watchText(text: String): String = translateWatchText(text, phoneLanguage)
@@ -1164,12 +1316,12 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         label(watchText(key), size, color, bold).also { localizedLabels[it] = key }
 
     private fun label(text: String, size: Float, color: Int, bold: Boolean = false,
-                      hideWhenEmpty: Boolean = false) =
+                      hideWhenEmpty: Boolean = false, suppressWhileProcessing: Boolean = false) =
         object : TextView(this) {
             override fun onTextChanged(text: CharSequence?, start: Int, before: Int, count: Int) {
                 super.onTextChanged(text, start, before, count)
                 if (hideWhenEmpty) {
-                    visibility = if (text.isNullOrEmpty()) View.GONE else View.VISIBLE
+                    visibility = if (text.isNullOrEmpty() || suppressWhileProcessing && requestStage != null) View.GONE else View.VISIBLE
                     updateEmptyChat()
                 }
             }

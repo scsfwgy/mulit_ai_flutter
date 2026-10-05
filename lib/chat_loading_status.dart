@@ -12,9 +12,14 @@ String formatLoadingDuration(int milliseconds) {
 }
 
 class ChatLoadingStatus extends StatelessWidget {
-  const ChatLoadingStatus({super.key, required this.elapsedMilliseconds});
+  const ChatLoadingStatus({
+    super.key,
+    required this.elapsedMilliseconds,
+    this.label = '加载中',
+  });
 
   final ValueListenable<int> elapsedMilliseconds;
+  final String label;
 
   @override
   Widget build(BuildContext context) => ValueListenableBuilder<int>(
@@ -25,7 +30,7 @@ class ChatLoadingStatus extends StatelessWidget {
         const CupertinoActivityIndicator(radius: 7),
         const SizedBox(width: 8),
         Text(
-          '${tr('加载中')} · ${formatLoadingDuration(elapsed)}',
+          '${tr(label)} · ${formatLoadingDuration(elapsed)}',
           style: TextStyle(
             color: IosColors.secondary,
             fontSize: 12,

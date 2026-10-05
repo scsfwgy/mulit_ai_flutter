@@ -16,6 +16,19 @@ struct WatchVoiceConfiguration: Codable {
   }
 }
 
+struct WatchSearchConfiguration: Codable {
+  let id: String
+  let name: String
+  let service: String
+  let endpoint: String
+  let apiKey: String?
+  let maxResults: Int
+  let detailed: Bool
+  let timeRange: String
+
+  var serviceLabel: String { service == "bocha" ? "Bocha" : service == "tavily" ? "Tavily" : service == "exa" ? "Exa" : service }
+}
+
 struct WatchNetworkConfiguration: Codable {
   let version: Int
   let providerId: Int?
@@ -30,11 +43,13 @@ struct WatchNetworkConfiguration: Codable {
   let asrReady: Bool
   let asr: WatchVoiceConfiguration?
   let tts: WatchVoiceConfiguration?
+  var searchEnabled: Bool? = nil
+  var search: WatchSearchConfiguration? = nil
 
   enum CodingKeys: String, CodingKey {
     case protocolName = "protocol"
     case version, providerId, providerName, providerPresetId, baseUrl, apiKey
-    case model, systemPrompt, textReady, asrReady, asr, tts
+    case model, systemPrompt, textReady, asrReady, asr, tts, searchEnabled, search
   }
 
   static func endpoint(_ base: String, _ suffix: String) throws -> URL {
@@ -251,6 +266,14 @@ final class WatchHistoryStore {
 
   func acknowledge(_ id: String) {
     snapshot.pending.removeAll { $0.id == id }
+    persist()
+  }
+
+  func startNewTopic() {
+    snapshot.conversationId = UUID().uuidString.lowercased()
+    snapshot.sequence = 0
+    snapshot.recent = []
+    // Older conversations must still reach the phone after an offline reset.
     persist()
   }
 

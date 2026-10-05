@@ -25,7 +25,11 @@ import 'data.dart';
 import 'ios_style.dart';
 import 'message_copy.dart';
 import 'provider_screen.dart';
+import 'privacy_screen.dart';
 import 'settings_screen.dart';
+import 'search_service.dart';
+import 'search_settings_screen.dart';
+import 'search_sources.dart';
 import 'topic_screen.dart';
 import 'voice_client.dart';
 import 'voice_recording.dart';
@@ -33,7 +37,7 @@ import 'voice_settings_screen.dart';
 import 'voice_recording_overlay.dart';
 import 'watch_chat.dart';
 
-enum _ChatErrorAction { none, configure, model, request, retry }
+enum _ChatErrorAction { none, configure, model, request, retry, search }
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -188,6 +192,12 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   bool _loading = true;
   bool _starting = false;
   bool _sending = false;
+  bool _searchEnabled = false;
+  bool _searching = false;
+  List<SearchSource> _replySources = const [];
+  StreamSubscription<void>? _watchConfigSubscription;
+  bool _watchConfigPending = false;
+  bool _watchConfigSyncing = false;
   bool _watchProcessing = false;
   bool _cancelRequested = false;
   int? _sendingTopicId;
@@ -205,6 +215,11 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       }
     });
     WidgetsBinding.instance.addObserver(this);
+    _watchConfigSubscription = ChatStore.instance.watchConfigurationChanges
+        .listen((_) {
+          unawaited(_syncWatchConfiguration());
+        });
+    unawaited(_syncWatchConfiguration());
     unawaited(_removeStaleVoiceFiles(DateTime.now()));
     _playbackCompletion = _player.onPlayerComplete.listen((_) {
       final path = _playingPath;
@@ -241,6 +256,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   @override
   void dispose() {
     _watchUpdates.setMethodCallHandler(null);
+    unawaited(_watchConfigSubscription?.cancel());
     WidgetsBinding.instance.removeObserver(this);
     _recordTimer?.cancel();
     _hideVoiceOverlay();
@@ -274,7 +290,9 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_syncWatchConfiguration());
+    } else {
       final wasHolding = _voicePointerDown;
       _voicePointerDown = false;
       _voicePointer = null;
@@ -282,6 +300,28 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       _hideVoiceOverlay();
       if (wasHolding && mounted) setState(() {});
       if (_recording) unawaited(_cancelRecording());
+    }
+  }
+
+  Future<void> _syncWatchConfiguration() async {
+    _watchConfigPending = true;
+    if (_watchConfigSyncing) return;
+    _watchConfigSyncing = true;
+    try {
+      while (mounted && _watchConfigPending) {
+        _watchConfigPending = false;
+        try {
+          final config = await WatchChatProcessor().configuration();
+          if (!mounted) return;
+          await const MethodChannel(
+            'between_models/companion_install',
+          ).invokeMethod<void>('syncConfiguration', {'configuration': config});
+        } catch (_) {
+          // Pairing can be unavailable; retry on foreground or the watch's next config request.
+        }
+      }
+    } finally {
+      _watchConfigSyncing = false;
     }
   }
 
@@ -296,6 +336,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       }
       final providers = await ChatStore.instance.providers();
       final store = ChatStore.instance;
+      final searchEnabled = await store.setting('search_enabled') == '1';
       final ttsId = await store.setting('voice_tts_id');
       final speechService = (await store.voiceProviders())
           .where((service) => service.id == ttsId)
@@ -319,6 +360,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       final initialLoad = _loading;
       setState(() {
         _providers = providers;
+        _searchEnabled = searchEnabled;
         _canSpeak = canSpeak;
         _watchProcessing = watchProcessing;
         _topics = topics;
@@ -366,6 +408,59 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       CupertinoPageRoute(
         builder: (_) => SettingsScreen(canClearData: _canClearData),
       ),
+    );
+    await _load();
+  }
+
+  Future<void> _openSearchSettings() async {
+    await Navigator.push<void>(
+      context,
+      CupertinoPageRoute(builder: (_) => const SearchSettingsScreen()),
+    );
+    await _load();
+  }
+
+  bool _canChangeSearch() =>
+      !_sending && !_starting && !_recording && !_transcribing;
+
+  Future<void> _openMessageSettings() async {
+    await Navigator.push<void>(
+      context,
+      CupertinoPageRoute(
+        builder: (_) =>
+            MessageSettingsScreen(canChangeSearch: _canChangeSearch),
+      ),
+    );
+    await _load();
+  }
+
+  Future<void> _openModelSettings() async {
+    await Navigator.push<void>(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => ModelSettingsScreen(
+          canClearData: _canClearData,
+          onPrivacy: _openPrivacy,
+        ),
+      ),
+    );
+    await _load();
+  }
+
+  Future<void> _openPrivacy() async {
+    final cleared = await Navigator.push<bool>(
+      context,
+      CupertinoPageRoute(
+        builder: (_) => PrivacyScreen(canClearData: _canClearData),
+      ),
+    );
+    if (cleared == true) await AppPreferences.instance.load();
+  }
+
+  Future<void> _openVoiceSettings() async {
+    await Navigator.push<void>(
+      context,
+      CupertinoPageRoute(builder: (_) => const VoiceSettingsScreen()),
     );
     await _load();
   }
@@ -418,6 +513,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       _draftModel = model;
       _messages = [];
       _reply = '';
+      _replySources = const [];
+      _searching = false;
       _error = null;
       _errorAction = _ChatErrorAction.none;
     });
@@ -450,7 +547,10 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
 
   Future<void> _changeModel() async {
     final topic = _topic;
-    if (_providers.isEmpty) return;
+    if (_providers.isEmpty) {
+      await _openModelSettings();
+      return;
+    }
     if (_sending || _starting) {
       _notify(tr('请先停止当前回复，再切换模型'));
       return;
@@ -687,7 +787,6 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _inputFocus.requestFocus();
         });
-        _notify(tr('识别完成，请检查文字后发送'));
       }
     } catch (error) {
       if (mounted) {
@@ -1025,6 +1124,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       _sending = true;
       _sendingTopicId = topic.id;
       _reply = '';
+      _replySources = const [];
+      _searching = _searchEnabled;
       _replyElapsedMs.value = 0;
       _error = null;
       _errorAction = _ChatErrorAction.none;
@@ -1044,12 +1145,35 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     });
     int? firstTokenMs;
     ReplyUsage? usage;
+    List<SearchSource> sources = const [];
+    final searchEnabled = _searchEnabled;
     try {
       await _refreshTopics();
+      ({SearchProviderConfig config, String apiKey})? webSearch;
+      if (searchEnabled) {
+        final config = await ChatStore.instance.selectedSearchProvider();
+        final searchKey = config == null
+            ? null
+            : await ChatStore.instance.searchApiKey(config.id);
+        if (config == null || searchKey == null || searchKey.isEmpty) {
+          throw const SearchException('请先配置搜索服务 API Key。');
+        }
+        webSearch = (config: config, apiKey: searchKey);
+      }
       await for (final chunk in client.streamReply(
         history,
         topic.model,
         systemPrompt: systemPrompt,
+        webSearch: webSearch,
+        onSearchResults: (results) {
+          sources = results;
+          if (mounted) {
+            setState(() {
+              _replySources = results;
+              _searching = false;
+            });
+          }
+        },
         onUsage: (reported) {
           usage = (usage ?? const ReplyUsage()).merge(reported);
         },
@@ -1068,7 +1192,9 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       if (!_cancelRequested && mounted && _topic?.id == topic.id) {
         setState(() {
           _error = error.toString();
-          _errorAction = error is ApiException
+          _errorAction = error is SearchException
+              ? _ChatErrorAction.search
+              : error is ApiException
               ? switch (error.kind) {
                   ApiErrorKind.network when answer.isEmpty =>
                     _ChatErrorAction.retry,
@@ -1083,6 +1209,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       watch.stop();
       _replyTimer?.cancel();
       _replyTimer = null;
+      client.cancel();
       _activeClient = null;
       int? answerMessageId;
       if (answer.isNotEmpty) {
@@ -1096,6 +1223,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           totalMs: watch.elapsedMilliseconds,
           inputTokens: usage?.inputTokens,
           outputTokens: usage?.outputTokens,
+          searchSources: sources,
         );
       }
       final shouldGenerateTitle =
@@ -1108,6 +1236,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           _sending = false;
           _sendingTopicId = null;
           _reply = '';
+          _replySources = const [];
+          _searching = false;
           _replyElapsedMs.value = 0;
         });
         if (_topic?.id == topic.id) {
@@ -1255,8 +1385,10 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           ChatMoreButton(
             onNewTopic: _newTopic,
             onModel: _changeModel,
-            onProviders: _openProviders,
-            canChangeModel: _providers.isNotEmpty,
+            onModelSettings: _openModelSettings,
+            onVoiceSettings: _openVoiceSettings,
+            onSearch: _openSearchSettings,
+            onMessageSettings: _openMessageSettings,
           ),
         ],
       ),
@@ -1312,7 +1444,15 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                         : tr('检查服务配置'),
                   ),
                 ),
-              if (_errorAction == _ChatErrorAction.retry)
+              if (_errorAction == _ChatErrorAction.search)
+                CupertinoButton(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  minimumSize: const Size(0, 32),
+                  onPressed: _openSearchSettings,
+                  child: Text(tr('检查搜索配置')),
+                ),
+              if (_errorAction == _ChatErrorAction.retry ||
+                  _errorAction == _ChatErrorAction.search)
                 CupertinoButton(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   minimumSize: const Size(0, 32),
@@ -1417,13 +1557,19 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         itemCount: count,
         itemBuilder: (context, index) {
           if (index == _messages.length) {
-            return _bubble('assistant', _reply, loading: true);
+            return _bubble(
+              'assistant',
+              _reply,
+              loading: true,
+              searchSources: _replySources,
+            );
           }
           final message = _messages[index];
           return _bubble(
             message.role,
             message.content,
             messageId: message.id,
+            searchSources: message.searchSources,
             providerName: message.providerName,
             providerPresetId: message.providerPresetId,
             modelId: message.modelId,
@@ -1485,6 +1631,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     int? firstTokenMs,
     int? totalMs,
     ReplyUsage? usage,
+    List<SearchSource> searchSources = const [],
   }) {
     final user = role == 'user';
     return Padding(
@@ -1534,11 +1681,18 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                             ),
                             child: ChatLoadingStatus(
                               elapsedMilliseconds: _replyElapsedMs,
+                              label: _searching ? '正在搜索网页…' : '加载中',
                             ),
                           ),
                       ],
                     ),
                   ),
+                  if (!user && searchSources.isNotEmpty)
+                    SearchSources(
+                      key: ValueKey('sources_${messageId ?? 'live'}'),
+                      sources: searchSources,
+                      onOpen: _openMarkdownLink,
+                    ),
                   if (!loading)
                     ChatMessageMeta(
                       assistant: !user,
@@ -1579,118 +1733,109 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
     child: SafeArea(
       top: false,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              CupertinoButton(
-                padding: EdgeInsets.zero,
-                minimumSize: const Size(46, 44),
-                onPressed: _transcribing ? null : _toggleVoiceMode,
-                child: Icon(
-                  _voiceMode ? CupertinoIcons.keyboard : CupertinoIcons.mic,
-                  color: _transcribing ? IosColors.secondary : IosColors.blue,
-                  size: 27,
-                  semanticLabel: tr(_voiceMode ? '切换到文字输入' : '切换到语音输入'),
-                ),
-              ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: _voiceMode
-                    ? Semantics(
-                        button: true,
-                        enabled: !_transcribing,
-                        label: _transcribing
-                            ? tr('正在识别语音…')
-                            : tr('按住说话，松开发送，左滑取消，右滑转文字'),
-                        child: Listener(
-                          behavior: HitTestBehavior.opaque,
-                          onPointerDown: _transcribing ? null : _voiceDown,
-                          onPointerMove: _transcribing ? null : _voiceMove,
-                          onPointerUp: _transcribing ? null : _voiceUp,
-                          onPointerCancel: _transcribing ? null : _voiceCancel,
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 120),
-                            height: 44,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: _voicePointerDown
-                                  ? IosColors.blue.withValues(alpha: .22)
-                                  : IosColors.assistant,
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: IosColors.separator),
-                            ),
-                            child: Text(
-                              tr(_transcribing ? '正在识别语音…' : '按住说话'),
-                              style: TextStyle(
-                                color: _transcribing
-                                    ? IosColors.secondary
-                                    : IosColors.label,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ),
-                      )
-                    : CupertinoTextField(
-                        controller: _input,
-                        focusNode: _inputFocus,
-                        minLines: 1,
-                        maxLines: 5,
-                        textAlignVertical: TextAlignVertical.center,
-                        textInputAction: TextInputAction.send,
-                        onSubmitted: (_) => _send(),
-                        textCapitalization: TextCapitalization.sentences,
-                        placeholder: _providers.isEmpty
-                            ? tr('先接入模型服务')
-                            : tr('发送消息'),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 11,
-                        ),
+          CupertinoButton(
+            padding: EdgeInsets.zero,
+            minimumSize: const Size(46, 44),
+            onPressed: _transcribing ? null : _toggleVoiceMode,
+            child: Icon(
+              _voiceMode ? CupertinoIcons.keyboard : CupertinoIcons.mic,
+              color: _transcribing ? IosColors.secondary : IosColors.blue,
+              size: 27,
+              semanticLabel: tr(_voiceMode ? '切换到文字输入' : '切换到语音输入'),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: _voiceMode
+                ? Semantics(
+                    button: true,
+                    enabled: !_transcribing,
+                    label: _transcribing
+                        ? tr('正在识别语音…')
+                        : tr('按住说话，松开发送，左滑取消，右滑转文字'),
+                    child: Listener(
+                      behavior: HitTestBehavior.opaque,
+                      onPointerDown: _transcribing ? null : _voiceDown,
+                      onPointerMove: _transcribing ? null : _voiceMove,
+                      onPointerUp: _transcribing ? null : _voiceUp,
+                      onPointerCancel: _transcribing ? null : _voiceCancel,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 120),
+                        height: 44,
+                        alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: IosColors.surface,
+                          color: _voicePointerDown
+                              ? IosColors.blue.withValues(alpha: .22)
+                              : IosColors.assistant,
                           borderRadius: BorderRadius.circular(6),
                           border: Border.all(color: IosColors.separator),
                         ),
+                        child: Text(
+                          tr(_transcribing ? '正在识别语音…' : '按住说话'),
+                          style: TextStyle(
+                            color: _transcribing
+                                ? IosColors.secondary
+                                : IosColors.label,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
-              ),
-              if (!_voiceMode || _sending) ...[
-                const SizedBox(width: 8),
-                CupertinoButton(
-                  padding: EdgeInsets.zero,
-                  minimumSize: const Size(40, 40),
-                  onPressed: _sending
-                      ? _stopReply
-                      : (_starting || _recording || _transcribing
-                            ? null
-                            : _send),
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: _sending
-                          ? IosColors.destructive
-                          : _starting
-                          ? IosColors.secondary
-                          : IosColors.blue,
-                      borderRadius: BorderRadius.circular(6),
                     ),
-                    child: Icon(
-                      _sending
-                          ? CupertinoIcons.stop_fill
-                          : CupertinoIcons.arrow_up,
-                      color: IosColors.onAccent,
-                      size: 21,
+                  )
+                : CupertinoTextField(
+                    controller: _input,
+                    focusNode: _inputFocus,
+                    minLines: 1,
+                    maxLines: 5,
+                    textAlignVertical: TextAlignVertical.center,
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: (_) => _send(),
+                    textCapitalization: TextCapitalization.sentences,
+                    placeholder: _providers.isEmpty
+                        ? tr('先接入模型服务')
+                        : tr('发送消息'),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 11,
+                    ),
+                    decoration: BoxDecoration(
+                      color: IosColors.surface,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: IosColors.separator),
                     ),
                   ),
-                ),
-              ],
-            ],
           ),
+          if (!_voiceMode || _sending) ...[
+            const SizedBox(width: 8),
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(40, 40),
+              onPressed: _sending
+                  ? _stopReply
+                  : (_starting || _recording || _transcribing ? null : _send),
+              child: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: _sending
+                      ? IosColors.destructive
+                      : _starting
+                      ? IosColors.secondary
+                      : IosColors.blue,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(
+                  _sending ? CupertinoIcons.stop_fill : CupertinoIcons.arrow_up,
+                  color: IosColors.onAccent,
+                  size: 21,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     ),

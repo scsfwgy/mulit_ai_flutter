@@ -8,6 +8,24 @@ import org.junit.Test
 class WatchRouteExecutorTest {
     private val router = WatchRouteExecutor()
 
+    @Test fun interruptedSpeechDoesNotFallBackToAnotherBillableRequest() {
+        var phoneCalls = 0
+        try {
+            assertThrows(InterruptedException::class.java) {
+                router.run(
+                    connectedPhone = null,
+                    reconnectPhone = { "phone" },
+                    phone = { phoneCalls++; "wrong" },
+                    watch = {
+                        Thread.currentThread().interrupt()
+                        throw IOException("cancelled speech socket")
+                    },
+                )
+            }
+            assertEquals(0, phoneCalls)
+        } finally { Thread.interrupted() }
+    }
+
     @Test fun connectedPhoneIsPreferred() {
         val calls = mutableListOf<String>()
         val answer = router.run(

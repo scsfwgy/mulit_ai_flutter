@@ -1,6 +1,6 @@
 # AI Link Privacy Policy (pre-publication draft)
 
-Updated: September 29, 2026
+Updated: October 5, 2026
 
 **Before publication: add the legal developer/publisher name and public URL, then review against the final build and configured services.** Contact: mateolim93@gmail.com.
 
@@ -16,6 +16,8 @@ AI Link is a client for AI text and speech services configured by the user. It d
 ## Requests to third-party services
 
 When you fetch a model list, send a message, transcribe speech or synthesize audio, the app sends the API key and the required context, prompts, recordings or speech text directly to the third-party API endpoint you configured. That provider's own policies and agreements determine how it processes and retains the data. Configure only providers you trust and review their privacy policies before sending sensitive information. AI Link does not upload this data to its own relay server.
+
+When phone web search is enabled, the current question and search API key go directly to the selected search provider. Retrieved webpage content is then sent as temporary context to the current text model. Source links, titles and excerpts are saved with assistant replies in the unencrypted local SQLite database. The search toggle, selected service configuration and key sync automatically over the paired connection. Search keys remain in secure phone storage, Keystore-encrypted storage on Wear OS, or Keychain on Apple Watch. Watch requests use the same search-before-answer flow through the phone or the watch network; source links in answers sync back to the phone with chats. Deleting a search service deletes its key but keeps sources in existing chats; clearing all phone data removes both. Search is off by default. Testing search sends the fixed query “Flutter”, may incur charges and does not save the configuration.
 
 ## Permissions
 
