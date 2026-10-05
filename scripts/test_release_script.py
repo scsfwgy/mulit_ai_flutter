@@ -87,6 +87,8 @@ class ReleaseScriptTest(unittest.TestCase):
             )
             result = subprocess.run(
                 ["/bin/bash", "-Eeuo", "pipefail", "-c",
+                 'print_summary() { :; }\n'
+                 'fail() { echo "$1" >&2; exit 1; }\n'
                  'play_env=(env http_proxy=http://127.0.0.1:7897 https_proxy=http://127.0.0.1:7897)\n' + upload_step],
                 env=env, capture_output=True, text=True, errors="replace",
             )
@@ -122,94 +124,165 @@ class ReleaseScriptTest(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
             self.assertIn("--wear-track 必须", result.stderr)
 
+    def mock_release_root(self, directory, flags, website_failure=False, ios_signing=True):
+        # Repo skeleton whose external commands are stubs, so release.sh runs its
+        # real branch structure without building or touching the network.
+        root = Path(directory)
+        (root / "release.sh").write_text(RELEASE_SCRIPT.read_text())
+        (root / "pubspec.yaml").write_text("version: 1.0.1+2\n")
+        (root / "android").mkdir()
+        (root / "test.jks").touch()
+        for name in ("key.properties", "key.test.properties"):
+            (root / "android" / name).write_text(
+                "storeFile=../test.jks\nstorePassword=test\nkeyAlias=test\nkeyPassword=test\n")
+        (root / "localConfig").mkdir()
+        (root / "localConfig/google-play-service-account.json").touch()
+        runtime = root / "scripts/.venv/bin"
+        runtime.mkdir(parents=True)
+        commands = root / "commands"
+        commands.mkdir()
+
+        def executable(path, body):
+            path.write_text("#!/bin/bash\nset -eu\n" + body)
+            path.chmod(0o700)
+
+        executable(commands / "uname", 'echo Darwin\n')
+        executable(commands / "xcrun", 'echo /mock-sdk\n')
+        executable(commands / "security", 'echo "${SECURITY_IDENTITIES-}"\n')
+        (root / "scripts/apple_release.py").write_text('''import argparse
+import os
+from pathlib import Path
+parser = argparse.ArgumentParser()
+parser.add_argument('--platform')
+parser.add_argument('--output', type=Path)
+parser.add_argument('--version')
+parser.add_argument('--build-number')
+args = parser.parse_args()
+with open(os.environ['CALLS'], 'a') as stream:
+    stream.write(f'apple {args.platform} {args.version}+{args.build_number}\\n')
+args.output.mkdir(parents=True, exist_ok=True)
+for suffix in (['ipa'] if args.platform == 'ios' else ['dmg', 'zip']):
+    (args.output / f'AI-Link-{args.version}+{args.build_number}.{suffix}').write_text('artifact')
+''')
+        certificate = ("F539897F7B786486EBC44F1383AF434DCE6AE6BB3ED12DCF363F6F4633B8596F"
+                       if "--test" in flags else
+                       "7D40427292830784C3DB74560D3F1368B9A0B8E5DACD6D73FFBBD4A771D211DE")
+        executable(commands / "git", '''case "$*" in
+          *--is-shallow-repository*) echo false ;;
+          *--short*) echo abcd1234 ;;
+          *rev-list*) echo 10 ;;
+        esac
+        ''')
+        executable(commands / "scutil", 'echo "HTTPProxy : 127.0.0.1"\necho "HTTPPort : 7897"\n')
+        executable(commands / "apksigner", f'echo "Signer #1 certificate SHA-256 digest: {certificate}"\n')
+        executable(commands / "keytool", f'echo "SHA256: {certificate}"\n')
+        executable(commands / "flutter", '''echo "flutter $*" >> "$CALLS"
+        if [[ "$1" != build ]]; then exit 0; fi
+        for argument in "$@"; do
+          if [[ "$argument" == --split-debug-info=* ]]; then
+            symbols="${argument#*=}"
+            mkdir -p "$symbols"
+            echo "$2" > "$symbols/app.android-arm64.symbols"
+          fi
+        done
+        mkdir -p build/app/outputs/flutter-apk build/app/outputs/bundle/release build/app/outputs/mapping/release
+        echo APK > build/app/outputs/flutter-apk/app-release.apk
+        echo AAB > build/app/outputs/bundle/release/app-release.aab
+        echo "$2" > build/app/outputs/mapping/release/mapping.txt
+        ''')
+        executable(root / "android/gradlew", '''echo "gradle $*" >> "$CALLS"
+        mkdir -p ../build/wear/outputs/apk/release ../build/wear/outputs/bundle/release ../build/wear/outputs/mapping/release
+        echo APK > ../build/wear/outputs/apk/release/wear-release.apk
+        echo AAB > ../build/wear/outputs/bundle/release/wear-release.aab
+        echo "$1" > ../build/wear/outputs/mapping/release/mapping.txt
+        ''')
+        executable(runtime / "python", '''echo "python $*" >> "$CALLS"
+        if [[ "$*" == *website_release.py* && "$*" != *--check* ]]; then
+          if [[ "$WEBSITE_FAILURE" == 1 ]]; then exit 1; fi
+          for ((i=1; i<=$#; i++)); do
+            if [[ "${!i}" == --manifest-out ]]; then j=$((i+1)); echo '{}' > "${!j}"; fi
+          done
+        fi
+        if [[ "$*" == *play_upload.py* && "$*" != *--check-tracks* ]]; then
+          echo 'PLAY_UPLOAD_STATUS=COMMITTED|test-edit'
+        fi
+        ''')
+        env = {k: v for k, v in os.environ.items() if k.lower() not in {"http_proxy", "https_proxy"}}
+        env.update(PATH=f'{commands}:{env["PATH"]}', CALLS=str(root / "calls"),
+                   WEBSITE_FAILURE=str(int(website_failure)),
+                   SECURITY_IDENTITIES=('  1) ABCD "Apple Distribution: Test (T94W2V3B6M)"'
+                                        if ios_signing else ""))
+        return root, env
+
     def test_complete_release_modes_and_website_failure(self):
         for flags, website_failure in (([], False), (["--test"], False),
                 (["--push-website"], False), (["--push-release"], False),
-                (["--push-release"], True)):
+                (["--push-release"], True), (["--platform", "android"], False),
+                (["--platform", "macos"], False), (["--platform", "ios"], False),
+                (["--platform", "all", "--push-website"], False)):
             with self.subTest(flags=flags, website_failure=website_failure), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                (root / "release.sh").write_text(RELEASE_SCRIPT.read_text())
-                (root / "pubspec.yaml").write_text("version: 1.0.1+2\n")
-                (root / "android").mkdir()
-                (root / "test.jks").touch()
-                for name in ("key.properties", "key.test.properties"):
-                    (root / "android" / name).write_text(
-                        "storeFile=../test.jks\nstorePassword=test\nkeyAlias=test\nkeyPassword=test\n")
-                (root / "localConfig").mkdir()
-                (root / "localConfig/google-play-service-account.json").touch()
-                runtime = root / "scripts/.venv/bin"
-                runtime.mkdir(parents=True)
-                commands = root / "commands"
-                commands.mkdir()
-                def executable(path, body):
-                    path.write_text("#!/bin/bash\nset -eu\n" + body)
-                    path.chmod(0o700)
-                certificate = ("F539897F7B786486EBC44F1383AF434DCE6AE6BB3ED12DCF363F6F4633B8596F"
-                               if flags == ["--test"] else
-                               "7D40427292830784C3DB74560D3F1368B9A0B8E5DACD6D73FFBBD4A771D211DE")
-                executable(commands / "git", '''case "$*" in
-                  *--is-shallow-repository*) echo false ;;
-                  *--short*) echo abcd1234 ;;
-                  *rev-list*) echo 10 ;;
-                esac
-                ''')
-                executable(commands / "scutil", 'echo "HTTPProxy : 127.0.0.1"\necho "HTTPPort : 7897"\n')
-                executable(commands / "apksigner", f'echo "Signer #1 certificate SHA-256 digest: {certificate}"\n')
-                executable(commands / "keytool", f'echo "SHA256: {certificate}"\n')
-                executable(commands / "flutter", '''echo "flutter $*" >> "$CALLS"
-                if [[ "$1" != build ]]; then exit 0; fi
-                for argument in "$@"; do
-                  if [[ "$argument" == --split-debug-info=* ]]; then
-                    symbols="${argument#*=}"
-                    mkdir -p "$symbols"
-                    echo "$2" > "$symbols/app.android-arm64.symbols"
-                  fi
-                done
-                mkdir -p build/app/outputs/flutter-apk build/app/outputs/bundle/release build/app/outputs/mapping/release
-                echo APK > build/app/outputs/flutter-apk/app-release.apk
-                echo AAB > build/app/outputs/bundle/release/app-release.aab
-                echo "$2" > build/app/outputs/mapping/release/mapping.txt
-                ''')
-                executable(root / "android/gradlew", '''echo "gradle $*" >> "$CALLS"
-                mkdir -p ../build/wear/outputs/apk/release ../build/wear/outputs/bundle/release ../build/wear/outputs/mapping/release
-                echo APK > ../build/wear/outputs/apk/release/wear-release.apk
-                echo AAB > ../build/wear/outputs/bundle/release/wear-release.aab
-                echo "$1" > ../build/wear/outputs/mapping/release/mapping.txt
-                ''')
-                executable(runtime / "python", '''echo "python $*" >> "$CALLS"
-                if [[ "$*" == *website_release.py* && "$*" != *--check* ]]; then
-                  if [[ "$WEBSITE_FAILURE" == 1 ]]; then exit 1; fi
-                  for ((i=1; i<=$#; i++)); do
-                    if [[ "${!i}" == --manifest-out ]]; then j=$((i+1)); echo '{}' > "${!j}"; fi
-                  done
-                fi
-                if [[ "$*" == *play_upload.py* && "$*" != *--check-tracks* ]]; then
-                  echo 'PLAY_UPLOAD_STATUS=COMMITTED|test-edit'
-                fi
-                ''')
-                env = {k: v for k, v in os.environ.items() if k.lower() not in {"http_proxy", "https_proxy"}}
-                env.update(PATH=f'{commands}:{env["PATH"]}', CALLS=str(root / "calls"),
-                           WEBSITE_FAILURE=str(int(website_failure)))
+                root, env = self.mock_release_root(directory, flags, website_failure)
                 result = subprocess.run(["/bin/bash", "release.sh", *flags], cwd=root,
                                         env=env, capture_output=True, text=True)
                 self.assertEqual(result.returncode, int(website_failure), result.stderr)
+                self.assertIn("本次发布汇总", result.stdout)
                 calls = (root / "calls").read_text()
                 infos = list((root / "release-artifacts").rglob("release-info.txt"))
                 self.assertEqual(len(infos), 1)
                 output = infos[0].parent
-                self.assertEqual(len(list(output.glob("*.apk"))), 2)
-                self.assertEqual(len(list(output.glob("*.aab"))), 0 if flags == ["--test"] else 2)
-                self.assertEqual((output / "apk/app-r8/mapping.txt").read_text().strip(), "apk")
-                if flags != ["--test"]:
-                    self.assertEqual((output / "aab/app-r8/mapping.txt").read_text().strip(), "appbundle")
+                android = flags not in (["--platform", "macos"], ["--platform", "ios"])
+                apple = flags in ([], ["--platform", "all", "--push-website"])
+                ios_built = apple or flags == ["--platform", "ios"]
+                self.assertIn(f"iOS / Apple Watch：{'成功' if ios_built else '未构建'}", result.stdout)
+                self.assertEqual(len(list(output.glob("*.apk"))), 2 if android else 0)
+                self.assertEqual(len(list(output.glob("*.aab"))),
+                                 0 if not android or "--test" in flags else 2)
+                if android:
+                    self.assertEqual((output / "apk/app-r8/mapping.txt").read_text().strip(), "apk")
+                    if flags != ["--test"]:
+                        self.assertEqual((output / "aab/app-r8/mapping.txt").read_text().strip(), "appbundle")
+                if apple:
+                    self.assertIn("apple macos 1.0.1+10", calls)
+                    self.assertIn("apple ios 1.0.1+10", calls)
                 actual_play = "python -u scripts/play_upload.py" in calls
                 self.assertEqual(actual_play, flags == ["--push-release"] and not website_failure)
                 if website_failure:
                     self.assertIn("websiteStatus=FAILED", infos[0].read_text())
-                elif flags in (["--push-website"], ["--push-release"]):
+                    self.assertIn("失败原因：官网下载同步未完成", result.stdout)
+                elif "--push-website" in flags or "--push-release" in flags:
                     self.assertIn("websiteStatus=CONFIRMED", infos[0].read_text())
                 else:
                     self.assertNotIn("python ", calls)
+
+    def test_ios_is_skipped_when_no_distribution_certificate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, env = self.mock_release_root(directory, [], ios_signing=False)
+            result = subprocess.run(["/bin/bash", "release.sh"], cwd=root,
+                                    env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("跳过 iOS", result.stdout)
+            self.assertIn("iOS / Apple Watch：跳过", result.stdout)
+            calls = (root / "calls").read_text()
+            self.assertIn("apple macos 1.0.1+10", calls)
+            self.assertNotIn("apple ios", calls)
+            info = next((root / "release-artifacts").rglob("release-info.txt")).read_text()
+            self.assertIn("iosWatchStatus=SKIPPED\n", info)
+            self.assertIn("buildStatus=COMPLETE\n", info)
+
+    def test_explicit_ios_without_distribution_certificate_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, env = self.mock_release_root(directory, ["--platform", "ios"], ios_signing=False)
+            result = subprocess.run(["/bin/bash", "release.sh", "--platform", "ios"], cwd=root,
+                                    env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("没有 iOS Distribution 证书", result.stderr)
+
+    def test_invalid_platform_and_incompatible_modes_stop_before_build(self):
+        for flags in (["--platform", "windows"], ["--test", "--platform", "all"],
+                      ["--platform", "ios", "--push-release"]):
+            result = subprocess.run(["/bin/bash", str(RELEASE_SCRIPT), *flags],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2, result.stderr)
 
     def test_test_packages_cannot_be_published(self):
         for flag in ("--push-release", "--push-website"):
