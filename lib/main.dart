@@ -26,6 +26,8 @@ import 'chat_model_title.dart';
 import 'chat_message_meta.dart';
 import 'chat_loading_status.dart';
 import 'chat_scroll.dart';
+import 'chat_streaming_reply.dart';
+import 'chat_context_screen.dart';
 import 'data.dart';
 import 'ios_style.dart';
 import 'message_copy.dart';
@@ -44,7 +46,15 @@ import 'voice_settings_screen.dart';
 import 'voice_recording_overlay.dart';
 import 'watch_chat.dart';
 
-enum _ChatErrorAction { none, configure, model, request, retry, search }
+enum _ChatErrorAction {
+  none,
+  configure,
+  model,
+  request,
+  retry,
+  search,
+  context,
+}
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -262,7 +272,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   String? _draftModel;
   ModelApiClient? _activeClient;
   final _titleClients = <ModelApiClient>{};
-  String _reply = '';
+  final _reply = ValueNotifier<String>('');
+  bool _contextTrimmed = false;
   final _replyElapsedMs = ValueNotifier<int>(0);
   Timer? _replyTimer;
   String? _error;
@@ -372,6 +383,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     _activeClient?.cancel();
     _replyTimer?.cancel();
     _replyElapsedMs.dispose();
+    _reply.dispose();
     for (final client in _titleClients) {
       client.cancel();
     }
@@ -622,7 +634,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       _draftProviderId = provider.id;
       _draftModel = model;
       _messages = [];
-      _reply = '';
+      _reply.value = '';
       _replySources = const [];
       _searching = false;
       _error = null;
@@ -645,7 +657,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       _messages = messages;
       _error = null;
       _errorAction = _ChatErrorAction.none;
-      _reply = '';
+      _reply.value = '';
     });
     if (topic.providerId case final providerId?) {
       await ChatStore.instance.saveLastChatSelection(
@@ -1235,9 +1247,10 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       _messages = history;
       _sending = true;
       _sendingTopicId = topic.id;
-      _reply = '';
+      _reply.value = '';
       _replySources = const [];
       _searching = _searchEnabled;
+      _contextTrimmed = false;
       _replyElapsedMs.value = 0;
       _error = null;
       _errorAction = _ChatErrorAction.none;
@@ -1276,6 +1289,14 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         history,
         topic.model,
         systemPrompt: systemPrompt,
+        contextWindowTokens: AppPreferences.instance.contextWindowTokens,
+        onContextTrimmed: (omitted) {
+          if (mounted &&
+              _topic?.id == topic.id &&
+              _contextTrimmed != (omitted > 0)) {
+            setState(() => _contextTrimmed = omitted > 0);
+          }
+        },
         webSearch: webSearch,
         onSearchResults: (results) {
           sources = results;
@@ -1293,9 +1314,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         answer += chunk;
         firstTokenMs ??= watch.elapsedMilliseconds;
         if (mounted && _topic?.id == topic.id) {
-          setState(() {
-            _reply = answer;
-          });
+          _reply.value = answer;
           _chatScroll.scrollToLatest();
         }
       }
@@ -1312,6 +1331,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                     _ChatErrorAction.retry,
                   ApiErrorKind.auth => _ChatErrorAction.configure,
                   ApiErrorKind.model => _ChatErrorAction.model,
+                  ApiErrorKind.context => _ChatErrorAction.context,
                   _ => _ChatErrorAction.request,
                 }
               : _ChatErrorAction.request;
@@ -1347,7 +1367,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         setState(() {
           _sending = false;
           _sendingTopicId = null;
-          _reply = '';
+          _reply.value = '';
           _replySources = const [];
           _searching = false;
           _replyElapsedMs.value = 0;
@@ -1622,13 +1642,31 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                   child: Text(tr('检查搜索配置')),
                 ),
               if (_errorAction == _ChatErrorAction.retry ||
-                  _errorAction == _ChatErrorAction.search)
+                  _errorAction == _ChatErrorAction.search ||
+                  (_errorAction == _ChatErrorAction.context &&
+                      _messages.lastOrNull?.role == 'user'))
                 CupertinoButton(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   minimumSize: const Size(0, 32),
                   onPressed: _retryReply,
                   child: Text(tr('重试回复')),
                 ),
+              if (_errorAction == _ChatErrorAction.context) ...[
+                CupertinoButton(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  minimumSize: const Size(0, 32),
+                  onPressed: () => _pushRoute<void>(
+                    appPageRoute(builder: (_) => const ChatContextScreen()),
+                  ),
+                  child: Text(tr('调整上下文')),
+                ),
+                CupertinoButton(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  minimumSize: const Size(0, 32),
+                  onPressed: _newTopic,
+                  child: Text(tr('新对话')),
+                ),
+              ],
               if (_errorAction == _ChatErrorAction.model ||
                   _errorAction == _ChatErrorAction.request)
                 CupertinoButton(
@@ -1727,11 +1765,14 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         itemCount: count,
         itemBuilder: (context, index) {
           if (index == _messages.length) {
-            return _bubble(
-              'assistant',
-              _reply,
-              loading: true,
-              searchSources: _replySources,
+            return ChatStreamingReply(
+              reply: _reply,
+              builder: (context, text) => _bubble(
+                'assistant',
+                text,
+                loading: true,
+                searchSources: _replySources,
+              ),
             );
           }
           final message = _messages[index];
@@ -1855,6 +1896,17 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                             child: ChatLoadingStatus(
                               elapsedMilliseconds: _replyElapsedMs,
                               label: _searching ? '正在搜索网页…' : '加载中',
+                            ),
+                          ),
+                        if (loading && _contextTrimmed)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              tr('已按预算省略较早消息，本机历史保留。'),
+                              style: TextStyle(
+                                color: IosColors.secondary,
+                                fontSize: 12,
+                              ),
                             ),
                           ),
                       ],

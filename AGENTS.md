@@ -19,6 +19,8 @@
 - 手表参与过的话题通过本机 `settings` 中的手表会话映射识别，侧栏显示手表图标；设置入口贴在抽屉左下角。
 - `lib/chat_model_selector.dart`：聊天页统一的服务与模型选择，支持最近使用、服务端列表和手动 ID。
 - `lib/chat_scroll.dart`：流式回复时的底部跟随，用户滑离底部后保留阅读位置。
+- `lib/chat_streaming_reply.dart`：生成中气泡独立订阅文本更新，避免每段流式文本重建聊天页与历史列表。
+- `lib/chat_context.dart` 与 `lib/chat_context_screen.dart`：手机和桌面的上下文估算预算、最近完整轮次选择、超限提示与设置；不删除本机历史，规则和验证见 `doc/CHAT_CONTEXT.md`。
 - `lib/chat_message_meta.dart`：气泡下的模型、耗时、Token 与字数展示。
 - `lib/chat_loading_status.dart`：回复生成时的菊花与毫秒计时；计时器只更新状态行。
 - `lib/provider_badge.dart`：服务预设图标与自定义服务字母徽标，在服务列表、聊天标题和消息信息中复用。
@@ -54,6 +56,7 @@
 - `android/app/src/main/kotlin/com/maxhall/ailink/WatchRequestListener.kt` 与 `WatchRequestWorker.kt`：Data Layer 处理手表配置请求、手机网络路径与问答同步；兼容旧版录音请求。
 - `lib/voice_catalog.dart` 与 `lib/voice_catalog_picker.dart`：语音模型/音色候选、兼容服务 `/models` 查询和选择界面；候选不表示账号权限。
 - `test/`：协议、配置、Markdown 和界面行为测试。
+- `test/translation_coverage_test.dart`：基于 Dart AST 的静态中文 UI 和错误文案英文覆盖守卫；变量引用和插值文案需另补测试。
 - `android/app/src/main/AndroidManifest.xml` 与 `res/xml/network_security_config.xml`：网络权限与明文连接范围。
 - `release.sh`、`android/key.properties.example`、`android/key.test.properties`、`localConfig/ai-link-test.jks`、`doc/google_play/`：本地正式/测试签名打包和 Google Play 上架资料。测试签名及配置允许入库，其密码视为公开信息；正式 `android/key.properties`、`localConfig/ai-link-upload.jks`、正式密码和构建产物绝对不得提交。正式手机和手表使用包名 `com.maxhall.ailink`；普通 Debug 与 `--test` 包使用 `com.maxhall.ailink.debug`、名称「AI Link Debug」和同一测试签名，可与正式包并存；同一套手机与手表包必须共用包名和签名；`./release.sh` 出正式 AAB，`./release.sh --test` 出测试 APK。
 - 官方网站为 `https://www.tools24.uk/app/ai-link`，公开隐私政策为 `https://www.tools24.uk/app/ai-link/privacy`；上架前核对线上政策与最终安装包行为一致。

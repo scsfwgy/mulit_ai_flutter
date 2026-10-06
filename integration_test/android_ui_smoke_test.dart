@@ -5,6 +5,8 @@ import 'package:integration_test/integration_test.dart';
 import 'package:mulit_ai_flutter/data.dart';
 import 'package:mulit_ai_flutter/main.dart' as app;
 import 'package:mulit_ai_flutter/provider_screen.dart';
+import 'package:mulit_ai_flutter/chat_context_screen.dart';
+import 'package:mulit_ai_flutter/app_preferences.dart';
 
 /// Render phone regression screenshots without network requests or user-data reset.
 void main() {
@@ -14,6 +16,9 @@ void main() {
   ) async {
     final store = ChatStore.instance;
     final savedSelection = await store.setting('last_chat_selection');
+    final preferences = AppPreferences.instance;
+    final savedLanguage = preferences.language;
+    final savedAppearance = preferences.appearance;
     int? providerId;
     int? topicId;
     Future<void> screenshot(String name) async {
@@ -71,8 +76,19 @@ void main() {
         MaterialApp(home: ProviderEditor(config: provider)),
       );
       await screenshot('android-provider-editor');
+      preferences.language = AppLanguage.zh;
+      preferences.appearance = AppAppearance.light;
+      await tester.pumpWidget(const MaterialApp(home: ChatContextScreen()));
+      await screenshot('android-context-zh');
+      preferences.language = AppLanguage.en;
+      preferences.appearance = AppAppearance.dark;
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(const MaterialApp(home: ChatContextScreen()));
+      await screenshot('android-context-en-dark');
     } finally {
       await tester.pumpWidget(const SizedBox());
+      preferences.language = savedLanguage;
+      preferences.appearance = savedAppearance;
       if (topicId != null) await store.deleteTopic(topicId);
       if (providerId != null) await store.deleteProvider(providerId);
       if (savedSelection == null) {

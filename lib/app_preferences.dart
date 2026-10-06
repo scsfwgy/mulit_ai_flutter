@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import 'data.dart';
 import 'app_platform.dart';
+import 'chat_context.dart';
 
 enum AppLanguage { system, zh, en }
 
@@ -45,6 +46,7 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
 
   bool autoReadReplies = false;
   bool simpleMessageInfo = false;
+  int contextWindowTokens = ChatContext.defaultWindowTokens;
 
   AppLanguage language = AppLanguage.zh;
   AppSkin skin = AppSkin.blue;
@@ -126,6 +128,9 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
   };
 
   Future<void> load() async {
+    contextWindowTokens = ChatContext.parseWindow(
+      await ChatStore.instance.setting(ChatContext.settingKey),
+    );
     simpleMessageInfo =
         await ChatStore.instance.setting('chat_info_simple') == '1';
     autoReadReplies =
@@ -157,6 +162,15 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> setSimpleMessageInfo(bool value) async {
     await ChatStore.instance.saveSetting('chat_info_simple', value ? '1' : '0');
     simpleMessageInfo = value;
+    notifyListeners();
+  }
+
+  Future<void> setContextWindowTokens(int value) async {
+    if (!ChatContext.windowOptions.contains(value)) {
+      throw ArgumentError.value(value, 'value');
+    }
+    await ChatStore.instance.saveSetting(ChatContext.settingKey, '$value');
+    contextWindowTokens = value;
     notifyListeners();
   }
 
@@ -255,6 +269,45 @@ const _englishPrefixes = <(String, String)>[
 ];
 
 const _english = <String, String>{
+  '确定': 'Confirm',
+  '手表会话数据无效': 'Invalid watch conversation data',
+  '手表请求无效': 'Invalid watch request',
+  '录音无效或超过大小限制': 'Invalid recording or recording exceeds the size limit',
+  '请先在手机端配置语音识别服务': 'Configure transcription on your phone first',
+  '手机端语音识别密钥未配置': 'No transcription key configured on your phone',
+  '手表会话上下文无效': 'Invalid watch conversation context',
+  '手机端模型服务已变更，请同步手表配置':
+      'The phone model service changed. Sync your watch settings.',
+  '手机端文字模型密钥未配置': 'No text model key configured on your phone',
+  '模型回复过长': 'The model reply is too long',
+  '模型没有返回文字': 'The model did not return text',
+  '朗读文字无效或过长': 'Speech text is invalid or too long',
+  '请先在手机端配置朗读服务': 'Configure speech synthesis on your phone first',
+  '手机端朗读服务密钥未配置': 'No speech synthesis key configured on your phone',
+  '请先在手机端配置联网搜索并同步手表':
+      'Configure web search on your phone and sync your watch first',
+  '手表会话格式无效': 'Invalid watch conversation format',
+  '请先在手机端配置文字模型和语音识别服务及密钥':
+      'Configure text and transcription services and keys on your phone first',
+  '请先在手机端配置文字模型服务、模型和密钥':
+      'Configure a text service, model and key on your phone first',
+  '请先在手机端配置语音识别服务、识别模型和密钥':
+      'Configure a transcription service, model and key on your phone first',
+  '请先在手机端配置文字模型服务': 'Configure a text model service on your phone first',
+  '模型回复未完整结束，请稍后检查再重试':
+      'The model reply did not finish. Check it before retrying later.',
+  '已按预算省略较早消息，本机历史保留。':
+      'Earlier messages were omitted to fit the budget. Local history is kept.',
+  '上下文设置': 'Context settings',
+  '上下文预算': 'Context budget',
+  '调整上下文': 'Adjust context',
+  '保留最近完整轮次': 'Keep recent complete turns',
+  '预算包含提示词、历史消息与搜索内容，默认预留 4K Token 用于回复。Token 数为本机估算，请按模型实际限制调整。': 'The budget includes prompts, history and search evidence, with 4K tokens reserved for replies by default. Token counts are local estimates. Adjust this budget to your model’s actual limit.',
+  '超出预算时，发送最近的完整对话轮次，不删除本机历史。当前消息、提示词与搜索内容不会被静默截断。此设置适用于手机与桌面聊天。': 'When over budget, send recent complete turns without deleting local history. The current message, prompts and search evidence are never silently truncated. This setting applies to phone and desktop chats.',
+  '无法保存上下文设置，请重试。': 'Could not save context settings. Please try again.',
+  ChatContext.limitMessage: 'The current message, prompts or search evidence exceed the context budget. Shorten the content or adjust the budget in Context settings.',
+  ChatContext.serverLimitMessage: 'The model’s context limit was exceeded. Lower the budget in Context settings and retry, or start a new chat. Shorten the message if a single message is too long.',
+  '服务长时间未返回数据，连接已停止。已收到的回复会保留，请检查网络或稍后重试。': 'The service stopped sending data, so the connection was closed. Any received reply is kept. Check your network or try again later.',
   '试用与永久解锁': 'Trial & Permanent Unlock',
   '已永久解锁': 'Permanently unlocked',
   '正在检查购买记录': 'Checking purchases',

@@ -18,6 +18,7 @@ import 'provider_screen.dart';
 import 'voice_settings_screen.dart';
 import 'search_settings_screen.dart';
 import 'watch_settings_screen.dart';
+import 'chat_context_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key, this.canClearData});
@@ -95,6 +96,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(28, 18, 28, 28),
       children: [
+        IosSection(
+          children: [
+            IosRow(
+              title: '上下文设置',
+              leading: Icon(
+                CupertinoIcons.text_alignleft,
+                color: IosColors.blue,
+              ),
+              onTap: () => Navigator.push<void>(
+                context,
+                appPageRoute(builder: (_) => const ChatContextScreen()),
+              ),
+            ),
+          ],
+        ),
         row(
           '语言',
           CupertinoSlidingSegmentedControl<AppLanguage>(
@@ -548,6 +564,17 @@ class ModelSettingsScreen extends StatelessWidget {
                 onTap: () => Navigator.push<void>(
                   context,
                   appPageRoute(builder: (_) => const PromptSettingsScreen()),
+                ),
+              ),
+              IosRow(
+                title: '上下文设置',
+                leading: Icon(
+                  CupertinoIcons.text_alignleft,
+                  color: IosColors.blue,
+                ),
+                onTap: () => Navigator.push<void>(
+                  context,
+                  appPageRoute(builder: (_) => const ChatContextScreen()),
                 ),
               ),
               IosRow(
