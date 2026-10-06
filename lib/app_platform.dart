@@ -9,6 +9,9 @@ bool get isDesktopApp =>
       TargetPlatform.linux,
     ].contains(defaultTargetPlatform);
 
+bool get supportsApplePurchases =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+
 bool get supportsWatchCompanion =>
     !kIsWeb &&
     const [

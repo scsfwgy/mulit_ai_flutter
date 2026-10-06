@@ -1,5 +1,7 @@
 # AI Link iPhone 与 Apple Watch
 
+2026-10-06：已创建本机 Apple Distribution 证书，补齐手机与手表 Release 团队，并成功导出 `1.0.3 (48)` 的 App Store IPA。该旧包尚未接入用户选定的「7 天试用 + 永久买断」，未上传或提审；当前源码已接入 StoreKit 2，并完成本地测试，见 [购买实现](purchases.md)；商品草稿、签名验证及待办见 [当前发布进度](app-store-progress-2026-10-06.md)。Widgets 扩展仍保持暂关。 中文手机、iPad 与手表截图及图标已在本地准备，见 [商店素材](../app_store/README.md)。
+
 ## 已接入的代码
 
 - iPhone 沿用 Flutter 的同一套聊天、服务配置、语音和本地 SQLite；`ios/Runner/AppleWatchBridge.swift` 在后台 Flutter engine 中复用 `WatchChatProcessor`。

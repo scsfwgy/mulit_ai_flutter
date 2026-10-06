@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'data.dart';
 import 'app_preferences.dart';
 import 'app_platform.dart';
+import 'apple_purchases.dart';
 import 'ios_style.dart';
 
 class PrivacyScreen extends StatefulWidget {
@@ -113,6 +114,13 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
                   title: '手表数据',
                   detail: tr(
                     '手表安全保存所选服务密钥和问答。Apple Watch 优先在手表请求，手表网络不可用时再尝试手机；Wear OS 优先通过手机请求，不可达时使用手表网络。Wear OS 使用加密存储，Apple Watch 使用钥匙串；问答重连后同步到手机。清空手机数据不会自动清除手表数据。',
+                  ),
+                ),
+              if (ApplePurchases.instance.enabled)
+                _PrivacyRow(
+                  title: tr('购买与试用'),
+                  detail: tr(
+                    'Apple 购买由 App Store 处理，应用仅使用经 Apple 验证的商品和交易记录判断试用及永久权益，不接触付款卡资料。手机与手表分别验证同一 Apple 账户的权益。试用冷启动时向 www.apple.com 发起 HTTPS 校时请求，不携带聊天、API Key 或录音；联网失败时保留历史读取及恢复入口，验证后可继续试用。',
                   ),
                 ),
               _PrivacyRow(

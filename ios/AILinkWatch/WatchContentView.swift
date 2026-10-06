@@ -2,6 +2,7 @@ import SwiftUI
 
 struct WatchContentView: View {
   @ObservedObject var session: WatchChatSession
+  @ObservedObject private var purchases = ApplePurchaseStore.shared
   @Environment(\.scenePhase) private var scenePhase
   @State private var page = 0
   @AppStorage("watchGestureGuideSeen") private var guideSeen = false
@@ -33,7 +34,10 @@ struct WatchContentView: View {
       if session.recording { recordingOverlay.allowsHitTesting(false) }
     }
     .onChange(of: scenePhase) { _, phase in
-      if phase == .active { session.refreshPhoneSettings() }
+      if phase == .active {
+        session.refreshPhoneSettings()
+        Task { await purchases.refresh() }
+      }
       else { session.cancelRecording() }
     }
     .alert(label("需要配置服务", "Services required"), isPresented: $session.configurationPrompt) {
@@ -208,6 +212,14 @@ struct WatchContentView: View {
         Toggle(label("自动播报回答", "Speak replies automatically"), isOn: Binding(
           get: { session.speak }, set: { session.setSpeak($0) }
         ))
+        if purchases.enabled {
+          Text(label(purchases.permanent ? "已永久解锁" : "试用与永久解锁请在 iPhone 操作",
+                     purchases.permanent ? "Permanently unlocked" : "Start trial or unlock on iPhone"))
+            .font(.system(size: 11)).foregroundStyle(.secondary)
+          Button(label("刷新购买权益", "Refresh purchases")) {
+            Task { try? await purchases.restore() }
+          }
+        }
         Button(label("同步手机配置", "Sync phone settings")) { session.refreshPhoneSettings(manual: true) }
         if !session.settingsStatus.isEmpty {
           Text(session.settingsStatus).font(.system(size: 11)).foregroundStyle(.secondary)

@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import 'api_client.dart';
+import 'apple_purchases.dart';
 import 'data.dart';
 import 'message_copy.dart';
 import 'search_service.dart';
@@ -31,6 +32,16 @@ void startWatchWorker() {
           ...update,
         });
     try {
+      if ([
+            'audio',
+            'confirm',
+            'remote-asr',
+            'remote-chat',
+            'remote-tts',
+          ].contains(kind) &&
+          !await ApplePurchases.instance.refresh()) {
+        throw const WatchChatException('请在 iPhone 领取试用或永久解锁，再刷新手表权益');
+      }
       final processor = WatchChatProcessor();
       if (kind == 'confirm') {
         await processor.sendTranscript(

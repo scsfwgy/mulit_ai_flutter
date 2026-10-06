@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'api_key_help.dart';
+import 'apple_purchases.dart';
+import 'purchase_screen.dart';
 import 'app_platform.dart';
 
 import 'app_preferences.dart';
@@ -199,6 +201,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
         : SafeArea(
             child: ListView(
               children: [
+                AnimatedBuilder(
+                  animation: ApplePurchases.instance,
+                  builder: (context, _) => ApplePurchases.instance.enabled
+                      ? IosSection(
+                          children: [
+                            IosRow(
+                              title: tr('试用与永久解锁'),
+                              leading: Icon(
+                                CupertinoIcons.sparkles,
+                                color: IosColors.blue,
+                              ),
+                              subtitle: tr(
+                                ApplePurchases.instance.permanent
+                                    ? '已永久解锁'
+                                    : '7 天试用，一次买断',
+                              ),
+                              onTap: () => Navigator.push<void>(
+                                context,
+                                appPageRoute(
+                                  builder: (_) => const PurchaseScreen(),
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
+                      : const SizedBox.shrink(),
+                ),
                 IosSection(
                   children: [
                     IosRow(

@@ -75,6 +75,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
 
   override init() {
     super.init()
+    ApplePurchaseStore.shared.start()
     if let data = UserDefaults.standard.data(forKey: historyKey),
        let saved = try? JSONDecoder().decode([WatchTurn].self, from: data) {
       turns = Array(saved.suffix(50))
@@ -234,6 +235,11 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
 
   func startRecording() {
     pressActive = true
+    guard ApplePurchaseStore.shared.canUse else {
+      setStatus("请在 iPhone 领取试用或永久解锁，再刷新权益", "Start a trial or unlock on iPhone, then refresh access")
+      Task { await ApplePurchaseStore.shared.refresh() }
+      return
+    }
     releaseAction = .send
     guard !recording && !busy && !permissionPending && !recordingPreflight else { return }
     stopPlayback()
@@ -510,6 +516,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     }
     if relay.receive(update) { return }
     if update["kind"] as? String == "preferences" {
+      Task { await ApplePurchaseStore.shared.refresh() }
       let updateID = update["id"] as? String
       guard settingsSync.accepts(updateID) else { return }
       guard let language = update["language"] as? String, ["zh", "en"].contains(language) else { return }

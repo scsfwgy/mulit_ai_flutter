@@ -1,0 +1,58 @@
+{
+  "identifier": "AI-Link-Local-Purchases",
+  "nonRenewingSubscriptions": [],
+  "products": [
+    {
+      "displayPrice": "70",
+      "familyShareable": false,
+      "internalID": "permanent-test",
+      "localizations": [
+        {
+          "description": "一次购买，永久解锁。第三方 API 用量费用另计。",
+          "displayName": "永久解锁",
+          "locale": "zh_CN"
+        },
+        {
+          "description": "One-time unlock. Provider usage costs extra.",
+          "displayName": "Permanent Unlock",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.maxhall.ailink.permanent_unlock",
+      "referenceName": "Permanent Unlock",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "0",
+      "familyShareable": false,
+      "internalID": "trial-test",
+      "localizations": [
+        {
+          "description": "主动领取后开始，不自动扣款。",
+          "displayName": "7 天试用",
+          "locale": "zh_CN"
+        },
+        {
+          "description": "No automatic charges.",
+          "displayName": "7-day Trial",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.maxhall.ailink.trial_7_days",
+      "referenceName": "7-day Trial",
+      "type": "NonConsumable"
+    }
+  ],
+  "settings": {
+    "_applicationInternalID": "6819497731",
+    "_developerTeamID": "T94W2V3B6M",
+    "_failTransactionsEnabled": false,
+    "_locale": "zh_CN",
+    "_storefront": "CHN"
+  },
+  "subscriptionGroups": [],
+  "version": {
+    "major": 3,
+    "minor": 0
+  }
+}

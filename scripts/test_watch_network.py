@@ -130,6 +130,7 @@ def main():
             subprocess.run(['xcrun', 'swiftc', '-swift-version', '5', '-parse-as-library',
                             str(ROOT / 'ios/AILinkWatch/WatchNetworkConfiguration.swift'),
                             str(ROOT / 'ios/AILinkWatch/WatchNetworkClient.swift'),
+                            str(ROOT / 'ios/AILinkPurchases/ApplePurchaseStore.swift'),
                             str(ROOT / 'test/native/watch_network_tests.swift'), '-o', executable], check=True)
             env = dict(os.environ, WATCH_TEST_URL=f'http://127.0.0.1:{server.server_port}')
             subprocess.run([executable], env=env, check=True, timeout=45)

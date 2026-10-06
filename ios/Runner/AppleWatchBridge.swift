@@ -115,6 +115,7 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
     }
   }
 
+  @MainActor
   private func startWorkerIfNeeded() -> Bool {
     guard workerEngine == nil else { return true }
     let engine = FlutterEngine(name: "AI Link Watch Worker", project: nil, allowHeadlessExecution: true)
@@ -142,6 +143,7 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
     }
     workerChannel = channel
     GeneratedPluginRegistrant.register(with: engine)
+    ApplePurchaseBridge.shared.attach(messenger: engine.binaryMessenger)
     pluginsReady = true
     flushPending()
     return true

@@ -98,6 +98,10 @@ final class WatchNetworkClient: NSObject, URLSessionTaskDelegate {
   }
 
   func transcribe(_ wav: Data, config: WatchNetworkConfiguration) async throws -> String {
+    await ApplePurchaseStore.shared.refresh()
+    guard ApplePurchaseStore.shared.canUse else {
+      throw WatchRequestError("请在 iPhone 领取试用或永久解锁，再刷新手表权益", "Start trial or unlock on iPhone, then refresh watch purchases")
+    }
     guard config.canChat, config.canTranscribe, let voice = config.asr,
           !wav.isEmpty, wav.count <= 4 * 1024 * 1024 else {
       throw WatchRequestError("请先在手机配置文字模型和语音识别", "Set up text and transcription services on iPhone first")
@@ -216,6 +220,10 @@ final class WatchNetworkClient: NSObject, URLSessionTaskDelegate {
 
   func reply(history: [[String: String]], config: WatchNetworkConfiguration,
              onText: @escaping (String) -> Void) async throws -> String {
+    await ApplePurchaseStore.shared.refresh()
+    guard ApplePurchaseStore.shared.canUse else {
+      throw WatchRequestError("请在 iPhone 领取试用或永久解锁，再刷新手表权益", "Start trial or unlock on iPhone, then refresh watch purchases")
+    }
     guard config.canChat else { throw WatchRequestError("文字服务未配置", "Text service is not configured") }
     let anthropic = config.protocolName == "anthropic_messages"
     var evidence: String?
@@ -299,6 +307,10 @@ final class WatchNetworkClient: NSObject, URLSessionTaskDelegate {
   }
 
   func synthesize(_ text: String, config: WatchNetworkConfiguration) async throws -> (Data, String)? {
+    await ApplePurchaseStore.shared.refresh()
+    guard ApplePurchaseStore.shared.canUse else {
+      throw WatchRequestError("请在 iPhone 领取试用或永久解锁，再刷新手表权益", "Start trial or unlock on iPhone, then refresh watch purchases")
+    }
     guard let voice = config.tts else { return nil }
     let input = String(String.UnicodeScalarView(text.unicodeScalars.prefix(1800))).trimmingCharacters(in: .whitespacesAndNewlines)
     guard !input.isEmpty else { return nil }

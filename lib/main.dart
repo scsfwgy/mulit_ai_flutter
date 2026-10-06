@@ -14,6 +14,8 @@ import 'package:record/record.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'api_client.dart';
+import 'apple_purchases.dart';
+import 'purchase_screen.dart';
 import 'app_platform.dart';
 import 'desktop_chat.dart';
 import 'app_preferences.dart';
@@ -298,6 +300,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       }
     });
     WidgetsBinding.instance.addObserver(this);
+    ApplePurchases.instance.start();
+    ApplePurchases.instance.addListener(_purchaseChanged);
     if (supportsWatchCompanion) {
       _watchConfigSubscription = ChatStore.instance.watchConfigurationChanges
           .listen((_) {
@@ -345,6 +349,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     _watchUpdates.setMethodCallHandler(null);
     unawaited(_watchConfigSubscription?.cancel());
     WidgetsBinding.instance.removeObserver(this);
+    ApplePurchases.instance.removeListener(_purchaseChanged);
     _recordTimer?.cancel();
     _hideVoiceOverlay();
     _recordElapsedMs.dispose();
@@ -378,6 +383,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      unawaited(ApplePurchases.instance.refresh());
       unawaited(_syncWatchConfiguration());
     } else {
       final wasHolding = _voicePointerDown;
@@ -388,6 +394,25 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       if (wasHolding && mounted) setState(() {});
       if (_recording) unawaited(_cancelRecording());
     }
+  }
+
+  void _purchaseChanged() {
+    if (mounted) {
+      setState(() {});
+      unawaited(_syncWatchConfiguration());
+    }
+  }
+
+  Future<bool> _ensurePurchaseAccess() async {
+    if (await ApplePurchases.instance.refresh()) return mounted;
+    if (!mounted) return false;
+    if (_voicePointerDown) _endVoicePress();
+    await Navigator.push<void>(
+      context,
+      appPageRoute(builder: (_) => const PurchaseScreen()),
+    );
+    if (!mounted) return false;
+    return ApplePurchases.instance.refresh();
   }
 
   Future<void> _syncWatchConfiguration() async {
@@ -752,6 +777,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       return;
     }
     try {
+      if (!await _ensurePurchaseAccess()) return;
       if (!await _recorder.hasPermission()) {
         _endVoicePress();
         if (mounted) {
@@ -857,6 +883,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       if (key == null || key.isEmpty) {
         throw const VoiceException('语音服务缺少 API Key');
       }
+      if (!await _ensurePurchaseAccess()) return;
       client = VoiceClient(service, key);
       final transcript = await client.transcribe(data);
       if (!mounted) return;
@@ -992,6 +1019,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       return;
     }
     if (!_canSpeak || !mounted) return;
+    if (!await _ensurePurchaseAccess()) return;
     final generation = ++_speechGeneration;
     setState(() {
       _speechState = SpeechPlaybackState.loading;
@@ -1074,6 +1102,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   }
 
   Future<void> _sendMessage(String content) async {
+    if (!await _ensurePurchaseAccess()) return;
     if (_providers.isEmpty) {
       await _openProviders();
       if (!mounted || _providers.isEmpty) return;
@@ -1152,6 +1181,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   Future<void> _retryReply() async {
     final topic = _topic;
     if (topic == null || _starting || _sending) return;
+    if (!await _ensurePurchaseAccess()) return;
     setState(() => _starting = true);
     try {
       final history = await ChatStore.instance.messages(topic.id);
@@ -1352,6 +1382,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     String firstMessage,
     String answer,
   ) async {
+    if (!await ApplePurchases.instance.refresh()) return;
     final client = ModelApiClient(provider, key);
     _titleClients.add(client);
     try {
