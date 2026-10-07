@@ -18,6 +18,8 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
   private var phoneUpdates: FlutterMethodChannel?
   private var processingIDs: Set<String> = []
   private var receivedRequests: Set<String> = []
+  private var purchaseSyncTask: Task<Void, Never>?
+  private var purchaseSnapshot: [String: Any]?
 
   func start() {
     guard WCSession.isSupported() else { return }
@@ -109,9 +111,31 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
     var preferences = UserDefaults.standard.dictionary(forKey: "ai_link_watch_preferences") ?? [:]
     preferences["kind"] = "preferences"
     preferences["language"] = language
+    preferences["purchases"] = purchaseSnapshot
     try? session.updateApplicationContext(preferences)
     if session.isReachable {
       session.sendMessage(preferences, replyHandler: nil)
+    }
+  }
+
+  @MainActor
+  func syncPurchases() {
+    guard WCSession.isSupported(), purchaseSyncTask == nil else { return }
+    let session = WCSession.default
+    guard session.activationState == .activated, session.isPaired, session.isWatchAppInstalled else { return }
+    purchaseSyncTask = Task { @MainActor [weak self] in
+      guard let self else { return }
+      defer { self.purchaseSyncTask = nil }
+      guard let snapshot = await ApplePurchaseStore.shared.companionSnapshot() else { return }
+      self.purchaseSnapshot = snapshot
+      // updateApplicationContext replaces the entire dictionary. Retain the
+      // service configuration and language while adding independent purchases.
+      var context = session.applicationContext
+      context["purchases"] = snapshot
+      try? session.updateApplicationContext(context)
+      if session.isReachable {
+        session.sendMessage(["kind": "purchases", "purchases": snapshot], replyHandler: nil)
+      }
     }
   }
 
@@ -203,7 +227,8 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
       // Flutter's optional fields arrive as NSNull, which WCSession property lists reject.
       message = propertyList(message) as? [String: Any] ?? [:]
       message["language"] = UserDefaults.standard.string(forKey: "ai_link_watch_language") ?? "zh"
-      UserDefaults.standard.set(message.filter { $0.key != "id" && $0.key != "configuration" }, forKey: "ai_link_watch_preferences")
+      message["purchases"] = purchaseSnapshot
+      UserDefaults.standard.set(message.filter { $0.key != "id" && $0.key != "configuration" && $0.key != "purchases" }, forKey: "ai_link_watch_preferences")
       try? session.updateApplicationContext(message)
       if session.isReachable { session.sendMessage(message, replyHandler: nil) }
       return
@@ -257,15 +282,15 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
     _ session: WCSession, activationDidCompleteWith state: WCSessionActivationState,
     error: Error?
   ) {
-    DispatchQueue.main.async { self.sendPendingConfiguration(); self.syncPreferences() }
+    DispatchQueue.main.async { self.sendPendingConfiguration(); self.syncPreferences(); self.syncPurchases() }
   }
 
   func sessionWatchStateDidChange(_ session: WCSession) {
-    DispatchQueue.main.async { self.sendPendingConfiguration(); self.syncPreferences() }
+    DispatchQueue.main.async { self.sendPendingConfiguration(); self.syncPreferences(); self.syncPurchases() }
   }
 
   func sessionReachabilityDidChange(_ session: WCSession) {
-    DispatchQueue.main.async { self.sendPendingConfiguration(); self.syncPreferences() }
+    DispatchQueue.main.async { self.sendPendingConfiguration(); self.syncPreferences(); self.syncPurchases() }
   }
 
   func sessionDidBecomeInactive(_ session: WCSession) {}
@@ -329,11 +354,21 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
     DispatchQueue.main.async {
       let kind = message["kind"] as? String ?? ""
       guard let id = message["id"] as? String else { replyHandler(["accepted": false]); return }
-      if kind == "preferences" {
+      if kind == "purchases" {
+        // Do not involve the Flutter background worker or service configuration.
+        Task { @MainActor in
+          await ApplePurchaseStore.shared.refresh()
+          if let snapshot = await ApplePurchaseStore.shared.companionSnapshot() {
+            replyHandler(["accepted": true, "purchases": snapshot])
+            self.syncPurchases()
+          } else { replyHandler(["accepted": false]) }
+        }
+      } else if kind == "preferences" {
         let independent = message["version"] as? Int == 2
         if independent { UserDefaults.standard.set(true, forKey: "ai_link_watch_independent") }
         self.enqueue(id: id, arguments: ["id": id, "kind": independent ? "apple-configuration" : "apple-preferences"])
         replyHandler(["accepted": true])
+        self.syncPurchases()
       } else if kind == "remote-tts", let text = message["text"] as? String, text.count <= 1800 {
         replyHandler(["accepted": self.accept(message)])
       } else if kind == "confirm", let text = message["transcript"] as? String, !text.isEmpty, text.count <= 5000 {

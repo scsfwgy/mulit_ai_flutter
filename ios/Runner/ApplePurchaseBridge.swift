@@ -12,6 +12,7 @@ final class ApplePurchaseBridge {
     let store = ApplePurchaseStore.shared
     store.onChange = { [weak self] in
       self?.channels.forEach { $0.invokeMethod("changed", arguments: store.snapshot) }
+      AppleWatchBridge.shared.syncPurchases()
     }
     channel.setMethodCallHandler { call, result in
       Task { @MainActor in

@@ -36,6 +36,7 @@ struct WatchContentView: View {
     .onChange(of: scenePhase) { _, phase in
       if phase == .active {
         session.refreshPhoneSettings()
+        session.refreshPurchases()
         Task { await purchases.refresh() }
       }
       else { session.cancelRecording() }
@@ -213,11 +214,15 @@ struct WatchContentView: View {
           get: { session.speak }, set: { session.setSpeak($0) }
         ))
         if purchases.enabled {
-          Text(label(purchases.permanent ? "已永久解锁" : "试用与永久解锁请在 iPhone 操作",
-                     purchases.permanent ? "Permanently unlocked" : "Start trial or unlock on iPhone"))
+          Text(label(purchases.permanent ? "已永久解锁" : purchases.canUse ? "7 天试用中" : "试用与永久解锁请在 iPhone 操作",
+                     purchases.permanent ? "Permanently unlocked" : purchases.canUse ? "7-day trial active" : "Start trial or unlock on iPhone"))
             .font(.system(size: 11)).foregroundStyle(.secondary)
           Button(label("刷新购买权益", "Refresh purchases")) {
-            Task { try? await purchases.restore() }
+            session.refreshPurchases()
+          }
+          .disabled(session.syncingPurchases)
+          if !session.purchasesStatus.isEmpty {
+            Text(session.purchasesStatus).font(.system(size: 11)).foregroundStyle(.secondary)
           }
         }
         Button(label("同步手机配置", "Sync phone settings")) { session.refreshPhoneSettings(manual: true) }

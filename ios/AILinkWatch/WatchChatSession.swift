@@ -50,6 +50,9 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
   private var settingsSync = WatchSettingsSync()
   private var settingsRequestID: String? { settingsSync.requestID }
   private var statusLabels: (String, String)?
+  @Published private(set) var syncingPurchases = false
+  @Published private(set) var purchasesStatus = ""
+  private var purchaseRequestID: String?
 
   private var recorder: AVAudioRecorder?
   private var player: AVAudioPlayer?
@@ -75,6 +78,14 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
 
   override init() {
     super.init()
+    ApplePurchaseStore.shared.onChange = { [weak self] in
+      guard let self else { return }
+      self.objectWillChange.send()
+      if ApplePurchaseStore.shared.canUse,
+         self.statusLabels?.0 == "请在 iPhone 领取试用或永久解锁，再刷新权益" {
+        self.setStatus("", "")
+      }
+    }
     ApplePurchaseStore.shared.start()
     if let data = UserDefaults.standard.data(forKey: historyKey),
        let saved = try? JSONDecoder().decode([WatchTurn].self, from: data) {
@@ -101,6 +112,55 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
   var phoneAvailable: Bool {
     WCSession.isSupported() && WCSession.default.activationState == .activated
       && WCSession.default.isCompanionAppInstalled && WCSession.default.isReachable
+  }
+
+  func refreshPurchases() {
+    guard !syncingPurchases else { return }
+    syncingPurchases = true
+    purchasesStatus = localized("正在同步购买权益…", "Syncing purchase access…")
+    let id = UUID().uuidString
+    purchaseRequestID = id
+    Task { await ApplePurchaseStore.shared.refreshCompanionClock(); await ApplePurchaseStore.shared.refresh() }
+    guard phoneAvailable else {
+      syncingPurchases = false
+      purchaseRequestID = nil
+      purchasesStatus = localized("请打开配对 iPhone 的 AI Link 后重试", "Open AI Link on the paired iPhone and retry")
+      return
+    }
+    WCSession.default.sendMessage(["kind": "purchases", "id": id], replyHandler: { [weak self] reply in
+      DispatchQueue.main.async {
+        guard let self, self.purchaseRequestID == id else { return }
+        Task { @MainActor in
+          guard reply["accepted"] as? Bool == true, let payload = reply["purchases"] as? [String: Any] else {
+            self.finishPurchaseSync(id, success: false)
+            return
+          }
+          self.applyPurchases(payload)
+          await ApplePurchaseStore.shared.refreshCompanionClock()
+          self.finishPurchaseSync(id, success: true)
+        }
+      }
+    }, errorHandler: { [weak self] _ in
+      DispatchQueue.main.async { self?.finishPurchaseSync(id, success: false) }
+    })
+    DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+      self?.finishPurchaseSync(id, success: false)
+    }
+  }
+
+  private func finishPurchaseSync(_ id: String, success: Bool) {
+    guard purchaseRequestID == id else { return }
+    purchaseRequestID = nil
+    syncingPurchases = false
+    purchasesStatus = success
+      ? localized("购买权益已同步", "Purchase access synced")
+      : localized("同步失败，请打开 iPhone 的 AI Link 后重试", "Sync failed. Open AI Link on iPhone and retry")
+  }
+
+  private func applyPurchases(_ payload: [String: Any]) {
+    if ApplePurchaseStore.shared.receiveCompanion(payload) {
+      Task { await ApplePurchaseStore.shared.refreshCompanionClock() }
+    }
   }
 
   var visibleHistory: [WatchTurn] { turns.filter { $0.id != activeID } }
@@ -237,7 +297,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     pressActive = true
     guard ApplePurchaseStore.shared.canUse else {
       setStatus("请在 iPhone 领取试用或永久解锁，再刷新权益", "Start a trial or unlock on iPhone, then refresh access")
-      Task { await ApplePurchaseStore.shared.refresh() }
+      refreshPurchases()
       return
     }
     releaseAction = .send
@@ -508,6 +568,10 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
   }
 
   @MainActor private func apply(_ update: [String: Any]) {
+    // Entitlement delivery must not depend on config request IDs, language,
+    // service validity or the user having cleared watch service settings.
+    if let purchases = update["purchases"] as? [String: Any] { applyPurchases(purchases) }
+    if update["kind"] as? String == "purchases" { return }
     if update["kind"] as? String == "turn-ack", let id = update["id"] as? String {
       independentHistory.acknowledge(id)
       if syncID == id { syncID = nil }
@@ -609,7 +673,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     DispatchQueue.main.async {
       self.apply(session.receivedApplicationContext)
       self.objectWillChange.send()
-      if state == .activated { self.sendPendingSettingsRequest() }
+      if state == .activated { self.sendPendingSettingsRequest(); self.refreshPurchases() }
       else { self.finishSettingsRequest(success: false) }
     }
   }
@@ -617,7 +681,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
   nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
     DispatchQueue.main.async {
       self.objectWillChange.send()
-      if session.isReachable { self.refreshPhoneSettings() }
+      if session.isReachable { self.refreshPhoneSettings(); self.refreshPurchases() }
     }
   }
 
