@@ -135,7 +135,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
             self.finishPurchaseSync(id, success: false)
             return
           }
-          self.applyPurchases(payload)
+          self.applyPurchases(payload, livePhoneTime: true)
           await ApplePurchaseStore.shared.refreshCompanionClock()
           self.finishPurchaseSync(id, success: true)
         }
@@ -157,8 +157,8 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
       : localized("同步失败，请打开 iPhone 的 AI Link 后重试", "Sync failed. Open AI Link on iPhone and retry")
   }
 
-  private func applyPurchases(_ payload: [String: Any]) {
-    if ApplePurchaseStore.shared.receiveCompanion(payload) {
+  private func applyPurchases(_ payload: [String: Any], livePhoneTime: Bool = false) {
+    if ApplePurchaseStore.shared.receiveCompanion(payload, livePhoneTime: livePhoneTime) {
       Task { await ApplePurchaseStore.shared.refreshCompanionClock() }
     }
   }
@@ -567,10 +567,10 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     setStatus("已清除手表配置和问答", "Watch settings and chats cleared")
   }
 
-  @MainActor private func apply(_ update: [String: Any]) {
+  @MainActor private func apply(_ update: [String: Any], livePurchases: Bool = false) {
     // Entitlement delivery must not depend on config request IDs, language,
     // service validity or the user having cleared watch service settings.
-    if let purchases = update["purchases"] as? [String: Any] { applyPurchases(purchases) }
+    if let purchases = update["purchases"] as? [String: Any] { applyPurchases(purchases, livePhoneTime: livePurchases) }
     if update["kind"] as? String == "purchases" { return }
     if update["kind"] as? String == "turn-ack", let id = update["id"] as? String {
       independentHistory.acknowledge(id)
@@ -690,7 +690,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
   }
 
   nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
-    DispatchQueue.main.async { self.apply(message) }
+    DispatchQueue.main.async { self.apply(message, livePurchases: message["kind"] as? String == "purchases") }
   }
 
   nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {

@@ -38,6 +38,8 @@
 		AA6600000000000000000012 /* ApplePurchaseStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6600000000000000000001 /* ApplePurchaseStore.swift */; };
 		AA6600000000000000000013 /* ApplePurchaseBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6600000000000000000002 /* ApplePurchaseBridge.swift */; };
 		AA6600000000000000000014 /* AI-Link.storekit in Resources */ = {isa = PBXBuildFile; fileRef = AA6600000000000000000003 /* AI-Link.storekit */; };
+		AA7700000000000000000011 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AA7700000000000000000001 /* PrivacyInfo.xcprivacy */; };
+		AA7700000000000000000012 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AA7700000000000000000001 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -121,6 +123,7 @@
 		AA6600000000000000000001 /* ApplePurchaseStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AILinkPurchases/ApplePurchaseStore.swift; sourceTree = SOURCE_ROOT; };
 		AA6600000000000000000002 /* ApplePurchaseBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplePurchaseBridge.swift; sourceTree = "<group>"; };
 		AA6600000000000000000003 /* AI-Link.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = AILinkPurchases/AI-Link.storekit; sourceTree = SOURCE_ROOT; };
+		AA7700000000000000000001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = AILinkPurchases/PrivacyInfo.xcprivacy; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -202,6 +205,7 @@
 				1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */,
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				AA6600000000000000000001 /* ApplePurchaseStore.swift */,
+				AA7700000000000000000001 /* PrivacyInfo.xcprivacy */,
 				AA6600000000000000000002 /* ApplePurchaseBridge.swift */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				AA1100000000000000000006 /* AppleWatchBridge.swift */,
@@ -388,6 +392,7 @@
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,
 				97C146FC1CF9000F007C117D /* Main.storyboard in Resources */,
 				AA4400000000000000000013 /* GoogleService-Info.plist in Resources */,
+				AA7700000000000000000011 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -396,6 +401,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA1100000000000000000014 /* Assets.xcassets in Resources */,
+				AA7700000000000000000012 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

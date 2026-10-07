@@ -19,6 +19,7 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
   private var processingIDs: Set<String> = []
   private var receivedRequests: Set<String> = []
   private var purchaseSyncTask: Task<Void, Never>?
+  private var purchaseSyncAgain = false
   private var purchaseSnapshot: [String: Any]?
 
   func start() {
@@ -120,22 +121,26 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
 
   @MainActor
   func syncPurchases() {
-    guard WCSession.isSupported(), purchaseSyncTask == nil else { return }
+    guard WCSession.isSupported() else { return }
+    if purchaseSyncTask != nil { purchaseSyncAgain = true; return }
     let session = WCSession.default
     guard session.activationState == .activated, session.isPaired, session.isWatchAppInstalled else { return }
     purchaseSyncTask = Task { @MainActor [weak self] in
       guard let self else { return }
       defer { self.purchaseSyncTask = nil }
-      guard let snapshot = await ApplePurchaseStore.shared.companionSnapshot() else { return }
-      self.purchaseSnapshot = snapshot
-      // updateApplicationContext replaces the entire dictionary. Retain the
-      // service configuration and language while adding independent purchases.
-      var context = session.applicationContext
-      context["purchases"] = snapshot
-      try? session.updateApplicationContext(context)
-      if session.isReachable {
-        session.sendMessage(["kind": "purchases", "purchases": snapshot], replyHandler: nil)
-      }
+      repeat {
+        self.purchaseSyncAgain = false
+        guard let snapshot = await ApplePurchaseStore.shared.companionSnapshot() else { continue }
+        self.purchaseSnapshot = snapshot
+        // updateApplicationContext replaces the entire dictionary. Retain the
+        // service configuration and language while adding independent purchases.
+        var context = session.applicationContext
+        context["purchases"] = snapshot
+        try? session.updateApplicationContext(context)
+        if session.isReachable {
+          session.sendMessage(["kind": "purchases", "purchases": snapshot], replyHandler: nil)
+        }
+      } while self.purchaseSyncAgain
     }
   }
 

@@ -3,6 +3,7 @@ import Foundation
 import StoreKit
 import OSLog
 import Security
+import Darwin
 
 /// iPhone StoreKit is the purchase authority. Its paired watch only consumes
 /// native entitlement snapshots; watch service configuration never grants access.
@@ -28,11 +29,15 @@ final class ApplePurchaseStore: ObservableObject {
   private var refreshProducts = false
   private var transactionRevision = 0
   private var revision = 0
-  // Only verified purchase/update callbacks enter this process-local fallback.
-  // Nothing is persisted as an ownership Boolean; cold starts query StoreKit.
-  private var receivedTransactions: [String: Transaction] = [:]
-  private var verifiedTransactions: [String: Transaction] = [:]
-  private var timeAnchor: (date: Date, uptime: TimeInterval)?
+  // Native StoreKit .verified results are delivered and saved before finish().
+  // Keychain retains that verified evidence when StoreKit returns an empty cache.
+  private var verifiedTransactions: [String: VerifiedPurchaseRecord] = [:]
+  private var timeAnchor: PurchaseClockAnchor?
+  private let savePhone: (Data) -> Void
+  private let saveClock: (Data) -> Void
+  private let uptime: () -> TimeInterval
+  private let bootID: () -> String?
+  private let useTestingClock: Bool
   private let readRecords: () async -> Records
   private let synchronize: () async throws -> Void
   private var restoreTask: Task<Void, Error>?
@@ -66,12 +71,24 @@ final class ApplePurchaseStore: ObservableObject {
        clock: @escaping () async -> Date? = ApplePurchaseStore.fetchAppleTime,
        acceptsCompanion: Bool = ApplePurchaseStore.isWatch,
        loadCompanion: () -> Data? = CompanionEntitlement.load,
-       saveCompanion: @escaping (Data) -> Void = CompanionEntitlement.save) {
+       saveCompanion: @escaping (Data) -> Void = CompanionEntitlement.save,
+       loadPhone: @escaping () -> Data? = { PurchaseKeychain.load("phone-verified-state") },
+       savePhone: @escaping (Data) -> Void = { PurchaseKeychain.save($0, account: "phone-verified-state") },
+       loadClock: () -> Data? = { PurchaseKeychain.load("watch-clock") },
+       saveClock: @escaping (Data) -> Void = { PurchaseKeychain.save($0, account: "watch-clock") },
+       uptime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+       bootID: @escaping () -> String? = PurchaseClockAnchor.currentBootID,
+       useTestingClock: Bool = true) {
     self.readRecords = readRecords
     self.synchronize = synchronize
     self.clock = clock
     self.acceptsCompanion = acceptsCompanion
     self.saveCompanion = saveCompanion
+    self.savePhone = savePhone
+    self.saveClock = saveClock
+    self.uptime = uptime
+    self.bootID = bootID
+    self.useTestingClock = useTestingClock
     if acceptsCompanion, let data = loadCompanion(),
        let saved = try? JSONDecoder().decode(CompanionEntitlement.self, from: data), saved.valid {
       companion = saved
@@ -82,6 +99,22 @@ final class ApplePurchaseStore: ObservableObject {
     self.enabled = enabled ?? (Bundle.main.bundleIdentifier == "com.maxhall.ailink" ||
       Bundle.main.bundleIdentifier == "com.maxhall.ailink.watchkitapp")
     #endif
+    if self.enabled {
+      if acceptsCompanion {
+        if let data = loadClock(), let anchor = try? JSONDecoder().decode(PurchaseClockAnchor.self, from: data),
+           anchor.now(uptime: uptime(), bootID: bootID()) != nil { timeAnchor = anchor }
+        ready = companion != nil
+      } else if let data = loadPhone(),
+                let cache = try? JSONDecoder().decode(PhonePurchaseCache.self, from: data), cache.valid {
+        verifiedTransactions = cache.records
+        localHadTrial = cache.trialStart != nil
+        localTrialStart = cache.trialStart
+        localPermanent = cache.records[Self.permanentID]?.active == true
+        trialActiveRecord = cache.records[Self.trialID]?.active == true
+        if let anchor = cache.clock, anchor.now(uptime: uptime(), bootID: bootID()) != nil { timeAnchor = anchor }
+        ready = true
+      }
+    }
   }
 
   deinit { listener?.cancel() }
@@ -112,7 +145,7 @@ final class ApplePurchaseStore: ObservableObject {
 
   var now: Date? {
     guard let anchor = timeAnchor else { return nil }
-    return anchor.date.addingTimeInterval(max(0, ProcessInfo.processInfo.systemUptime - anchor.uptime))
+    return anchor.date.addingTimeInterval(max(0, uptime() - anchor.uptime))
   }
   var trialEnd: Date? { trialStart?.addingTimeInterval(Self.trialDuration) }
   var canUse: Bool {
@@ -187,12 +220,12 @@ final class ApplePurchaseStore: ObservableObject {
         earliestTrial = min(earliestTrial ?? transaction.originalPurchaseDate, transaction.originalPurchaseDate)
       }
     }
-    var current = receivedTransactions
-    for result in records.entitlements + records.latest {
+    var current = verifiedTransactions
+    for result in records.history + records.entitlements + records.latest {
       switch result {
       case .verified(let transaction):
         guard Self.isOurTransaction(transaction) else { continue }
-        Self.merge(transaction, into: &current)
+        Self.merge(VerifiedPurchaseRecord(transaction, jws: result.jwsRepresentation), into: &current)
       case .unverified: verificationFailed = true
       }
     }
@@ -209,17 +242,17 @@ final class ApplePurchaseStore: ObservableObject {
           earliestTrial = min(earliestTrial ?? transaction.originalPurchaseDate, transaction.originalPurchaseDate)
           #if DEBUG
           if #available(iOS 16.0, watchOS 9.0, *) {
-            testingTrial = transaction.environment == .xcode
+            testingTrial = useTestingClock && transaction.environment == "Xcode"
           }
           #endif
         }
     }
     // Trial time advances with uptime, not the user-changeable device clock.
-    // A cold start needs an HTTPS server time. Read-only screens still work offline.
+    // Reuse a persisted same-boot anchor; a new boot requires fresh server time.
     if activeTrial && !ownsPermanent && timeAnchor == nil {
-      if testingTrial { timeAnchor = (Date(), ProcessInfo.processInfo.systemUptime) }
+      if testingTrial { anchorTime(Date()) }
       else if let serverDate = await clock() {
-        timeAnchor = (serverDate, ProcessInfo.processInfo.systemUptime)
+        anchorTime(serverDate)
       }
     }
     var queryError = verificationFailed ? "verificationFailed" :
@@ -234,9 +267,6 @@ final class ApplePurchaseStore: ObservableObject {
     // A callback can arrive while any query or clock/catalog request is suspended.
     // Do not publish its older snapshot over the just-verified transaction.
     guard startedRevision == transactionRevision else { refreshAgain = true; return }
-    for id in Array(receivedTransactions.keys) {
-      receivedTransactions[id] = current[id]
-    }
     verifiedTransactions = current
     localPermanent = ownsPermanent
     trialActiveRecord = activeTrial
@@ -244,6 +274,7 @@ final class ApplePurchaseStore: ObservableObject {
     localHadTrial = sawTrial
     errorCode = queryError
     ready = true
+    persistPhone()
     publish()
   }
 
@@ -251,7 +282,7 @@ final class ApplePurchaseStore: ObservableObject {
     [permanentID, trialID].contains(transaction.productID) && transaction.productType == .nonConsumable
   }
 
-  private static func merge(_ transaction: Transaction, into records: inout [String: Transaction]) {
+  private static func merge(_ transaction: VerifiedPurchaseRecord, into records: inout [String: VerifiedPurchaseRecord]) {
     if let old = records[transaction.productID] {
       if transaction.id == old.id {
         // A signed refund for this exact purchase wins over its cached original,
@@ -280,9 +311,8 @@ final class ApplePurchaseStore: ObservableObject {
       return false
     }
     guard Self.isOurTransaction(transaction) else { return false }
-    Self.merge(transaction, into: &receivedTransactions)
-    let record = receivedTransactions[transaction.productID]!
-    Self.merge(record, into: &verifiedTransactions)
+    Self.merge(VerifiedPurchaseRecord(transaction, jws: result.jwsRepresentation), into: &verifiedTransactions)
+    let record = verifiedTransactions[transaction.productID]!
     transactionRevision += 1
     let active = record.revocationDate == nil && !record.isUpgraded
     if record.productID == Self.permanentID { localPermanent = active }
@@ -291,16 +321,29 @@ final class ApplePurchaseStore: ObservableObject {
       localTrialStart = min(localTrialStart ?? record.originalPurchaseDate, record.originalPurchaseDate)
       trialActiveRecord = active
       #if DEBUG
-      if #available(iOS 16.0, watchOS 9.0, *), record.environment == .xcode, timeAnchor == nil {
-        timeAnchor = (Date(), ProcessInfo.processInfo.systemUptime)
+      if #available(iOS 16.0, watchOS 9.0, *), useTestingClock, record.environment == "Xcode", timeAnchor == nil {
+        anchorTime(Date())
       }
       #endif
     }
     ready = true
     errorCode = trialActiveRecord && !permanent && timeAnchor == nil ? "clockUnavailable" : ""
     Self.log.notice("Verified callback: permanent=\(self.permanent) trial=\(self.trialActiveRecord) revoked=\(record.revocationDate != nil)")
+    persistPhone()
     publish()
     return true
+  }
+
+  private func anchorTime(_ date: Date) {
+    timeAnchor = PurchaseClockAnchor(date: date, uptime: uptime(), bootID: bootID())
+    if acceptsCompanion, let data = try? JSONEncoder().encode(timeAnchor) { saveClock(data) }
+    else { persistPhone() }
+  }
+
+  private func persistPhone() {
+    guard enabled, !acceptsCompanion, !verifiedTransactions.isEmpty else { return }
+    let cache = PhonePurchaseCache(records: verifiedTransactions, trialStart: localTrialStart, clock: timeAnchor)
+    if let data = try? JSONEncoder().encode(cache) { savePhone(data) }
   }
 
   private func publish() {
@@ -314,7 +357,7 @@ final class ApplePurchaseStore: ObservableObject {
   func companionSnapshot() async -> [String: Any]? {
     guard enabled, ready, !acceptsCompanion else { return nil }
     if timeAnchor == nil, let date = await clock() {
-      timeAnchor = (date, ProcessInfo.processInfo.systemUptime)
+      anchorTime(date)
     }
     guard let now else { return nil }
     let defaults = UserDefaults.standard
@@ -334,7 +377,7 @@ final class ApplePurchaseStore: ObservableObject {
   /// Call only from the paired WCSession delegate, outside configuration parsing.
   /// Persist the native snapshot in Keychain for watch cold starts.
   @discardableResult
-  func receiveCompanion(_ payload: [String: Any]) -> Bool {
+  func receiveCompanion(_ payload: [String: Any], livePhoneTime: Bool = false) -> Bool {
     guard enabled, acceptsCompanion,
           let data = try? JSONSerialization.data(withJSONObject: payload), data.count <= 4_096,
           let state = try? JSONDecoder().decode(CompanionEntitlement.self, from: data), state.valid else { return false }
@@ -344,8 +387,12 @@ final class ApplePurchaseStore: ObservableObject {
     }
     companion = state
     saveCompanion(data)
-    // Invalidate a local query suspended before this paired-phone update.
-    transactionRevision += 1
+    // The paired phone already checked trial time. Do not require an unrelated
+    // HTTPS request from the watch before honoring its fresh assertion.
+    if livePhoneTime, timeAnchor == nil || (now.map { state.issuedAt > $0 } ?? true) {
+      anchorTime(state.issuedAt)
+      if errorCode == "clockUnavailable" { errorCode = "" }
+    }
     ready = true
     publish()
     return true
@@ -355,9 +402,10 @@ final class ApplePurchaseStore: ObservableObject {
     guard acceptsCompanion, let companion, companion.trialActive, !companion.permanent,
           timeAnchor == nil else { return }
     if let date = await clock() {
-      timeAnchor = (date, ProcessInfo.processInfo.systemUptime)
+      // A live paired-phone reply may have supplied time during this request.
+      if timeAnchor == nil { anchorTime(date) }
       if errorCode == "clockUnavailable" { errorCode = "" }
-    } else { errorCode = "clockUnavailable" }
+    } else if timeAnchor == nil { errorCode = "clockUnavailable" }
     publish()
   }
 
@@ -405,7 +453,7 @@ final class ApplePurchaseStore: ObservableObject {
         // A replayed trial transaction can have an old signedDate. Obtain fresh
         // server time rather than letting a re-purchase restart an expired trial.
         if let serverDate = await clock() {
-          timeAnchor = (serverDate, ProcessInfo.processInfo.systemUptime)
+          anchorTime(serverDate)
           errorCode = ""
           publish()
         }
@@ -449,6 +497,105 @@ final class ApplePurchaseStore: ObservableObject {
 }
 
 enum PurchaseFailure: Error { case invalidProduct, unavailable, unverified }
+
+/// A delivery journal written only after native StoreKit verification. This is
+/// trusted Keychain state, not a second verification of an arbitrary cached JWS.
+struct VerifiedPurchaseRecord: Codable {
+  let productID: String
+  let id: UInt64
+  let originalPurchaseDate: Date
+  let purchaseDate: Date
+  let signedDate: Date
+  let revocationDate: Date?
+  let isUpgraded: Bool
+  let environment: String
+  let jws: String
+
+  init(_ transaction: Transaction, jws: String) {
+    productID = transaction.productID
+    id = transaction.id
+    originalPurchaseDate = transaction.originalPurchaseDate
+    purchaseDate = transaction.purchaseDate
+    signedDate = transaction.signedDate
+    revocationDate = transaction.revocationDate
+    isUpgraded = transaction.isUpgraded
+    if #available(iOS 16.0, watchOS 9.0, *) { environment = transaction.environment.rawValue }
+    else { environment = "" }
+    self.jws = jws
+  }
+  var active: Bool { revocationDate == nil && !isUpgraded }
+  var valid: Bool {
+    ["com.maxhall.ailink.permanent_unlock", "com.maxhall.ailink.trial_7_days"].contains(productID) &&
+      id > 0 && jws.split(separator: ".", omittingEmptySubsequences: false).count == 3 &&
+      !jws.isEmpty && jws.utf8.count < 100_000 &&
+      [originalPurchaseDate, purchaseDate, signedDate].allSatisfy { $0.timeIntervalSince1970.isFinite } &&
+      (revocationDate.map { $0.timeIntervalSince1970.isFinite } ?? true)
+  }
+}
+
+struct PhonePurchaseCache: Codable {
+  var version = 1
+  var bundleID = Bundle.main.bundleIdentifier ?? ""
+  let records: [String: VerifiedPurchaseRecord]
+  let trialStart: Date?
+  let clock: PurchaseClockAnchor?
+  var valid: Bool {
+    version == 1 && bundleID == Bundle.main.bundleIdentifier && !records.isEmpty && records.count <= 2 &&
+      records.allSatisfy { $0.key == $0.value.productID && $0.value.valid } &&
+      (trialStart.map { $0.timeIntervalSince1970.isFinite &&
+        $0 <= (records["com.maxhall.ailink.trial_7_days"]?.originalPurchaseDate ?? $0) } ??
+        (records["com.maxhall.ailink.trial_7_days"] == nil))
+  }
+}
+
+/// Persisted uptime anchors survive process restarts. A new boot must obtain a
+/// fresh server/paired-phone time; replaying an old anchor never resets a trial.
+struct PurchaseClockAnchor: Codable {
+  let date: Date
+  let uptime: TimeInterval
+  let bootID: String?
+  func now(uptime current: TimeInterval, bootID currentBoot: String?) -> Date? {
+    guard let bootID, bootID == currentBoot, date.timeIntervalSince1970.isFinite,
+          uptime.isFinite, uptime >= 0, current.isFinite, current >= uptime else { return nil }
+    return date.addingTimeInterval(current - uptime)
+  }
+  static func currentBootID() -> String? {
+    var size = 0
+    if sysctlbyname("kern.bootsessionuuid", nil, &size, nil, 0) == 0, size > 1 {
+      var bytes = [CChar](repeating: 0, count: size)
+      if sysctlbyname("kern.bootsessionuuid", &bytes, &size, nil, 0) == 0 { return String(cString: bytes) }
+    }
+    var boot = timeval()
+    size = MemoryLayout<timeval>.size
+    guard sysctlbyname("kern.boottime", &boot, &size, nil, 0) == 0 else { return nil }
+    return "\(boot.tv_sec):\(boot.tv_usec)"
+  }
+}
+
+enum PurchaseKeychain {
+  private static func key(_ account: String) -> [String: Any] {
+    [kSecClass as String: kSecClassGenericPassword,
+     kSecAttrService as String: "com.maxhall.ailink.native.purchases",
+     kSecAttrAccount as String: account]
+  }
+  static func load(_ account: String) -> Data? {
+    var query = key(account)
+    query[kSecReturnData as String] = true
+    query[kSecMatchLimit as String] = kSecMatchLimitOne
+    var result: CFTypeRef?
+    return SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess ? result as? Data : nil
+  }
+  static func remove(_ account: String) { SecItemDelete(key(account) as CFDictionary) }
+  static func save(_ data: Data, account: String) {
+    let attributes = [kSecValueData as String: data]
+    if SecItemUpdate(key(account) as CFDictionary, attributes as CFDictionary) == errSecItemNotFound {
+      var entry = key(account)
+      entry[kSecValueData as String] = data
+      entry[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+      SecItemAdd(entry as CFDictionary, nil)
+    }
+  }
+}
 
 /// A native, authenticated paired-phone assertion, not an independently verified
 /// StoreKit receipt. Only WCSession may import it. Trial expiry comes from iPhone.
