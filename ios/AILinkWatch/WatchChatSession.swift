@@ -2,6 +2,7 @@ import AVFoundation
 import Combine
 import Foundation
 import WatchConnectivity
+import WidgetKit
 
 enum WatchReleaseAction {
   case send, cancel, review
@@ -23,21 +24,21 @@ struct WatchTurn: Codable, Identifiable {
 /// Watch-first requests and optional phone fallback share watch-owned history.
 @MainActor
 final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVAudioRecorderDelegate, AVAudioPlayerDelegate {
-  @Published private(set) var turns: [WatchTurn] = []
+  @Published private(set) var turns: [WatchTurn] = [] { didSet { publishComplication() } }
   @Published private(set) var status = ""
   @Published private(set) var transcript = ""
-  @Published private(set) var answer = ""
-  @Published private(set) var recording = false
+  @Published private(set) var answer = "" { didSet { publishComplication() } }
+  @Published private(set) var recording = false { didSet { publishComplication() } }
   @Published private(set) var busy = false
-  @Published private(set) var awaitingConfirmation = false
+  @Published private(set) var awaitingConfirmation = false { didSet { publishComplication() } }
   @Published private(set) var elapsed = 0
   @Published private(set) var elapsedMs = 0
   @Published private(set) var level = 0.0
   @Published var releaseAction = WatchReleaseAction.send
-  @Published private(set) var language = UserDefaults.standard.string(forKey: "ai_link_phone_language") ?? "zh"
+  @Published private(set) var language = UserDefaults.standard.string(forKey: "ai_link_phone_language") ?? "zh" { didSet { publishComplication() } }
   @Published private(set) var speak = false
-  @Published private(set) var playing = false
-  @Published private(set) var loadingAudio = false
+  @Published private(set) var playing = false { didSet { publishComplication() } }
+  @Published private(set) var loadingAudio = false { didSet { publishComplication() } }
   @Published private(set) var syncingSettings = false
   @Published private(set) var settingsStatus = ""
   @Published private(set) var modelSummary = ""
@@ -46,7 +47,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
   @Published private(set) var textReady = false
   @Published private(set) var asrReady = false
   private var recordingPreflight = false
-  @Published private var phase = "idle"
+  @Published private var phase = "idle" { didSet { publishComplication() } }
   private var settingsSync = WatchSettingsSync()
   private var settingsRequestID: String? { settingsSync.requestID }
   private var statusLabels: (String, String)?
@@ -75,6 +76,11 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
   private var speechID: UUID?
   @MainActor private lazy var relay = WatchPhoneRelay()
   private let historyKey = "ai_link_watch_history_v1"
+  private var complicationReady = false
+  private var lastComplication: WatchComplicationSnapshot?
+  private var complicationReloadAt = Date.distantPast
+  private var complicationTask: Task<Void, Never>?
+
 
   override init() {
     super.init()
@@ -102,11 +108,54 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     speak = defaults.object(forKey: "ai_link_watch_speak") as? Bool
       ?? defaults.object(forKey: "ai_link_phone_speak") as? Bool ?? false
     modelSummary = defaults.string(forKey: "ai_link_phone_model_summary") ?? localized("等待手机配置", "Waiting for phone settings")
+    complicationReady = true
+    publishComplication(force: true)
+    #if DEBUG && targetEnvironment(simulator)
+    // Visual fixtures affect only the isolated widget preview, never chat history.
+    let args = ProcessInfo.processInfo.arguments
+    if let index = args.firstIndex(of: "--complication-preview"), index + 1 < args.count,
+       let state = WatchComplicationState(rawValue: args[index + 1]) {
+      complicationReady = false
+      let sample = WatchComplicationSnapshot(state: state,
+        preview: "今天可以先完成最重要的一件事，再安排休息。保持专注，也给自己留一点余地。", language: "zh", updatedAt: .now)
+      if WatchComplicationStore().save(sample) { WidgetCenter.shared.reloadTimelines(ofKind: WatchChatShortcut.kind) }
+    }
+    #endif
     if WCSession.isSupported() {
       WCSession.default.delegate = self
       WCSession.default.activate()
       refreshPhoneSettings()
     }
+  }
+
+  private func publishComplication(force: Bool = false) {
+    guard complicationReady else { return }
+    let config = turnConfiguration ?? configuration
+    let secrets = [config?.apiKey, config?.asr?.apiKey, config?.tts?.apiKey, config?.search?.apiKey].compactMap { $0 }
+    let snapshot = WatchComplicationSnapshot.make(phase: phase, recording: recording,
+      loadingAudio: loadingAudio, playing: playing, confirming: awaitingConfirmation,
+      answer: answer, lastAnswer: turns.last?.answer ?? "", language: language, secrets: secrets)
+    let changedState = lastComplication?.state != snapshot.state || lastComplication?.language != snapshot.language
+    if !force && !changedState && lastComplication?.preview == snapshot.preview { return }
+    // Intermediate text coalesces to at most one request per five seconds.
+    // State transitions cancel the pending update, so an old chunk cannot undo completion.
+    let remaining = 5 - Date().timeIntervalSince(complicationReloadAt)
+    if !force && !changedState && remaining > 0 {
+      if complicationTask == nil {
+        complicationTask = Task { @MainActor [weak self] in
+          try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+          guard !Task.isCancelled else { return }
+          self?.publishComplication(force: true)
+        }
+      }
+      return
+    }
+    complicationTask?.cancel()
+    complicationTask = nil
+    guard WatchComplicationStore().save(snapshot) else { return }
+    lastComplication = snapshot
+    complicationReloadAt = .now
+    WidgetCenter.shared.reloadTimelines(ofKind: WatchChatShortcut.kind)
   }
 
   var phoneAvailable: Bool {
@@ -549,6 +598,13 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     stopPlayback()
     do { try configurationStore.clear() }
     catch { failRequest(error); return }
+    // Clear as one display update, before dropping the keys used for redaction.
+    let wasReady = complicationReady
+    complicationReady = false
+    defer {
+      complicationReady = wasReady
+      publishComplication(force: true)
+    }
     UserDefaults.standard.set(true, forKey: "ai_link_watch_config_cleared")
     configuration = nil
     turnConfiguration = nil

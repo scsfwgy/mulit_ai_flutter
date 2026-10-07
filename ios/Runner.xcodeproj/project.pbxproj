@@ -40,6 +40,8 @@
 		AA6600000000000000000014 /* AI-Link.storekit in Resources */ = {isa = PBXBuildFile; fileRef = AA6600000000000000000003 /* AI-Link.storekit */; };
 		AA7700000000000000000011 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AA7700000000000000000001 /* PrivacyInfo.xcprivacy */; };
 		AA7700000000000000000012 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AA7700000000000000000001 /* PrivacyInfo.xcprivacy */; };
+		AA8800000000000000000011 /* WatchComplicationSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA8800000000000000000001 /* WatchComplicationSnapshot.swift */; };
+		AA8800000000000000000012 /* WatchComplicationSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA8800000000000000000001 /* WatchComplicationSnapshot.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -124,6 +126,8 @@
 		AA6600000000000000000002 /* ApplePurchaseBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplePurchaseBridge.swift; sourceTree = "<group>"; };
 		AA6600000000000000000003 /* AI-Link.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = AILinkPurchases/AI-Link.storekit; sourceTree = SOURCE_ROOT; };
 		AA7700000000000000000001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = AILinkPurchases/PrivacyInfo.xcprivacy; sourceTree = SOURCE_ROOT; };
+		AA8800000000000000000001 /* WatchComplicationSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchComplicationSnapshot.swift; sourceTree = "<group>"; };
+		AA8800000000000000000002 /* WatchComplication.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WatchComplication.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -242,7 +246,7 @@
 		};
 		AA2200000000000000000021 /* AILinkWatchShared */ = {
 			isa = PBXGroup;
-			children = (AA2200000000000000000002 /* WatchChatShortcut.swift */, );
+			children = (AA2200000000000000000002 /* WatchChatShortcut.swift */, AA8800000000000000000001 /* WatchComplicationSnapshot.swift */, AA8800000000000000000002 /* WatchComplication.entitlements */, );
 			path = AILinkWatchShared;
 			sourceTree = "<group>";
 		};
@@ -478,10 +482,11 @@
 				AA5500000000000000000012 /* WatchMarkdownView.swift in Sources */,
 				AA5500000000000000000011 /* WatchMarkdownDocument.swift in Sources */,
 				AA2200000000000000000012 /* WatchChatShortcut.swift in Sources */,
+				AA8800000000000000000011 /* WatchComplicationSnapshot.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		AA2200000000000000000022 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (AA2200000000000000000011 /* AILinkWatchWidgets.swift in Sources */, AA2200000000000000000013 /* WatchChatShortcut.swift in Sources */, ); runOnlyForDeploymentPostprocessing = 0; };
+		AA2200000000000000000022 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (AA2200000000000000000011 /* AILinkWatchWidgets.swift in Sources */, AA2200000000000000000013 /* WatchChatShortcut.swift in Sources */, AA8800000000000000000012 /* WatchComplicationSnapshot.swift in Sources */, ); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -808,6 +813,8 @@
 		AA1100000000000000000029 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				AILINK_WIDGET_KEYCHAIN_GROUP = com.maxhall.ailink.debug.watchkitapp.preview;
+				CODE_SIGN_ENTITLEMENTS = AILinkWatchShared/WatchComplication.entitlements;
 				AILINK_WATCH_URL_SCHEME = ailink-watch-debug;
 				INFOPLIST_FILE = AILinkWatch/Info.plist;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -836,6 +843,8 @@
 		AA110000000000000000002A /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				AILINK_WIDGET_KEYCHAIN_GROUP = com.maxhall.ailink.watchkitapp.preview;
+				CODE_SIGN_ENTITLEMENTS = AILinkWatchShared/WatchComplication.entitlements;
 				AILINK_WATCH_URL_SCHEME = ailink-watch;
 				INFOPLIST_FILE = AILinkWatch/Info.plist;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -863,6 +872,8 @@
 		AA110000000000000000002B /* Profile */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				AILINK_WIDGET_KEYCHAIN_GROUP = com.maxhall.ailink.debug.watchkitapp.preview;
+				CODE_SIGN_ENTITLEMENTS = AILinkWatchShared/WatchComplication.entitlements;
 				DEVELOPMENT_TEAM = T94W2V3B6M;
 				AILINK_WATCH_URL_SCHEME = ailink-watch-debug;
 				INFOPLIST_FILE = AILinkWatch/Info.plist;
@@ -890,6 +901,8 @@
 		AA2200000000000000000030 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				AILINK_WIDGET_KEYCHAIN_GROUP = com.maxhall.ailink.debug.watchkitapp.preview;
+				CODE_SIGN_ENTITLEMENTS = AILinkWatchShared/WatchComplication.entitlements;
 				AILINK_WATCH_URL_SCHEME = ailink-watch-debug;
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_STYLE = Automatic;
@@ -914,6 +927,8 @@
 		AA2200000000000000000031 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				AILINK_WIDGET_KEYCHAIN_GROUP = com.maxhall.ailink.watchkitapp.preview;
+				CODE_SIGN_ENTITLEMENTS = AILinkWatchShared/WatchComplication.entitlements;
 				AILINK_WATCH_URL_SCHEME = ailink-watch;
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_STYLE = Automatic;
@@ -938,6 +953,8 @@
 		AA2200000000000000000032 /* Profile */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				AILINK_WIDGET_KEYCHAIN_GROUP = com.maxhall.ailink.debug.watchkitapp.preview;
+				CODE_SIGN_ENTITLEMENTS = AILinkWatchShared/WatchComplication.entitlements;
 				AILINK_WATCH_URL_SCHEME = ailink-watch-debug;
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_STYLE = Automatic;

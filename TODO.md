@@ -9,6 +9,7 @@
 - [x] **Apple Watch 独立网络代码**：已接入手表优先、手机网络兜底和 Keychain 配置、OpenAI/Claude 及三类 ASR/TTS 的 URLSession 直连、安全失败换路、手表问答与确认同步。构建/本地测试不代表真机独立联网验证；真实服务、Wi-Fi/蜂窝与后台行为见上一项和 [Apple 平台说明](doc/ios/README.md)。
 - [ ] **Apple 发布准备**：核对 Apple Developer 签名、App Store Connect、手表截图及线上隐私政策对 Apple Watch 数据流的描述。细节见 [Apple 平台说明](doc/ios/README.md)。
 - [x] **重新启用 Apple Watch 复杂功能**：2026-10-07 已恢复 WidgetKit 扩展构建依赖与嵌入，补齐扩展 Release 团队；支持圆形、矩形、行内入口和智能叠放。签名构建与设备验证范围见 [Apple 平台说明](doc/ios/README.md#复杂功能恢复记录)。
+- [x] **复杂功能回复摘要和状态首版**：矩形显示最近手表回复，生成中显示最新文字片段；圆形/行内同步显示回答完成、回答中、语音加载/播放等状态。使用专用 Keychain Sharing 组，保留私有凭据组。状态、摘要、脱敏与过期逻辑已本地测试，实际 SwiftUI 四状态预览可用；刷新时效和后台行为仍待真机验证。
 - [ ] **复杂功能配对真机验收**：在支持的表盘中添加圆形、矩形、行内入口，检查智能叠放及点击回到聊天页；签名构建不代替实际操作验证。
 
 ## macOS 客户端
