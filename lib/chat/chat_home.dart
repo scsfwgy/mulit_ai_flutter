@@ -32,6 +32,7 @@ import 'package:mulit_ai_flutter/core/app_platform.dart';
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/core/apple_purchases.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/provider/provider_screen.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
 import 'package:mulit_ai_flutter/search/search_settings_screen.dart';
@@ -405,7 +406,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = '无法打开本地数据：$error';
+          _error = F('i18n.local_data_open_failed', [error]);
           _errorAction = ChatErrorAction.none;
         });
       }
@@ -567,7 +568,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       return;
     }
     if (_sending || _starting) {
-      _notify(tr('请先停止当前回复，再切换模型'));
+      _notify(T('i18n.stop_the_current_response_before'));
       return;
     }
     final selection = await _pushRoute<ChatModelSelection>(
@@ -612,7 +613,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   Future<List<String>> _loadModels(ProviderConfig provider) async {
     final key = await ChatStore.instance.apiKey(provider.id);
     if (key == null || key.isEmpty) {
-      throw const ApiException('请先在服务设置中填写 API Key');
+      throw ApiException(T('i18n.enter_api_key_in_settings'));
     }
     final models = await ModelApiClient(provider, key).fetchModels();
     if (models.isNotEmpty) {
@@ -686,7 +687,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       if (!await _recorder.hasPermission()) {
         _endVoicePress();
         if (mounted) {
-          _notify(tr('请允许麦克风权限后重试'));
+          _notify(T('i18n.allow_microphone_access_and_try'));
         }
         return;
       }
@@ -735,7 +736,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     } catch (_) {
       _endVoicePress();
       if (mounted) {
-        _notify(tr('无法开始录音，请检查麦克风权限'));
+        _notify(T('i18n.could_not_record_check_microphone'));
       }
     }
   }
@@ -777,16 +778,16 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     var sendAfterTranscription = false;
     try {
       await _recorder.stop();
-      if (recording == null) throw const VoiceException('录音采集失败，请重试');
+      if (recording == null) throw VoiceException(T('i18n.audio_capture_failed_try_again'));
       final data = await recording.finish();
       final service = await _selectedVoiceService(
         'voice_asr_id',
         openSettings: false,
       );
-      if (service == null) throw const VoiceException('请先选择语音识别服务');
+      if (service == null) throw VoiceException(T('i18n.choose_a_transcription_service_first'));
       final key = await ChatStore.instance.voiceApiKey(service);
       if (key == null || key.isEmpty) {
-        throw const VoiceException('语音服务缺少 API Key');
+        throw VoiceException(T('i18n.voice_service_api_key'));
       }
       if (!await _ensurePurchaseAccess()) return;
       client = VoiceClient(service, key);
@@ -804,7 +805,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       }
     } catch (error) {
       if (mounted) {
-        _notify(error is VoiceException ? tr(error.message) : tr('语音识别失败，请重试'));
+        _notify(error is VoiceException ? T(error.message) : T('i18n.transcription_failed_try_again'));
       }
     } finally {
       client?.close();
@@ -940,7 +941,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       if (service == null) return;
       final key = await ChatStore.instance.voiceApiKey(service);
       if (key == null || key.isEmpty) {
-        throw const VoiceException('语音服务缺少 API Key');
+        throw VoiceException(T('i18n.voice_service_api_key'));
       }
       if (!mounted || generation != _speechGeneration) return;
       client = VoiceClient(service, key);
@@ -964,7 +965,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           _speechState = SpeechPlaybackState.idle;
           _speechMessageId = null;
         });
-        _notify(error is VoiceException ? tr(error.message) : tr('语音朗读失败，请重试'));
+        _notify(error is VoiceException ? T(error.message) : T('i18n.could_not_read_aloud_try'));
       }
     } finally {
       client?.close();
@@ -997,7 +998,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     } catch (error) {
       if (mounted) {
         setState(() {
-          _error = '发送失败：$error';
+          _error = F('i18n.send_failed', [error]);
           _errorAction = ChatErrorAction.none;
         });
       }
@@ -1017,7 +1018,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     final provider = _providers.where((p) => p.id == providerId).firstOrNull;
     if (provider == null) {
       setState(() {
-        _error = '此话题原来的服务已删除，请重新选择模型。';
+        _error = T('i18n.the_service_for_this_chat');
         _errorAction = ChatErrorAction.model;
       });
       return;
@@ -1027,7 +1028,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     if (!mounted) return;
     if (key == null || key.isEmpty) {
       setState(() {
-        _error = '此服务尚未配置 API Key。';
+        _error = T('i18n.this_service_has_no_api');
         _errorAction = ChatErrorAction.configure;
       });
       return;
@@ -1096,7 +1097,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           .firstOrNull;
       if (provider == null) {
         setState(() {
-          _error = '服务配置已删除，请重新选择模型。';
+          _error = T('i18n.the_service_was_deleted_choose');
           _errorAction = ChatErrorAction.model;
         });
         return;
@@ -1105,7 +1106,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       if (!mounted) return;
       if (key == null || key.isEmpty) {
         setState(() {
-          _error = '此服务尚未配置 API Key。';
+          _error = T('i18n.this_service_has_no_api');
           _errorAction = ChatErrorAction.configure;
         });
         return;
@@ -1119,7 +1120,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     } catch (error) {
       if (mounted) {
         setState(() {
-          _error = '重试失败：$error';
+          _error = F('i18n.retry_failed', [error]);
           _errorAction = ChatErrorAction.none;
         });
       }
@@ -1174,7 +1175,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
             ? null
             : await ChatStore.instance.searchApiKey(config.id);
         if (config == null || searchKey == null || searchKey.isEmpty) {
-          throw const SearchException('请先配置搜索服务 API Key。');
+          throw SearchException(T('i18n.configure_a_search_service'));
         }
         webSearch = (config: config, apiKey: searchKey);
       }
@@ -1335,7 +1336,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
 
   void _notify(String message) => ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
-      content: Text(tr(message), textAlign: TextAlign.center),
+      content: Text(T(message), textAlign: TextAlign.center),
       behavior: SnackBarBehavior.floating,
       backgroundColor: IosColors.label,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1348,16 +1349,16 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     if (uri == null ||
         !{'http', 'https'}.contains(uri.scheme) ||
         uri.host.isEmpty) {
-      _notify(tr('无法打开这个链接'));
+      _notify(T('i18n.unable_to_open_this_link'));
       return;
     }
     try {
       if (!await launchUrl(uri, mode: LaunchMode.externalApplication) &&
           mounted) {
-        _notify(tr('无法打开这个链接'));
+        _notify(T('i18n.unable_to_open_this_link'));
       }
     } catch (_) {
-      if (mounted) _notify(tr('无法打开这个链接'));
+      if (mounted) _notify(T('i18n.unable_to_open_this_link'));
     }
   }
 
@@ -1425,8 +1426,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         .firstOrNull;
     final activeModel = _topic != null || _hasDraft;
     final title = activeModel
-        ? '${provider?.name ?? '服务已删除'} · ${_currentModel ?? ''}'
-        : tr('AI Link');
+        ? '${provider?.name ?? T('i18n.service_deleted')} · ${_currentModel ?? ''}'
+        : T('AI Link');
     return Scaffold(
       key: _scaffoldKey,
       // Subscribe to theme changes so the entire chat follows system appearance.
@@ -1548,7 +1549,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
             ),
             const SizedBox(height: 13),
             Text(
-              tr('开始新的对话'),
+              T('i18n.start_new_chat'),
               style: TextStyle(
                 color: IosColors.label,
                 fontSize: 17,
@@ -1557,7 +1558,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
             ),
             const SizedBox(height: 5),
             Text(
-              tr('输入消息，开始讨论。'),
+              T('i18n.type_a_message_to_begin'),
               style: TextStyle(color: IosColors.secondary, fontSize: 14),
             ),
           ],
@@ -1634,31 +1635,31 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     final format = await showAppModalPopup<MessageCopyFormat>(
       context: context,
       builder: (sheetContext) => CupertinoActionSheet(
-        title: Text(tr('复制消息')),
+        title: Text(T('i18n.copy_message')),
         actions: [
           CupertinoActionSheetAction(
             onPressed: () =>
                 Navigator.pop(sheetContext, MessageCopyFormat.markdown),
-            child: Text(tr('复制 Markdown 原文')),
+            child: Text(T('i18n.copy_markdown_source')),
           ),
           CupertinoActionSheetAction(
             onPressed: () =>
                 Navigator.pop(sheetContext, MessageCopyFormat.formatted),
-            child: Text(tr('复制格式化文本')),
+            child: Text(T('i18n.copy_formatted_text')),
           ),
         ],
         cancelButton: CupertinoActionSheetAction(
           onPressed: () => Navigator.pop(sheetContext),
-          child: Text(tr('取消')),
+          child: Text(T('i18n.cancel')),
         ),
       ),
     );
     if (format == null) return;
     try {
       await copyMessage(content, format, renderMarkdown: renderMarkdown);
-      if (mounted) _notify(tr('已复制'));
+      if (mounted) _notify(T('i18n.copied'));
     } catch (_) {
-      if (mounted) _notify(tr('复制失败'));
+      if (mounted) _notify(T('i18n.could_not_copy'));
     }
   }
 }

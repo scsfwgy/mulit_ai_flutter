@@ -1,6 +1,6 @@
 import 'package:flutter/cupertino.dart';
 
-import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 
 /// 聊天页错误提示可执行的动作类型，决定卡片上出现哪些修复入口。
@@ -8,8 +8,8 @@ enum ChatErrorAction { none, configure, model, request, retry, search, context }
 
 /// 聊天页底部错误卡片。
 ///
-/// 只负责展示与回调转发；`messageKey` 为待翻译的文案键，
-/// 由本组件在渲染时调用 [tr] 解析。
+/// 只负责展示与回调转发；`message` 为已本地化的错误文案，
+/// 由产生错误的一方经 [T]/[F] 解析后传入。
 class ChatErrorCard extends StatelessWidget {
   const ChatErrorCard({
     super.key,
@@ -50,7 +50,7 @@ class ChatErrorCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          tr(messageKey),
+          T(messageKey),
           style: TextStyle(color: IosColors.destructive, fontSize: 13),
         ),
         if (action != ChatErrorAction.none)
@@ -66,8 +66,8 @@ class ChatErrorCard extends StatelessWidget {
                   onPressed: onCheckProvider,
                   child: Text(
                     action == ChatErrorAction.configure
-                        ? tr('检查密钥')
-                        : tr('检查服务配置'),
+                        ? T('i18n.check_key')
+                        : T('i18n.check_service_settings'),
                   ),
                 ),
               if (action == ChatErrorAction.search)
@@ -75,7 +75,7 @@ class ChatErrorCard extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   minimumSize: const Size(0, 32),
                   onPressed: onCheckSearch,
-                  child: Text(tr('检查搜索配置')),
+                  child: Text(T('i18n.check_search_settings')),
                 ),
               if (action == ChatErrorAction.retry ||
                   action == ChatErrorAction.search ||
@@ -84,20 +84,20 @@ class ChatErrorCard extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   minimumSize: const Size(0, 32),
                   onPressed: onRetry,
-                  child: Text(tr('重试回复')),
+                  child: Text(T('i18n.retry_response')),
                 ),
               if (action == ChatErrorAction.context) ...[
                 CupertinoButton(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   minimumSize: const Size(0, 32),
                   onPressed: onAdjustContext,
-                  child: Text(tr('调整上下文')),
+                  child: Text(T('i18n.adjust_context')),
                 ),
                 CupertinoButton(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   minimumSize: const Size(0, 32),
                   onPressed: onNewTopic,
-                  child: Text(tr('新对话')),
+                  child: Text(T('i18n.new_chat')),
                 ),
               ],
               if (action == ChatErrorAction.model ||
@@ -106,7 +106,7 @@ class ChatErrorCard extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   minimumSize: const Size(0, 32),
                   onPressed: onChangeModel,
-                  child: Text(tr('切换模型')),
+                  child: Text(T('i18n.switch_model')),
                 ),
             ],
           ),

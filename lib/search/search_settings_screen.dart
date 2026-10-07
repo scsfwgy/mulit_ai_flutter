@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/provider/api_key_help.dart';
 
-import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
@@ -43,7 +43,7 @@ class _SearchSettingsScreenState extends State<SearchSettingsScreen> {
     } catch (_) {
       if (mounted) {
         setState(() {
-          _error = tr('无法读取搜索配置，请重试。');
+          _error = T('i18n.could_not_read_search_settings');
           _loading = false;
         });
       }
@@ -62,7 +62,7 @@ class _SearchSettingsScreenState extends State<SearchSettingsScreen> {
     final value = await showAppModalPopup<String>(
       context: context,
       builder: (sheetContext) => CupertinoActionSheet(
-        title: Text(tr('默认搜索服务')),
+        title: Text(T('i18n.default_search_service')),
         actions: [
           for (final service in _services)
             CupertinoActionSheetAction(
@@ -71,12 +71,12 @@ class _SearchSettingsScreenState extends State<SearchSettingsScreen> {
             ),
           CupertinoActionSheetAction(
             onPressed: () => Navigator.pop(sheetContext, ''),
-            child: Text(tr('不使用')),
+            child: Text(T('i18n.none')),
           ),
         ],
         cancelButton: CupertinoActionSheetAction(
           onPressed: () => Navigator.pop(sheetContext),
-          child: Text(tr('取消')),
+          child: Text(T('i18n.cancel')),
         ),
       ),
     );
@@ -88,7 +88,7 @@ class _SearchSettingsScreenState extends State<SearchSettingsScreen> {
       }
       await _load();
     } catch (_) {
-      if (mounted) _showError(context, tr('无法保存搜索配置，请重试。'));
+      if (mounted) _showError(context, T('i18n.could_not_save_search_settings'));
     }
   }
 
@@ -96,7 +96,7 @@ class _SearchSettingsScreenState extends State<SearchSettingsScreen> {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: IosColors.background,
     appBar: iosAppBar(
-      title: tr('联网搜索'),
+      title: T('i18n.web_search'),
       leading: IosNavButton(
         icon: CupertinoIcons.back,
         onPressed: () => Navigator.pop(context),
@@ -112,16 +112,16 @@ class _SearchSettingsScreenState extends State<SearchSettingsScreen> {
                     children: [IosRow(title: _error!, onTap: _load)],
                   ),
                 IosSection(
-                  footer: tr('开启联网后，先搜索网页，再由当前文本模型回答。联网设置会自动同步到配对手表。'),
+                  footer: T('i18n.when_enabled_web_search_runs'),
                   children: [
                     IosRow(
-                      title: '默认搜索服务',
+                      title: T('i18n.default_search_service'),
                       subtitle:
                           _services
                               .where((item) => item.id == _selectedId)
                               .firstOrNull
                               ?.name ??
-                          tr('未设置'),
+                          T('i18n.not_set'),
                       leading: Icon(
                         CupertinoIcons.globe,
                         color: IosColors.blue,
@@ -131,15 +131,15 @@ class _SearchSettingsScreenState extends State<SearchSettingsScreen> {
                   ],
                 ),
                 IosSection(
-                  title: '搜索服务',
-                  footer: tr(
-                    '搜索服务只需独立 API Key，无需模型 ID。查询直接发送到所选搜索服务，检索资料随后发送给文本模型；搜索和模型请求可能分别计费。',
+                  title: T('i18n.search_services'),
+                  footer: T(
+                    'i18n.search_services_need_their_own',
                   ),
                   children: [
                     for (final service in _services)
                       IosRow(
                         title: service.name,
-                        subtitle: service.service.label,
+                        subtitle: T(service.service.label),
                         leading: Icon(
                           CupertinoIcons.search,
                           color: IosColors.blue,
@@ -154,7 +154,7 @@ class _SearchSettingsScreenState extends State<SearchSettingsScreen> {
                         onTap: () => _edit(service),
                       ),
                     IosRow(
-                      title: '添加搜索服务',
+                      title: T('i18n.add_search_service'),
                       leading: Icon(
                         CupertinoIcons.add_circled,
                         color: IosColors.blue,
@@ -193,7 +193,7 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
     super.initState();
     final saved = widget.service;
     _service = saved?.service ?? SearchService.bocha;
-    _name = TextEditingController(text: saved?.name ?? _service.label);
+    _name = TextEditingController(text: saved?.name ?? T(_service.label));
     _endpoint = TextEditingController(
       text: saved?.endpoint ?? _service.endpoint,
     );
@@ -211,32 +211,32 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
     super.dispose();
   }
 
-  Future<T?> _choose<T>(String title, Map<T, String> options) =>
-      showAppModalPopup<T>(
+  Future<TValue?> _choose<TValue>(String title, Map<TValue, String> options) =>
+      showAppModalPopup<TValue>(
         context: context,
         builder: (sheetContext) => CupertinoActionSheet(
-          title: Text(tr(title)),
+          title: Text(T(title)),
           actions: [
             for (final option in options.entries)
               CupertinoActionSheetAction(
                 onPressed: () => Navigator.pop(sheetContext, option.key),
-                child: Text(tr(option.value)),
+                child: Text(T(option.value)),
               ),
           ],
           cancelButton: CupertinoActionSheetAction(
             onPressed: () => Navigator.pop(sheetContext),
-            child: Text(tr('取消')),
+            child: Text(T('i18n.cancel')),
           ),
         ),
       );
 
   Future<void> _chooseService() async {
-    final selected = await _choose('搜索服务类型', {
+    final selected = await _choose('i18n.search_provider', {
       for (final value in SearchService.values) value: value.label,
     });
     if (selected == null || !mounted || selected == _service) return;
     setState(() {
-      if (_name.text == _service.label) _name.text = selected.label;
+      if (_name.text == T(_service.label)) _name.text = T(selected.label);
       _service = selected;
       _endpoint.text = selected.endpoint;
       _key.clear();
@@ -245,7 +245,7 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
   }
 
   SearchProviderConfig _config() {
-    if (_name.text.trim().isEmpty) throw const FormatException('请填写服务名称');
+    if (_name.text.trim().isEmpty) throw FormatException(T('i18n.enter_a_service_name'));
     return SearchProviderConfig(
       id:
           widget.service?.id ??
@@ -262,7 +262,7 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
   Future<String> _apiKey(SearchProviderConfig config) async {
     final provided = _key.text.trim();
     if (provided.contains(RegExp(r'[\x00-\x1F]'))) {
-      throw const FormatException('API Key 不能包含换行或控制字符');
+      throw FormatException(T('i18n.api_keys_cannot_contain_line'));
     }
     if (provided.isNotEmpty) return provided;
     final saved = widget.service;
@@ -272,7 +272,7 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
       final existing = await ChatStore.instance.searchApiKey(saved.id);
       if (existing?.isNotEmpty == true) return existing!;
     }
-    throw const FormatException('请填写搜索服务 API Key；更换服务类型或地址时须重新填写。');
+    throw FormatException(T('i18n.enter_the_search_api_key'));
   }
 
   Future<void> _save() async {
@@ -287,7 +287,7 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
       if (mounted) {
         _showError(
           context,
-          error is FormatException ? tr(error.message) : tr('无法保存搜索配置，请重试。'),
+          error is FormatException ? T(error.message) : T('i18n.could_not_save_search_settings'),
         );
       }
     } finally {
@@ -304,16 +304,16 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
       if (!mounted) return;
       _testClient = SearchClient(config, key);
       await _testClient!.search('Flutter');
-      if (mounted) _showError(context, tr('搜索成功，配置可用。'), title: '测试搜索');
+      if (mounted) _showError(context, T('i18n.search_succeeded_the_configuration_works'), title: T('i18n.test_search'));
     } catch (error) {
       if (mounted) {
         _showError(
           context,
           error is FormatException
-              ? tr(error.message)
+              ? T(error.message)
               : error is SearchException
-              ? tr(error.message)
-              : tr('测试搜索失败，请检查配置。'),
+              ? T(error.message)
+              : T('i18n.search_test_failed_check'),
         );
       }
     } finally {
@@ -338,7 +338,7 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
       showCupertinoDialog<void>(
         context: context,
         builder: (dialogContext) => CupertinoAlertDialog(
-          title: Text(tr('无法打开浏览器')),
+          title: Text(T('i18n.could_not_open_a_browser')),
           content: SelectableText(url),
           actions: [
             CupertinoDialogAction(
@@ -346,11 +346,11 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
                 await Clipboard.setData(ClipboardData(text: url));
                 if (dialogContext.mounted) Navigator.pop(dialogContext);
               },
-              child: Text(tr('复制网址')),
+              child: Text(T('i18n.copy_url')),
             ),
             CupertinoDialogAction(
               onPressed: () => Navigator.pop(dialogContext),
-              child: Text(tr('好')),
+              child: Text(T('i18n.ok')),
             ),
           ],
         ),
@@ -363,17 +363,17 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
     final approved = await showCupertinoDialog<bool>(
       context: context,
       builder: (dialogContext) => CupertinoAlertDialog(
-        title: Text(tr('删除搜索服务？')),
-        content: Text(tr('同时删除其密钥；历史消息中的搜索来源保留。')),
+        title: Text(T('i18n.delete_search_service_confirm')),
+        content: Text(T('i18n.its_key_will_also')),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(tr('取消')),
+            child: Text(T('i18n.cancel')),
           ),
           CupertinoDialogAction(
             isDestructiveAction: true,
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(tr('删除')),
+            child: Text(T('i18n.delete')),
           ),
         ],
       ),
@@ -384,7 +384,7 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
       await ChatStore.instance.deleteSearchProvider(widget.service!.id);
       if (mounted) Navigator.pop(context);
     } catch (_) {
-      if (mounted) _showError(context, tr('无法删除搜索服务，请重试。'));
+      if (mounted) _showError(context, T('i18n.could_not_delete_the_search'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -400,7 +400,7 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          tr(label),
+          T(label),
           style: TextStyle(color: IosColors.secondary, fontSize: 13),
         ),
         const SizedBox(height: 7),
@@ -441,7 +441,7 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: IosColors.background,
     appBar: iosAppBar(
-      title: tr(widget.service == null ? '添加搜索服务' : '编辑搜索服务'),
+      title: T(widget.service == null ? 'i18n.add_search_service' : 'i18n.edit_search_service'),
       leading: IosNavButton(
         icon: CupertinoIcons.back,
         onPressed: () => Navigator.pop(context),
@@ -459,29 +459,31 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
       child: ListView(
         children: [
           IosSection(
-            footer: tr('接口地址自动填写；修改为代理地址时，请确认可信并重新填写密钥。'),
+            footer: T('i18n.the_endpoint_is_filled_automatically'),
             children: [
               IosRow(
-                title: '搜索服务类型',
-                subtitle: _service.label,
+                title: T('i18n.search_provider'),
+                subtitle: T(_service.label),
                 onTap: _busy ? null : _chooseService,
               ),
-              _field('服务名称', _name),
-              _field('搜索接口地址', _endpoint),
+              _field('i18n.service_name', _name),
+              _field('i18n.search_endpoint', _endpoint),
               _field(
-                widget.service == null ? 'API Key' : 'API Key（留空保留原密钥）',
+                widget.service == null
+                    ? 'API Key'
+                    : 'i18n.api_key_blank_keeps_current',
                 _key,
                 secret: true,
               ),
             ],
           ),
           IosSection(
-            title: '申请与费用',
+            title: T('i18n.api_key_pricing'),
             footer:
-                '${tr(_service.billingDescription)}\n${tr('免费额度和价格可能调整，以官网及账号实际额度为准。搜索与文本模型分别计费。')}',
+                '${T(_service.billingDescription)}\n${T('i18n.free_credits_and_prices_may')}',
             children: [
               IosRow(
-                title: '申请 API Key',
+                title: T('i18n.get_an_api_key'),
                 subtitle: _service.apiKeyUrl.replaceFirst('https://', ''),
                 leading: Icon(CupertinoIcons.globe, color: IosColors.blue),
                 onTap: _busy
@@ -489,8 +491,8 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
                     : () => _openProviderPage(_service.apiKeyUrl),
               ),
               IosRow(
-                title: '查看价格与免费额度',
-                subtitle: _service.billingLabel,
+                title: T('i18n.pricing_free_credits'),
+                subtitle: T(_service.billingLabel),
                 leading: Icon(
                   CupertinoIcons.money_dollar_circle,
                   color: IosColors.blue,
@@ -503,16 +505,16 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
             ],
           ),
           IosSection(
-            title: '搜索选项',
-            footer: tr('更多结果和深入搜索可能增加费用与等待时间。'),
+            title: T('i18n.search_options'),
+            footer: T('i18n.more_results_and_detailed_search'),
             children: [
               IosRow(
-                title: '结果数量',
+                title: T('i18n.result_count'),
                 subtitle: '$_count',
                 onTap: _busy
                     ? null
                     : () async {
-                        final value = await _choose('结果数量', {
+                        final value = await _choose('i18n.result_count', {
                           3: '3',
                           5: '5',
                           10: '10',
@@ -523,12 +525,12 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
                       },
               ),
               IosRow(
-                title: '时间范围',
-                subtitle: searchRangeLabel(_range),
+                title: T('i18n.time_range'),
+                subtitle: T(searchRangeLabel(_range)),
                 onTap: _busy
                     ? null
                     : () async {
-                        final value = await _choose('时间范围', {
+                        final value = await _choose('i18n.time_range', {
                           for (final range in SearchTimeRange.values)
                             range: searchRangeLabel(range),
                         });
@@ -539,7 +541,7 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
               ),
               if (_service != SearchService.bocha)
                 IosRow(
-                  title: '深入搜索',
+                  title: T('i18n.detailed_search'),
                   chevron: false,
                   trailing: CupertinoSwitch(
                     value: _detailed,
@@ -551,10 +553,10 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
             ],
           ),
           IosSection(
-            footer: tr('测试会向搜索服务发送“Flutter”，可能产生搜索费用；不会保存配置。'),
+            footer: T('i18n.testing_sends_flutter'),
             children: [
               IosRow(
-                title: _busy ? '请稍候…' : '测试搜索',
+                title: _busy ? T('i18n.please_wait') : T('i18n.test_search'),
                 chevron: false,
                 leading: _busy
                     ? const CupertinoActivityIndicator()
@@ -567,7 +569,7 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
             IosSection(
               children: [
                 IosRow(
-                  title: '删除搜索服务',
+                  title: T('i18n.delete_search_service'),
                   chevron: false,
                   leading: Icon(
                     CupertinoIcons.trash,
@@ -584,24 +586,25 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
   );
 }
 
+/// 返回文案 key；调用方统一经 [T] 解析。
 String searchRangeLabel(SearchTimeRange range) => switch (range) {
-  SearchTimeRange.any => '不限时间',
-  SearchTimeRange.day => '最近一天',
-  SearchTimeRange.week => '最近一周',
-  SearchTimeRange.month => '最近一个月',
-  SearchTimeRange.year => '最近一年',
+  SearchTimeRange.any => 'i18n.any_time',
+  SearchTimeRange.day => 'i18n.past_day',
+  SearchTimeRange.week => 'i18n.past_week',
+  SearchTimeRange.month => 'i18n.past_month',
+  SearchTimeRange.year => 'i18n.past_year',
 };
 
-void _showError(BuildContext context, String message, {String title = '提示'}) {
+void _showError(BuildContext context, String message, {String title = 'i18n.hint'}) {
   showCupertinoDialog<void>(
     context: context,
     builder: (dialogContext) => CupertinoAlertDialog(
-      title: Text(tr(title)),
+      title: Text(T(title)),
       content: Text(message),
       actions: [
         CupertinoDialogAction(
           onPressed: () => Navigator.pop(dialogContext),
-          child: Text(tr('好')),
+          child: Text(T('i18n.ok')),
         ),
       ],
     ),

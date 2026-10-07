@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/chat/chat_context.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 
 class ChatContextScreen extends StatefulWidget {
@@ -25,11 +26,11 @@ class _ChatContextScreenState extends State<ChatContextScreen> {
       await showCupertinoDialog<void>(
         context: context,
         builder: (context) => CupertinoAlertDialog(
-          content: Text(tr('无法保存上下文设置，请重试。')),
+          content: Text(T('i18n.could_not_save_context_settings')),
           actions: [
             CupertinoDialogAction(
               onPressed: () => Navigator.pop(context),
-              child: Text(tr('好')),
+              child: Text(T('i18n.ok')),
             ),
           ],
         ),
@@ -43,7 +44,7 @@ class _ChatContextScreenState extends State<ChatContextScreen> {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: IosColors.background,
     appBar: iosAppBar(
-      title: '上下文设置',
+      title: T('i18n.context_settings'),
       leading: IosNavButton(
         icon: CupertinoIcons.back,
         onPressed: () => Navigator.pop(context),
@@ -53,9 +54,9 @@ class _ChatContextScreenState extends State<ChatContextScreen> {
       child: ListView(
         children: [
           IosSection(
-            title: '上下文预算',
+            title: T('i18n.context_budget'),
             footer:
-                '预算包含提示词、历史消息与搜索内容，默认预留 4K Token 用于回复。Token 数为本机估算，请按模型实际限制调整。',
+                T('i18n.the_budget_includes_prompts_history'),
             children: [
               for (final tokens in ChatContext.windowOptions)
                 IosRow(
@@ -69,10 +70,10 @@ class _ChatContextScreenState extends State<ChatContextScreen> {
                 ),
             ],
           ),
-          const IosSection(
+          IosSection(
             footer:
-                '超出预算时，发送最近的完整对话轮次，不删除本机历史。当前消息、提示词与搜索内容不会被静默截断。此设置适用于手机与桌面聊天。',
-            children: [IosRow(title: '保留最近完整轮次', chevron: false)],
+                T('i18n.when_over_budget_send_recent'),
+            children: [IosRow(title: T('i18n.keep_recent_complete_turns'), chevron: false)],
           ),
         ],
       ),

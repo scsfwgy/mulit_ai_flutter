@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/core/app_platform.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/provider/api_key_help.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
@@ -52,13 +53,13 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
   }
 
   String _name(String? id) =>
-      _services.where((item) => item.id == id).firstOrNull?.name ?? tr('未设置');
+      _services.where((item) => item.id == id).firstOrNull?.name ?? T('i18n.not_set');
 
   Future<void> _choose(bool asr) async {
     final value = await showAppModalPopup<String>(
       context: context,
       builder: (context) => CupertinoActionSheet(
-        title: Text(tr(asr ? '语音识别服务' : '语音朗读服务')),
+        title: Text(T(asr ? 'i18n.transcription_service' : 'i18n.speech_service')),
         actions: [
           for (final service in _services)
             CupertinoActionSheetAction(
@@ -67,12 +68,12 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
             ),
           CupertinoActionSheetAction(
             onPressed: () => Navigator.pop(context, ''),
-            child: Text(tr('不使用')),
+            child: Text(T('i18n.none')),
           ),
         ],
         cancelButton: CupertinoActionSheetAction(
           onPressed: () => Navigator.pop(context),
-          child: Text(tr('取消')),
+          child: Text(T('i18n.cancel')),
         ),
       ),
     );
@@ -96,7 +97,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: IosColors.background,
     appBar: iosAppBar(
-      title: tr('语音服务'),
+      title: T('i18n.voice_services'),
       leading: IosNavButton(
         icon: CupertinoIcons.back,
         onPressed: () => Navigator.pop(context),
@@ -106,26 +107,26 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
       child: ListView(
         children: [
           IosSection(
-            footer: tr(
+            footer: T(
               isDesktopApp
-                  ? '按住录音，左滑取消，右滑转文字后确认，直接松手发送。朗读声音由 AI 生成。'
-                  : '手机按住录音，左滑取消，右滑转文字后确认，直接松手发送。手表左上滑取消，右上滑确认。朗读声音由 AI 生成。',
+                  ? 'i18n.hold_to_record_slide_left'
+                  : 'i18n.hold_to_record_on_phone',
             ),
             children: [
               IosRow(
-                title: '语音识别服务',
+                title: T('i18n.transcription_service'),
                 subtitle: _name(_asrId),
                 leading: Icon(CupertinoIcons.mic, color: IosColors.blue),
                 onTap: () => _choose(true),
               ),
               IosRow(
-                title: '语音朗读服务',
+                title: T('i18n.speech_service'),
                 subtitle: _name(_ttsId),
                 leading: Icon(CupertinoIcons.speaker_2, color: IosColors.blue),
                 onTap: () => _choose(false),
               ),
               IosRow(
-                title: '回复完成后自动朗读',
+                title: T('i18n.read_replies_aloud_automatically'),
                 chevron: false,
                 trailing: CupertinoSwitch(
                   value: AppPreferences.instance.autoReadReplies,
@@ -138,19 +139,19 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
             ],
           ),
           IosSection(
-            title: '语音提供商',
-            footer: tr('文字服务密钥仅在接口确实支持语音时可复用。豆包语音须单独填写豆包语音控制台的 API Key。'),
+            title: T('i18n.voice_providers'),
+            footer: T('i18n.reuse_a_text_key_only'),
             children: [
               for (final service in _services)
                 IosRow(
                   title: service.name,
                   subtitle:
-                      '${service.protocol.name} · ${service.textProviderId == null ? tr('独立密钥') : tr('复用文字服务')}',
+                      '${service.protocol.name} · ${service.textProviderId == null ? T('i18n.separate_key') : T('i18n.reuse_text_provider')}',
                   leading: Icon(CupertinoIcons.waveform, color: IosColors.blue),
                   onTap: () => _edit(service),
                 ),
               IosRow(
-                title: '添加语音提供商',
+                title: T('i18n.add_voice_provider'),
                 leading: Icon(
                   CupertinoIcons.add_circled,
                   color: IosColors.blue,
@@ -190,7 +191,9 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
     super.initState();
     final service = widget.service;
     _protocol = service?.protocol ?? VoiceProtocol.mimo;
-    _name = TextEditingController(text: service?.name ?? '小米 MiMo');
+    _name = TextEditingController(
+      text: service?.name ?? T('i18n.xiaomi_mimo'),
+    );
     _url = TextEditingController(
       text: service?.baseUrl ?? 'https://api.xiaomimimo.com/v1',
     );
@@ -213,9 +216,9 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
   }
 
   String _label(VoiceProtocol protocol) => switch (protocol) {
-    VoiceProtocol.openAi => 'OpenAI 兼容音频',
-    VoiceProtocol.mimo => '小米 MiMo',
-    VoiceProtocol.doubao => '豆包语音',
+    VoiceProtocol.openAi => 'i18n.openai_compatible_audio',
+    VoiceProtocol.mimo => 'i18n.xiaomi_mimo',
+    VoiceProtocol.doubao => 'i18n.doubao_speech',
   };
 
   void _selectProtocol(VoiceProtocol value) {
@@ -224,19 +227,19 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
       _textProviderId = null;
       switch (value) {
         case VoiceProtocol.openAi:
-          _name.text = 'OpenAI 音频';
+          _name.text = T('i18n.voice_default_name_openai');
           _url.text = 'https://api.openai.com/v1';
           _asr.text = 'gpt-transcribe';
           _tts.text = 'gpt-4o-mini-tts';
           _voice.text = 'coral';
         case VoiceProtocol.mimo:
-          _name.text = '小米 MiMo';
+          _name.text = T('i18n.xiaomi_mimo');
           _url.text = 'https://api.xiaomimimo.com/v1';
           _asr.text = 'mimo-v2.5-asr';
           _tts.text = 'mimo-v2.5-tts';
           _voice.text = 'mimo_default';
         case VoiceProtocol.doubao:
-          _name.text = '豆包语音';
+          _name.text = T('i18n.doubao_speech');
           _url.text = 'https://openspeech.bytedance.com';
           _asr.text = 'volc.bigasr.auc_turbo';
           _tts.text = 'seed-tts-2.0';
@@ -249,17 +252,17 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
     final value = await showAppModalPopup<VoiceProtocol>(
       context: context,
       builder: (context) => CupertinoActionSheet(
-        title: Text(tr('接口协议')),
+        title: Text(T('i18n.api_protocol')),
         actions: [
           for (final item in VoiceProtocol.values)
             CupertinoActionSheetAction(
               onPressed: () => Navigator.pop(context, item),
-              child: Text(tr(_label(item))),
+              child: Text(T(_label(item))),
             ),
         ],
         cancelButton: CupertinoActionSheetAction(
           onPressed: () => Navigator.pop(context),
-          child: Text(tr('取消')),
+          child: Text(T('i18n.cancel')),
         ),
       ),
     );
@@ -278,21 +281,21 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
     final selected = await showAppModalPopup<int>(
       context: context,
       builder: (context) => CupertinoActionSheet(
-        title: Text(tr('密钥来源')),
+        title: Text(T('i18n.key_source')),
         actions: [
           CupertinoActionSheetAction(
             onPressed: () => Navigator.pop(context, 0),
-            child: Text(tr('独立密钥')),
+            child: Text(T('i18n.separate_key')),
           ),
           for (final provider in candidates)
             CupertinoActionSheetAction(
               onPressed: () => Navigator.pop(context, provider.id),
-              child: Text('${tr('复用文字服务')} · ${provider.name}'),
+              child: Text('${T('i18n.reuse_text_provider')} · ${provider.name}'),
             ),
         ],
         cancelButton: CupertinoActionSheetAction(
           onPressed: () => Navigator.pop(context),
-          child: Text(tr('取消')),
+          child: Text(T('i18n.cancel')),
         ),
       ),
     );
@@ -329,7 +332,7 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
           .firstOrNull;
       if (_textProviderId != null &&
           (textProvider == null || textProvider.baseUrl != baseUrl)) {
-        throw const FormatException('复用密钥时，API 根地址须与文字服务一致');
+        throw FormatException(T('i18n.when_reusing_a_key'));
       }
       final key = _textProviderId == null
           ? (_key.text.trim().isNotEmpty
@@ -358,7 +361,7 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
       context,
       appPageRoute(
         builder: (_) => VoiceCatalogPicker(
-          title: kind == VoiceCatalogKind.voice ? '选择音色' : '选择模型',
+          title: kind == VoiceCatalogKind.voice ? T('i18n.choose_voice') : T('i18n.choose_model'),
           initialValue: controller.text,
           examples: voiceCatalogExamples(
             _protocol,
@@ -387,7 +390,7 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          tr(label),
+          T(label),
           style: TextStyle(color: IosColors.secondary, fontSize: 13),
         ),
         const SizedBox(height: 5),
@@ -407,7 +410,7 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
                         CupertinoIcons.qrcode_viewfinder,
                         size: 20,
                         color: IosColors.blue,
-                        semanticLabel: tr('扫码填写 API Key'),
+                        semanticLabel: T('i18n.scan_api_key'),
                       ),
                     ),
                     CupertinoButton(
@@ -430,7 +433,7 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
                   padding: const EdgeInsets.symmetric(horizontal: 10),
                   onPressed: onPick,
                   child: Text(
-                    tr('选择'),
+                    T('i18n.choose'),
                     style: TextStyle(color: IosColors.blue),
                   ),
                 ),
@@ -455,15 +458,15 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
           _asr.text.trim().isEmpty ||
           _tts.text.trim().isEmpty ||
           _voice.text.trim().isEmpty) {
-        throw const FormatException('请填写服务名称、模型 ID 与音色');
+        throw FormatException(T('i18n.enter_a_service_name_model'));
       }
       if (_protocol == VoiceProtocol.mimo &&
           Uri.parse(baseUrl).host != 'api.xiaomimimo.com') {
-        throw const FormatException('小米 MiMo 请使用官方接口地址');
+        throw FormatException(T('i18n.use_the_official_xiaomi_mimo'));
       }
       if (_protocol == VoiceProtocol.doubao &&
           Uri.parse(baseUrl).host != 'openspeech.bytedance.com') {
-        throw const FormatException('豆包语音请使用官方接口地址');
+        throw FormatException(T('i18n.use_the_official_doubao_speech'));
       }
       final id =
           widget.service?.id ??
@@ -487,12 +490,12 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
           (previous == null ||
               previous.textProviderId != null ||
               changedEndpoint)) {
-        throw const FormatException('请填写语音服务 API Key');
+        throw FormatException(T('i18n.enter_the_voice_service_api'));
       }
       if (_textProviderId != null &&
           (await ChatStore.instance.apiKey(_textProviderId!))?.isNotEmpty !=
               true) {
-        throw const FormatException('选中的文字服务缺少 API Key');
+        throw FormatException(T('i18n.the_selected_text_provider_has'));
       }
       if (_textProviderId != null &&
           _textProviders
@@ -500,7 +503,7 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
                   .firstOrNull
                   ?.baseUrl !=
               baseUrl) {
-        throw const FormatException('复用密钥时，API 根地址须与文字服务一致');
+        throw FormatException(T('i18n.when_reusing_a_key'));
       }
       await ChatStore.instance.saveVoiceProvider(
         service,
@@ -512,14 +515,14 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
         showCupertinoDialog<void>(
           context: context,
           builder: (context) => CupertinoAlertDialog(
-            title: Text(tr('无法保存')),
+            title: Text(T('i18n.unable_to_save')),
             content: Text(
-              error is FormatException ? tr(error.message) : tr('请检查配置后重试'),
+              error is FormatException ? T(error.message) : T('i18n.check_the_configuration_and_try'),
             ),
             actions: [
               CupertinoDialogAction(
                 onPressed: () => Navigator.pop(context),
-                child: Text(tr('好')),
+                child: Text(T('i18n.ok')),
               ),
             ],
           ),
@@ -536,16 +539,16 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
     final approved = await showCupertinoDialog<bool>(
       context: context,
       builder: (context) => CupertinoAlertDialog(
-        title: Text(tr('删除语音提供商？')),
+        title: Text(T('i18n.delete_voice_provider_confirm')),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(context, false),
-            child: Text(tr('取消')),
+            child: Text(T('i18n.cancel')),
           ),
           CupertinoDialogAction(
             isDestructiveAction: true,
             onPressed: () => Navigator.pop(context, true),
-            child: Text(tr('删除')),
+            child: Text(T('i18n.delete')),
           ),
         ],
       ),
@@ -559,7 +562,7 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: IosColors.background,
     appBar: iosAppBar(
-      title: widget.service == null ? '添加语音提供商' : '编辑语音提供商',
+      title: widget.service == null ? T('i18n.add_voice_provider') : T('i18n.edit_voice_provider'),
       leading: IosNavButton(
         icon: CupertinoIcons.back,
         onPressed: () => Navigator.pop(context),
@@ -574,27 +577,27 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
           IosSection(
             children: [
               IosRow(
-                title: '接口协议',
-                subtitle: tr(_label(_protocol)),
+                title: T('i18n.api_protocol'),
+                subtitle: T(_label(_protocol)),
                 onTap: _pickProtocol,
               ),
-              _field('服务名称', _name),
-              _field('API 根地址', _url),
+              _field('i18n.service_name', _name),
+              _field('i18n.api_base_url', _url),
               IosRow(
-                title: '密钥来源',
+                title: T('i18n.key_source'),
                 subtitle: _textProviderId == null
-                    ? tr('独立密钥')
+                    ? T('i18n.separate_key')
                     : _textProviders
                               .where((item) => item.id == _textProviderId)
                               .firstOrNull
                               ?.name ??
-                          tr('文字服务已删除'),
+                          T('i18n.text_provider_was_deleted'),
                 onTap: _protocol == VoiceProtocol.doubao
                     ? null
                     : _pickKeySource,
               ),
               if (_textProviderId == null)
-                _field('API Key（留空保留原密钥）', _key, secret: true),
+                _field('i18n.api_key_blank_keeps_current', _key, secret: true),
             ],
           ),
           ValueListenableBuilder<TextEditingValue>(
@@ -606,21 +609,21 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
             ),
           ),
           IosSection(
-            title: '语音模型',
-            footer: tr('模型与音色 ID 需要在对应服务开通。豆包语音的模型栏填写资源 ID。'),
+            title: T('i18n.voice_models'),
+            footer: T('i18n.model_and_voice_ids_must'),
             children: [
               _field(
-                '识别模型 ID / 资源 ID',
+                'i18n.asr_model_resource_id',
                 _asr,
                 onPick: () => _pickCatalog(VoiceCatalogKind.asr, _asr),
               ),
               _field(
-                '合成模型 ID / 资源 ID',
+                'i18n.tts_model_resource_id',
                 _tts,
                 onPick: () => _pickCatalog(VoiceCatalogKind.tts, _tts),
               ),
               _field(
-                '音色 ID',
+                'i18n.voice_id',
                 _voice,
                 onPick: () => _pickCatalog(VoiceCatalogKind.voice, _voice),
               ),
@@ -630,7 +633,7 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
             IosSection(
               children: [
                 IosRow(
-                  title: '删除语音提供商',
+                  title: T('i18n.delete_voice_provider'),
                   leading: Icon(
                     CupertinoIcons.delete,
                     color: IosColors.destructive,

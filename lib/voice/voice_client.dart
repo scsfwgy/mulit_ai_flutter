@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/voice/voice_request_diagnostics.dart';
 
 class VoiceException implements Exception {
@@ -20,8 +21,8 @@ String validateTranscript(String text) {
   final clean = text
       .replaceAll(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F]'), '')
       .trim();
-  if (clean.isEmpty) throw const VoiceException('没有识别到可用文字，请重试');
-  if (clean.runes.length > 5000) throw const VoiceException('识别文字过长，请分段录音');
+  if (clean.isEmpty) throw VoiceException(T('i18n.no_usable_speech_was_detected'));
+  if (clean.runes.length > 5000) throw VoiceException(T('i18n.transcript_too_long_record_shorter'));
   return clean;
 }
 
@@ -70,7 +71,7 @@ class VoiceClient {
   Future<http.Response> _send(
     http.BaseRequest request, {
     int maxBytes = 2 * 1024 * 1024,
-    String operation = '语音服务',
+    String operation = 'i18n.voice_operation_service',
   }) async {
     request.followRedirects = false;
     request.headers.addAll(_auth);
@@ -78,10 +79,11 @@ class VoiceClient {
     final watch = Stopwatch()..start();
     if (kDebugMode) {
       _trace(traceId, 'request', {
-        'operation': operation,
+        'operation': T(operation),
         'protocol': config.protocol.name,
         ...voiceRequestDiagnostics(request),
-        if (operation == '语音识别') 'recording': _audioDiagnostics,
+        if (operation == 'i18n.voice_operation_transcription')
+          'recording': _audioDiagnostics,
       });
     }
     final streamed = await _client
@@ -100,7 +102,7 @@ class VoiceClient {
       const Duration(seconds: 65),
     )) {
       if (data.length + chunk.length > limit) {
-        if (!failed) throw const VoiceException('语音服务返回内容过大');
+        if (!failed) throw VoiceException(T('i18n.voice_service_response_is_too'));
         data.addAll(chunk.take(limit - data.length));
         break;
       }
@@ -113,12 +115,12 @@ class VoiceClient {
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final reason = switch (response.statusCode) {
-        401 || 403 => '请检查密钥和服务权限',
-        429 => '请求过于频繁或额度不足，请稍后重试',
-        >= 500 => '服务端处理失败，请稍后重试',
-        400 || 404 || 422 => '请检查模型、接口地址和音频格式',
-        >= 300 && < 400 => '服务地址发生重定向，请检查接口地址',
-        _ => '请检查服务配置后重试',
+        401 || 403 => 'i18n.voice_error_auth',
+        429 => 'i18n.voice_error_rate_limit',
+        >= 500 => 'i18n.voice_error_server',
+        400 || 404 || 422 => 'i18n.voice_error_request',
+        >= 300 && < 400 => 'i18n.voice_error_redirect',
+        _ => 'i18n.voice_error_generic',
       };
       // Never display the raw response or server-provided message.
       String? code;
@@ -143,8 +145,12 @@ class VoiceClient {
         'error_code': code,
       });
       throw VoiceException(
-        '$operation请求失败（HTTP ${response.statusCode}），$reason'
-        '${code == null ? '' : '（$code）'}',
+        F('i18n.voice_http_failed', [
+          T(operation),
+          response.statusCode,
+          T(reason),
+          code == null ? '' : F('i18n.voice_http_failed_code', [code]),
+        ]),
       );
     }
     _trace(traceId, 'complete', {
@@ -160,7 +166,7 @@ class VoiceClient {
     Object body, {
     Map<String, String> headers = const {},
     int maxBytes = 2 * 1024 * 1024,
-    String operation = '语音朗读',
+    String operation = 'i18n.voice_operation_speech',
   }) {
     final request = http.Request('POST', _endpoint(path))
       ..headers.addAll({'Content-Type': 'application/json', ...headers})
@@ -173,15 +179,15 @@ class VoiceClient {
       return jsonDecode(utf8.decode(response.bodyBytes))
           as Map<String, dynamic>;
     } catch (_) {
-      throw const VoiceException('语音服务返回格式无效');
+      throw VoiceException(T('i18n.invalid_voice_service_response'));
     }
   }
 
   Future<String> transcribe(Uint8List wav) async {
     if (wav.isEmpty || wav.length > 12 * 1024 * 1024) {
-      throw const VoiceException('录音为空或超过 12 MB，请缩短录音');
+      throw VoiceException(T('i18n.recording_empty_or_too_large'));
     }
-    if (key.trim().isEmpty) throw const VoiceException('语音服务缺少 API Key');
+    if (key.trim().isEmpty) throw VoiceException(T('i18n.voice_service_api_key'));
     final audio = voiceWavDiagnostics(wav, includeLevels: kDebugMode);
     if (kDebugMode) _audioDiagnostics = audio;
     if (audio['container'] != 'RIFF/WAVE' ||
@@ -189,7 +195,7 @@ class VoiceClient {
         audio['data_truncated'] == true ||
         audio['truncated_chunk'] == true) {
       _trace(const Uuid().v4(), 'audio_rejected', {'recording': audio});
-      throw const VoiceException('录音没有有效音频数据，请重新录音');
+      throw VoiceException(T('i18n.recording_contains_no_valid_audio'));
     }
     late final Map<String, dynamic> body;
     switch (config.protocol) {
@@ -205,7 +211,7 @@ class VoiceClient {
                   contentType: http.MediaType('audio', 'wav'),
                 ),
               );
-        body = _decode(await _send(request, operation: '语音识别'));
+        body = _decode(await _send(request, operation: 'i18n.voice_operation_transcription'));
         return validateTranscript(
           body['text'] is String ? body['text'] as String : '',
         );
@@ -228,7 +234,7 @@ class VoiceClient {
               },
             ],
             'asr_options': {'language': 'auto'},
-          }, operation: '语音识别'),
+          }, operation: 'i18n.voice_operation_transcription'),
         );
         final choices = body['choices'];
         final message = choices is List && choices.isNotEmpty
@@ -250,11 +256,11 @@ class VoiceClient {
             'X-Api-Request-Id': const Uuid().v4(),
             'X-Api-Sequence': '-1',
           },
-          operation: '语音识别',
+          operation: 'i18n.voice_operation_transcription',
         );
         final status = response.headers['x-api-status-code'];
         if (status != null && status != '20000000') {
-          throw VoiceException('豆包语音识别失败（状态码 $status），请检查资源权限');
+          throw VoiceException(F('i18n.doubao_asr_failed', [status]));
         }
         body = _decode(response);
         final result = body['result'];
@@ -266,11 +272,11 @@ class VoiceClient {
 
   Future<Uint8List> synthesize(String text) async {
     final input = text.trim();
-    if (input.isEmpty) throw const VoiceException('没有可朗读的文字');
+    if (input.isEmpty) throw VoiceException(T('i18n.no_text_to_read_aloud'));
     if (input.runes.length > 1800) {
-      throw const VoiceException('消息过长，请选择较短的内容朗读');
+      throw VoiceException(T('i18n.message_too_long_choose_shorter'));
     }
-    if (key.trim().isEmpty) throw const VoiceException('语音服务缺少 API Key');
+    if (key.trim().isEmpty) throw VoiceException(T('i18n.voice_service_api_key'));
     switch (config.protocol) {
       case VoiceProtocol.openAi:
         final response = await _json('/audio/speech', {
@@ -280,7 +286,7 @@ class VoiceClient {
           'response_format': 'mp3',
         }, maxBytes: 16 * 1024 * 1024);
         if (response.bodyBytes.isEmpty) {
-          throw const VoiceException('语音服务没有返回音频');
+          throw VoiceException(T('i18n.voice_service_returned_no_audio'));
         }
         return response.bodyBytes;
       case VoiceProtocol.mimo:
@@ -300,7 +306,7 @@ class VoiceClient {
         final audio = message is Map ? message['audio'] : null;
         final encoded = audio is Map ? audio['data'] : null;
         if (encoded is! String || encoded.isEmpty) {
-          throw const VoiceException('语音服务没有返回音频');
+          throw VoiceException(T('i18n.voice_service_returned_no_audio'));
         }
         return _audioFromBase64(encoded);
       case VoiceProtocol.doubao:
@@ -334,13 +340,13 @@ class VoiceClient {
           }
           final code = event['code'];
           if (code != null && code != 0 && code != 20000000) {
-            throw VoiceException('豆包语音合成失败（状态码 $code）');
+            throw VoiceException(F('i18n.doubao_tts_failed', [code]));
           }
           if (event['data'] case final String encoded when encoded.isNotEmpty) {
             bytes.add(_audioFromBase64(encoded));
           }
         }
-        if (bytes.isEmpty) throw const VoiceException('语音服务没有返回音频');
+        if (bytes.isEmpty) throw VoiceException(T('i18n.voice_service_returned_no_audio'));
         return bytes.toBytes();
     }
   }
@@ -349,7 +355,7 @@ class VoiceClient {
     try {
       return base64Decode(source);
     } catch (_) {
-      throw const VoiceException('语音服务返回的音频无效');
+      throw VoiceException(T('i18n.voice_service_returned_invalid_audio'));
     }
   }
 }

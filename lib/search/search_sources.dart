@@ -1,6 +1,6 @@
 import 'package:flutter/cupertino.dart';
 
-import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
 
@@ -29,7 +29,7 @@ class _SearchSourcesState extends State<SearchSources> {
             Icon(CupertinoIcons.globe, size: 14, color: IosColors.blue),
             const SizedBox(width: 5),
             Text(
-              '${tr('搜索来源')} · ${widget.sources.length}',
+              '${T('i18n.search_sources')} · ${widget.sources.length}',
               style: TextStyle(color: IosColors.blue, fontSize: 12),
             ),
             const SizedBox(width: 5),

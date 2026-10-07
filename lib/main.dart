@@ -11,11 +11,12 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:mulit_ai_flutter/chat/chat_home.dart';
 import 'package:mulit_ai_flutter/core/app_platform.dart';
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/settings/startup_screen.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 import 'package:mulit_ai_flutter/watch/watch_chat.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   assert(() {
     // Inspector paint diagnostics can persist across hot restarts in debug.
@@ -25,6 +26,9 @@ void main() {
     debugRepaintRainbowEnabled = false;
     return true;
   }());
+  // 文案表必须在首帧之前就绪：启动页在 `AppPreferences.load` 完成前就会渲染，
+  // 若此时资源还没载入，页面会先显示裸 key（减少动画时尤其明显）。
+  await AppPreferences.instance.loadLocalization();
   runApp(const ModelChatApp());
 }
 
@@ -38,10 +42,10 @@ class ModelChatApp extends StatelessWidget {
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: AppPreferences.instance,
     builder: (context, _) => MaterialApp(
-      title: tr('AI Link'),
+      title: T('AI Link'),
       debugShowCheckedModeBanner: false,
       locale: AppPreferences.instance.locale,
-      supportedLocales: const [Locale('zh'), Locale('en')],
+      supportedLocales: AppPreferences.supportedLocales,
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,

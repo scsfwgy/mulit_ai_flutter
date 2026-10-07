@@ -2,8 +2,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'package:mulit_ai_flutter/api/api_client.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
-import 'package:mulit_ai_flutter/core/app_preferences.dart';
 
 class ModelGroup {
   const ModelGroup(this.prefix, this.models);
@@ -60,7 +60,7 @@ List<ModelGroup>? groupModelsByPrefix(List<String> models) {
     for (final entry in candidates.entries)
       if (!groupedNames.contains(entry.key)) ...entry.value,
   ]);
-  if (other.isNotEmpty) result.add(ModelGroup('其他模型', other..sort()));
+  if (other.isNotEmpty) result.add(ModelGroup('i18n.other_models', other..sort()));
   return result;
 }
 
@@ -95,15 +95,13 @@ class _ModelCatalogState extends State<ModelCatalog> {
     if (groups == null) {
       final shown = filtered.take(100).toList();
       return IosSection(
-        title: AppPreferences.instance.english
-            ? 'Models (${filtered.length})'
-            : '模型列表（${filtered.length}）',
-        footer: filtered.length > shown.length ? '仅显示前 100 个结果，可搜索更多模型。' : null,
+        title: F('i18n.model_picker_title', [filtered.length]),
+        footer: filtered.length > shown.length ? T('i18n.showing_the_first_100_results') : null,
         children: shown.isEmpty
             ? [
                 Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Text(tr('没有匹配的模型')),
+                  child: Text(T('i18n.no_matching_models')),
                 ),
               ]
             : [
@@ -113,17 +111,13 @@ class _ModelCatalogState extends State<ModelCatalog> {
       );
     }
     return IosSection(
-      title: AppPreferences.instance.english
-          ? 'Models (${widget.models.length})'
-          : '模型列表（${widget.models.length}）',
-      footer: '按模型 ID 的服务或家族前缀分组；搜索可查找全部模型。',
+      title: F('i18n.model_picker_title', [widget.models.length]),
+      footer: T('i18n.grouped_by_service_or_model'),
       children: [
         for (final group in groups) ...[
           IosRow(
-            title: group.prefix,
-            subtitle: AppPreferences.instance.english
-                ? '${group.models.length} models'
-                : '${group.models.length} 个模型',
+            title: T(group.prefix),
+            subtitle: F('i18n.model_group_count', [group.models.length]),
             leading: Icon(
               CupertinoIcons.folder,
               color: IosColors.blue,
@@ -152,7 +146,7 @@ class _ModelCatalogState extends State<ModelCatalog> {
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Text(
-                  tr('本组仅显示前 100 个模型，可搜索更多。'),
+                  T('i18n.group_showing_first_100'),
                   style: TextStyle(color: IosColors.secondary, fontSize: 13),
                 ),
               ),
@@ -202,7 +196,7 @@ class _ModelPickerState extends State<ModelPicker> {
     });
     try {
       final models = await refresh();
-      if (models.isEmpty) throw const ApiException('服务没有返回可用模型');
+      if (models.isEmpty) throw ApiException(T('i18n.the_service_returned_no_usable'));
       if (!mounted) return;
       setState(() {
         _models = models;
@@ -219,7 +213,7 @@ class _ModelPickerState extends State<ModelPicker> {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: IosColors.background,
     appBar: iosAppBar(
-      title: '选择模型',
+      title: T('i18n.choose_model'),
       leading: IosNavButton(
         icon: CupertinoIcons.back,
         onPressed: () => Navigator.pop(context),
@@ -240,7 +234,7 @@ class _ModelPickerState extends State<ModelPicker> {
                             size: 18,
                           ),
                           const SizedBox(width: 4),
-                          Text(tr('刷新')),
+                          Text(T('i18n.refresh')),
                         ],
                       ),
               ),
@@ -252,7 +246,7 @@ class _ModelPickerState extends State<ModelPicker> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: CupertinoSearchTextField(
-              placeholder: tr('搜索模型 ID'),
+              placeholder: T('i18n.search_model_id'),
               onChanged: (value) => setState(() => query = value),
             ),
           ),
@@ -260,9 +254,12 @@ class _ModelPickerState extends State<ModelPicker> {
             Padding(
               padding: const EdgeInsets.fromLTRB(30, 8, 20, 0),
               child: Text(
-                AppPreferences.instance.english
-                    ? 'Last updated: ${_fetchedAt!.year}-${_fetchedAt!.month.toString().padLeft(2, '0')}-${_fetchedAt!.day.toString().padLeft(2, '0')} ${_fetchedAt!.hour.toString().padLeft(2, '0')}:${_fetchedAt!.minute.toString().padLeft(2, '0')}'
-                    : '上次更新：${_fetchedAt!.year}-${_fetchedAt!.month.toString().padLeft(2, '0')}-${_fetchedAt!.day.toString().padLeft(2, '0')} ${_fetchedAt!.hour.toString().padLeft(2, '0')}:${_fetchedAt!.minute.toString().padLeft(2, '0')}',
+                F('i18n.model_cache_updated', [
+                  '${_fetchedAt!.year}-${_fetchedAt!.month.toString().padLeft(2, '0')}'
+                  '-${_fetchedAt!.day.toString().padLeft(2, '0')} '
+                  '${_fetchedAt!.hour.toString().padLeft(2, '0')}'
+                  ':${_fetchedAt!.minute.toString().padLeft(2, '0')}',
+                ]),
                 style: TextStyle(color: IosColors.secondary, fontSize: 12),
               ),
             ),
@@ -270,7 +267,7 @@ class _ModelPickerState extends State<ModelPicker> {
             Padding(
               padding: const EdgeInsets.fromLTRB(30, 8, 20, 0),
               child: Text(
-                '${tr('刷新失败，已保留当前列表。')} ${tr(_error!)}',
+                '${T('i18n.refresh_failed_the_current_list')} ${T(_error!)}',
                 style: TextStyle(color: IosColors.destructive, fontSize: 13),
               ),
             ),

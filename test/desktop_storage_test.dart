@@ -26,7 +26,7 @@ void main() {
     try {
       AppPreferences.instance.language = AppLanguage.en;
       expect(
-        tr(const KeychainAccessException().toString()),
+        const KeychainAccessException().toString(),
         startsWith('Cannot access'),
       );
     } finally {

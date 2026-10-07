@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/voice/voice_client.dart';
 
 /// Captures actual microphone frames instead of relying on recorder file flushes.
@@ -35,10 +36,10 @@ class PcmVoiceRecording {
   Future<Uint8List> finish() async {
     try {
       await _done.future.timeout(const Duration(seconds: 3));
-      if (_failed) throw const VoiceException('录音采集失败，请重试');
+      if (_failed) throw VoiceException(T('i18n.audio_capture_failed_try_again'));
       return pcm16VoiceWav(_pcm.takeBytes());
     } on TimeoutException {
-      throw const VoiceException('录音未完整结束，请重试');
+      throw VoiceException(T('i18n.recording_did_not_finish_try'));
     } finally {
       await discard();
     }
@@ -54,9 +55,9 @@ class PcmVoiceRecording {
 
 Uint8List pcm16VoiceWav(Uint8List pcm) {
   if (pcm.isEmpty) {
-    throw const VoiceException('没有录到音频，请检查麦克风后重试');
+    throw VoiceException(T('i18n.no_audio_captured_check'));
   }
-  if (pcm.length.isOdd) throw const VoiceException('录音数据不完整，请重试');
+  if (pcm.length.isOdd) throw VoiceException(T('i18n.incomplete_audio_data_try_again'));
   final wav = Uint8List(44 + pcm.length);
   final header = ByteData.sublistView(wav);
   void tag(int offset, String text) =>

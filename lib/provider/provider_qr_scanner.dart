@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import 'package:mulit_ai_flutter/core/data.dart';
-import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/core/app_platform.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 
 enum ProviderQrScanMode { config, apiKey }
@@ -91,7 +91,7 @@ class _ProviderQrScannerState extends State<ProviderQrScanner>
     } on FormatException catch (error) {
       await _showError(error.message);
     } catch (_) {
-      await _showError('导入失败，请重试');
+      await _showError(T('i18n.import_failed_try_again'));
     }
   }
 
@@ -100,12 +100,12 @@ class _ProviderQrScannerState extends State<ProviderQrScanner>
     await showCupertinoDialog<void>(
       context: context,
       builder: (context) => CupertinoAlertDialog(
-        title: Text(tr('无法导入')),
-        content: Text(tr(message)),
+        title: Text(T('i18n.unable_to_import')),
+        content: Text(T(message)),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(context),
-            child: Text(tr('继续扫码')),
+            child: Text(T('i18n.scan_again')),
           ),
         ],
       ),
@@ -121,7 +121,7 @@ class _ProviderQrScannerState extends State<ProviderQrScanner>
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: IosColors.background,
     appBar: iosAppBar(
-      title: widget.mode == ProviderQrScanMode.apiKey ? '扫码填写密钥' : '扫码导入服务',
+      title: widget.mode == ProviderQrScanMode.apiKey ? T('i18n.scan_key') : T('i18n.scan_service'),
       leading: IosNavButton(
         icon: CupertinoIcons.back,
         onPressed: () => Navigator.pop(context),
@@ -133,12 +133,12 @@ class _ProviderQrScannerState extends State<ProviderQrScanner>
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
             child: Text(
-              tr(
+              T(
                 isDesktopApp
-                    ? '识别内容仅用于填写或导入配置。密钥保存在本机安全存储中。'
+                    ? 'i18n.scanned_content_is_only_used'
                     : widget.mode == ProviderQrScanMode.apiKey
-                    ? '扫描仅包含 API Key 字符串的二维码，识别后自动填入。'
-                    : '扫描包含完整服务配置 JSON 的二维码，识别成功后自动导入。',
+                    ? 'i18n.scan_a_qr_code_containing'
+                    : 'i18n.scan_full_config_qr_hint',
               ),
               textAlign: TextAlign.center,
               style: TextStyle(color: IosColors.secondary, fontSize: 14),
@@ -183,10 +183,10 @@ class _ProviderQrScannerState extends State<ProviderQrScanner>
                           child: Padding(
                             padding: const EdgeInsets.all(28),
                             child: Text(
-                              tr(
+                              T(
                                 denied
-                                    ? '请在系统设置中允许相机权限后返回重试'
-                                    : '相机暂不可用，请检查设备相机后重试',
+                                    ? 'i18n.allow_camera_access_in_system'
+                                    : 'i18n.the_camera_is_unavailable_check',
                               ),
                               textAlign: TextAlign.center,
                               style: TextStyle(color: Colors.white),
@@ -203,10 +203,10 @@ class _ProviderQrScannerState extends State<ProviderQrScanner>
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 22),
             child: Text(
-              tr(
+              T(
                 widget.mode == ProviderQrScanMode.apiKey
-                    ? '扫码后请检查密钥并保存服务。密钥保存在设备安全存储中；选作手表服务时会经配对通道同步，Wear OS 加密保存，Apple Watch 使用钥匙串。'
-                    : '二维码需包含 name、protocol、baseUrl、model、apiKey。\n密钥保存在设备安全存储中；选作手表服务时会经配对通道同步，Wear OS 加密保存，Apple Watch 使用钥匙串。',
+                    ? 'i18n.check_the_scanned_key_before'
+                    : 'i18n.the_qr_code_must_contain',
               ),
               textAlign: TextAlign.center,
               style: TextStyle(color: IosColors.secondary, fontSize: 13),

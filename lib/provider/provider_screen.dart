@@ -7,6 +7,7 @@ import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/core/app_platform.dart';
 
 import 'package:mulit_ai_flutter/api/api_client.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/provider/api_key_help.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
@@ -82,21 +83,19 @@ class _ProviderScreenState extends State<ProviderScreen> {
     final confirmed = await showCupertinoDialog<bool>(
       context: context,
       builder: (context) => CupertinoAlertDialog(
-        title: Text(tr('删除服务配置？')),
+        title: Text(T('i18n.delete_service_confirm')),
         content: Text(
-          AppPreferences.instance.english
-              ? 'Delete ${provider.name} and its key? Existing chats are kept.'
-              : '删除「${provider.name}」及其密钥。已有话题和记录会保留。',
+          F('i18n.provider_delete_body', [provider.name]),
         ),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(context, false),
-            child: Text(tr('取消')),
+            child: Text(T('i18n.cancel')),
           ),
           CupertinoDialogAction(
             isDestructiveAction: true,
             onPressed: () => Navigator.pop(context, true),
-            child: Text(tr('删除')),
+            child: Text(T('i18n.delete')),
           ),
         ],
       ),
@@ -115,17 +114,17 @@ class _ProviderScreenState extends State<ProviderScreen> {
         actions: [
           CupertinoActionSheetAction(
             onPressed: () => Navigator.pop(context, 'edit'),
-            child: Text(tr('编辑配置')),
+            child: Text(T('i18n.edit_configuration')),
           ),
           CupertinoActionSheetAction(
             isDestructiveAction: true,
             onPressed: () => Navigator.pop(context, 'delete'),
-            child: Text(tr('删除服务')),
+            child: Text(T('i18n.delete_service')),
           ),
         ],
         cancelButton: CupertinoActionSheetAction(
           onPressed: () => Navigator.pop(context),
-          child: Text(tr('取消')),
+          child: Text(T('i18n.cancel')),
         ),
       ),
     );
@@ -138,7 +137,7 @@ class _ProviderScreenState extends State<ProviderScreen> {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: IosColors.background,
     appBar: iosAppBar(
-      title: '模型服务',
+      title: T('i18n.model_services'),
       leading: IosNavButton(
         icon: CupertinoIcons.back,
         onPressed: () => Navigator.pop(context, _changed),
@@ -148,18 +147,18 @@ class _ProviderScreenState extends State<ProviderScreen> {
       child: ListView(
         children: [
           IosSection(
-            title: '我的服务',
-            footer: tr(
+            title: T('i18n.my_services'),
+            footer: T(
               isDesktopApp
-                  ? '密钥保存在本机安全存储中，不写入聊天数据库。我们不设中转服务器，请求会直达你配置的 API 服务商。'
-                  : '密钥保存在手机安全存储中；选作手表服务时会经配对通道同步到手表，Wear OS 加密保存，Apple Watch 保存在钥匙串。我们不设中转服务器，请求会直达你配置的 API 服务商。',
+                  ? 'i18n.keys_stay_in_secure_local'
+                  : 'i18n.keys_stay_in_secure_phone',
             ),
             children: _providers.isEmpty
                 ? [
                     Padding(
                       padding: const EdgeInsets.all(18),
                       child: Text(
-                        tr('还没有接入服务。选择下方平台，填写密钥即可开始。'),
+                        T('i18n.no_services_yet_choose'),
                         style: TextStyle(
                           color: IosColors.secondary,
                           fontSize: 14,
@@ -172,7 +171,7 @@ class _ProviderScreenState extends State<ProviderScreen> {
                       IosRow(
                         title: provider.name,
                         subtitle:
-                            '${provider.model} · ${tr(provider.protocol.label)}',
+                            '${provider.model} · ${T(provider.protocol.label)}',
                         leading: ProviderBadge(
                           name: provider.name,
                           presetId: presetForProvider(provider)?.id,
@@ -194,11 +193,11 @@ class _ProviderScreenState extends State<ProviderScreen> {
                   ],
           ),
           IosSection(
-            title: '对话设置',
+            title: T('i18n.chat_settings'),
             children: [
               IosRow(
-                title: '提示词',
-                subtitle: '全局和单模型提示词',
+                title: T('i18n.prompts'),
+                subtitle: T('i18n.global_and_model_prompts'),
                 leading: Icon(
                   CupertinoIcons.text_quote,
                   color: IosColors.blue,
@@ -212,11 +211,11 @@ class _ProviderScreenState extends State<ProviderScreen> {
             ],
           ),
           IosSection(
-            title: '隐私与数据',
+            title: T('i18n.privacy_data'),
             children: [
               IosRow(
-                title: '数据与隐私',
-                subtitle: '查看存储方式与清空本地数据',
+                title: T('i18n.data_privacy'),
+                subtitle: T('i18n.review_storage_and_clear_local'),
                 leading: Icon(
                   CupertinoIcons.lock_shield,
                   color: IosColors.blue,
@@ -227,8 +226,8 @@ class _ProviderScreenState extends State<ProviderScreen> {
             ],
           ),
           IosSection(
-            title: '国内服务',
-            footer: '已填入 API 地址和示例模型；账号可用模型以服务端为准。',
+            title: T('i18n.china_providers'),
+            footer: T('i18n.api_urls_and_example_models'),
             children: [
               for (final preset in providerPresets.where(
                 (p) => {
@@ -247,7 +246,7 @@ class _ProviderScreenState extends State<ProviderScreen> {
             ],
           ),
           IosSection(
-            title: '国际服务',
+            title: T('i18n.international_providers'),
             children: [
               for (final preset in providerPresets.where(
                 (p) => {
@@ -264,7 +263,7 @@ class _ProviderScreenState extends State<ProviderScreen> {
             ],
           ),
           IosSection(
-            title: '聚合与推理平台',
+            title: T('i18n.aggregators_inference'),
             children: [
               for (final preset in providerPresets.where(
                 (p) => {'openrouter', 'together', 'fireworks'}.contains(p.id),
@@ -273,12 +272,12 @@ class _ProviderScreenState extends State<ProviderScreen> {
             ],
           ),
           IosSection(
-            title: '其他',
-            footer: '支持 OpenAI 兼容 Chat Completions 与 Claude Messages 协议。',
+            title: T('i18n.other'),
+            footer: T('i18n.supports_openai_compatible_chat_completions'),
             children: [
               IosRow(
-                title: '扫码导入配置',
-                subtitle: '扫描完整配置 JSON 二维码',
+                title: T('i18n.scan_to_import'),
+                subtitle: T('i18n.scan_a_full_json_configuration'),
                 leading: Icon(
                   CupertinoIcons.qrcode_viewfinder,
                   color: IosColors.blue,
@@ -287,7 +286,7 @@ class _ProviderScreenState extends State<ProviderScreen> {
                 onTap: _scanImport,
               ),
               IosRow(
-                title: '自定义 API / JSON 导入',
+                title: T('i18n.custom_api_json_import'),
                 leading: Icon(
                   CupertinoIcons.slider_horizontal_3,
                   color: IosColors.blue,
@@ -304,9 +303,13 @@ class _ProviderScreenState extends State<ProviderScreen> {
   );
 
   Widget _presetRow(ProviderPreset preset) => IosRow(
-    title: preset.name,
-    subtitle: preset.protocol.label,
-    leading: ProviderBadge(name: preset.name, presetId: preset.id, size: 30),
+    title: T(preset.name),
+    subtitle: T(preset.protocol.label),
+    leading: ProviderBadge(
+      name: T(preset.name),
+      presetId: preset.id,
+      size: 30,
+    ),
     onTap: () => _edit(preset: preset),
   );
 }
@@ -344,7 +347,9 @@ class _ProviderEditorState extends State<ProviderEditor> {
     super.initState();
     final config = widget.config;
     final preset = widget.preset;
-    _name = TextEditingController(text: config?.name ?? preset?.name ?? '');
+    _name = TextEditingController(
+      text: config?.name ?? (preset == null ? '' : T(preset.name)),
+    );
     _baseUrl = TextEditingController(
       text: config?.baseUrl ?? preset?.baseUrl ?? '',
     );
@@ -369,7 +374,7 @@ class _ProviderEditorState extends State<ProviderEditor> {
     final name = _name.text.trim();
     final model = _model.text.trim();
     if (name.isEmpty || model.isEmpty) {
-      throw const FormatException('名称和模型不能为空');
+      throw FormatException(T('i18n.service_name_and_model_cannot'));
     }
     return (
       config: ProviderConfig(
@@ -428,7 +433,7 @@ class _ProviderEditorState extends State<ProviderEditor> {
     try {
       final value = _jsonMode ? _jsonValue() : _formValue();
       if (widget.config == null && value.key.isEmpty) {
-        throw const FormatException('请填写 API Key');
+        throw FormatException(T('i18n.enter_an_api_key'));
       }
       setState(() => _busy = true);
       final id = await ChatStore.instance.saveProvider(
@@ -469,12 +474,12 @@ class _ProviderEditorState extends State<ProviderEditor> {
       try {
         final decoded = jsonDecode(_json.text);
         if (decoded is! Map<String, dynamic>) {
-          throw const FormatException('请先填写有效的配置 JSON');
+          throw FormatException(T('i18n.enter_valid_configuration_json'));
         }
         decoded['apiKey'] = key;
         _json.text = const JsonEncoder.withIndent('  ').convert(decoded);
       } catch (_) {
-        _showError(const FormatException('请先修正配置 JSON，再扫码填写密钥'));
+        _showError(FormatException(T('i18n.fix_the_configuration_json_before')));
       }
     } else {
       _key.text = key;
@@ -490,7 +495,7 @@ class _ProviderEditorState extends State<ProviderEditor> {
                 ? null
                 : await ChatStore.instance.apiKey(widget.config!.id));
       if (key == null || key.isEmpty) {
-        throw const FormatException('请先填写 API Key');
+        throw FormatException(T('i18n.enter_an_api_key_first'));
       }
       setState(() => _busy = true);
       final savedConfig = widget.config;
@@ -504,7 +509,7 @@ class _ProviderEditorState extends State<ProviderEditor> {
           : null;
       Future<List<String>> fetchFresh() async {
         final models = await ModelApiClient(value.config, key).fetchModels();
-        if (models.isEmpty) throw const ApiException('服务没有返回可用模型');
+        if (models.isEmpty) throw ApiException(T('i18n.the_service_returned_no_usable'));
         _pendingModelCache = (
           models: models,
           baseUrl: value.config.baseUrl,
@@ -555,12 +560,12 @@ class _ProviderEditorState extends State<ProviderEditor> {
     showCupertinoDialog<void>(
       context: context,
       builder: (context) => CupertinoAlertDialog(
-        title: Text(tr('配置有误')),
-        content: Text(tr(message)),
+        title: Text(T('i18n.invalid_configuration')),
+        content: Text(T(message)),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(context),
-            child: Text(tr('好')),
+            child: Text(T('i18n.ok')),
           ),
         ],
       ),
@@ -571,17 +576,17 @@ class _ProviderEditorState extends State<ProviderEditor> {
     final choice = await showAppModalPopup<ApiProtocol>(
       context: context,
       builder: (context) => CupertinoActionSheet(
-        title: Text(tr('接口协议')),
+        title: Text(T('i18n.api_protocol')),
         actions: [
           for (final kind in ApiProtocol.values)
             CupertinoActionSheetAction(
               onPressed: () => Navigator.pop(context, kind),
-              child: Text(tr(kind.label)),
+              child: Text(T(kind.label)),
             ),
         ],
         cancelButton: CupertinoActionSheetAction(
           onPressed: () => Navigator.pop(context),
-          child: Text(tr('取消')),
+          child: Text(T('i18n.cancel')),
         ),
       ),
     );
@@ -592,7 +597,7 @@ class _ProviderEditorState extends State<ProviderEditor> {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: IosColors.background,
     appBar: iosAppBar(
-      title: widget.config == null ? '接入模型服务' : '编辑服务配置',
+      title: widget.config == null ? T('i18n.add_a_model_service') : T('i18n.edit_service'),
       leading: IosNavButton(
         icon: CupertinoIcons.back,
         onPressed: () => Navigator.pop(context),
@@ -611,7 +616,7 @@ class _ProviderEditorState extends State<ProviderEditor> {
                     children: {
                       false: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Text(tr('表单')),
+                        child: Text(T('i18n.form')),
                       ),
                       true: Padding(
                         padding: EdgeInsets.symmetric(vertical: 8),
@@ -625,8 +630,8 @@ class _ProviderEditorState extends State<ProviderEditor> {
                 ),
                 if (_jsonMode)
                   IosSection(
-                    title: '完整配置 JSON',
-                    footer: '字段：name、protocol、baseUrl、model、apiKey。编辑时 apiKey 留空表示保留原密钥；JSON 编辑框会明文显示新填入的密钥。',
+                    title: T('i18n.full_json_configuration'),
+                    footer: T('i18n.fields_name_protocol_baseurl_model'),
                     children: [
                       Padding(
                         padding: const EdgeInsets.all(14),
@@ -648,7 +653,7 @@ class _ProviderEditorState extends State<ProviderEditor> {
                         ),
                       ),
                       IosRow(
-                        title: '扫码填写 API Key',
+                        title: T('i18n.scan_api_key'),
                         leading: Icon(
                           CupertinoIcons.qrcode_viewfinder,
                           color: IosColors.blue,
@@ -660,25 +665,27 @@ class _ProviderEditorState extends State<ProviderEditor> {
                   )
                 else
                   IosSection(
-                    title: '连接设置',
-                    footer: '填写 API 根地址，应用会自动拼接 /chat/completions 或 /messages。',
+                    title: T('i18n.connection'),
+                    footer: T('i18n.enter_the_api_base_url'),
                     children: [
-                      _editorField(_name, '服务名称', '例如：我的 OpenAI'),
+                      _editorField(_name, 'i18n.service_name', 'i18n.for_example_my_openai'),
                       IosRow(
-                        title: '接口协议',
-                        subtitle: tr(_protocol.label),
+                        title: T('i18n.api_protocol'),
+                        subtitle: T(_protocol.label),
                         onTap: _chooseProtocol,
                       ),
                       _editorField(
                         _baseUrl,
-                        'API 根地址',
+                        'i18n.api_base_url',
                         'https://api.example.com/v1',
                       ),
-                      _editorField(_model, '默认模型', '输入模型 ID'),
+                      _editorField(_model, 'i18n.default_model', 'i18n.enter_model_id'),
                       _editorField(
                         _key,
                         'API Key',
-                        widget.config == null ? '粘贴密钥' : '留空则保留原密钥',
+                        widget.config == null
+                            ? 'i18n.paste_key'
+                            : 'i18n.leave_blank_to_keep_current',
                         secret: true,
                       ),
                     ],
@@ -705,11 +712,11 @@ class _ProviderEditorState extends State<ProviderEditor> {
                   },
                 ),
                 IosSection(
-                  title: '模型',
-                  footer: '优先显示本地缓存，可在列表中刷新。获取失败时仍可手动填写模型 ID。',
+                  title: T('i18n.models_short'),
+                  footer: T('i18n.shows_the_local_cache_first'),
                   children: [
                     IosRow(
-                      title: '查看模型列表',
+                      title: T('i18n.view_model_list'),
                       leading: Icon(
                         CupertinoIcons.arrow_down_circle,
                         color: IosColors.blue,
@@ -726,7 +733,7 @@ class _ProviderEditorState extends State<ProviderEditor> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             child: IosPrimaryButton(
-              label: _busy ? '请稍候…' : '保存并接入',
+              label: _busy ? T('i18n.please_wait') : T('i18n.save_and_connect'),
               onPressed: _busy ? null : _save,
             ),
           ),
@@ -746,13 +753,13 @@ class _ProviderEditorState extends State<ProviderEditor> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          tr(label),
+          T(label),
           style: TextStyle(color: IosColors.secondary, fontSize: 13),
         ),
         const SizedBox(height: 7),
         CupertinoTextField(
           controller: controller,
-          placeholder: tr(hint),
+          placeholder: T(hint),
           obscureText: secret && _obscure,
           autocorrect: false,
           enableSuggestions: !secret,

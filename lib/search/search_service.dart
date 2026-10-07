@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:mulit_ai_flutter/i18n/strings.dart';
+
 enum SearchService {
-  bocha('博查', 'https://api.bochaai.com/v1/web-search'),
+  bocha('i18n.bocha', 'https://api.bochaai.com/v1/web-search'),
   tavily('Tavily', 'https://api.tavily.com/search'),
   exa('Exa', 'https://api.exa.ai/search');
 
@@ -25,14 +27,14 @@ enum SearchService {
 
   // Official policies checked on 2026-10-05; these are not account balances.
   String get billingLabel => switch (this) {
-    bocha => '按量付费',
-    tavily || exa => '有免费额度',
+    bocha => 'i18n.pay_as_you_go',
+    tavily || exa => 'i18n.free_credits_available',
   };
 
   String get billingDescription => switch (this) {
-    bocha => '按量计费，使用前需充值或领取可用赠送额度。免费额度视活动与账号而定，不保证每个账号都有。',
-    tavily => '每月 1,000 免费积分，无需绑定信用卡。普通搜索每次 1 积分，深入搜索每次 2 积分；更多用量需购买付费方案。',
-    exa => '每月 10 美元免费额度，另有 10 美元新账户奖励，无需添加付款方式。额度按接口用量消耗，更多用量需开通按量付费。',
+    bocha => 'i18n.usage_based_pricing_add_funds',
+    tavily => 'i18n.1_000_free_credits_per',
+    exa => 'i18n.us_10_in_free_credits',
   };
 }
 
@@ -185,24 +187,24 @@ class SearchClient {
     } on SearchException {
       rethrow;
     } on TimeoutException {
-      throw const SearchException('联网搜索超时，请重试或关闭联网搜索。', networkFailure: true);
+      throw SearchException(T('i18n.web_search_timed_out_try'), networkFailure: true);
     } on SocketException catch (error) {
       throw SearchException(
-        '无法连接搜索服务，请检查网络。',
+        T('i18n.could_not_connect'),
         networkFailure: true,
         retrySafe: [8, 61, 111].contains(error.osError?.errorCode),
       );
     } on HandshakeException {
-      throw const SearchException('搜索服务 HTTPS 证书验证失败。');
+      throw SearchException(T('i18n.the_search_service_https_certificate'));
     } catch (_) {
-      throw const SearchException('搜索服务返回格式无效，请检查服务类型和接口地址。');
+      throw SearchException(T('i18n.invalid_search_response_check'));
     } finally {
       _client.close(force: true);
     }
   }
 
   Future<SearchResult> _search(String query) async {
-    if (_cancelled) throw const SearchException('联网搜索已停止');
+    if (_cancelled) throw SearchException(T('i18n.web_search_stopped'));
     final uri = Uri.tryParse(config.endpoint);
     final local = ['localhost', '127.0.0.1', '10.0.2.2'].contains(uri?.host);
     if (uri == null ||
@@ -211,16 +213,16 @@ class SearchClient {
         uri.hasQuery ||
         uri.hasFragment ||
         !(uri.scheme == 'https' || uri.scheme == 'http' && local)) {
-      throw const SearchException('搜索接口地址必须使用 HTTPS；本机地址可用 HTTP。');
+      throw SearchException(T('i18n.search_endpoints_require_https_local'));
     }
     if (apiKey.trim().isEmpty) {
-      throw const SearchException('请先配置搜索服务 API Key。');
+      throw SearchException(T('i18n.configure_a_search_service'));
     }
     if (config.maxResults < 1 || config.maxResults > 10) {
-      throw const SearchException('搜索结果数量须为 1 至 10');
+      throw SearchException(T('i18n.choose_1_to_10_search'));
     }
     final cleanQuery = _limit(query.trim(), 1000);
-    if (cleanQuery.isEmpty) throw const SearchException('搜索内容不能为空');
+    if (cleanQuery.isEmpty) throw SearchException(T('i18n.the_search_query_cannot'));
     final request = await _client.postUrl(uri);
     request.followRedirects = false;
     request.headers.contentType = ContentType.json;
@@ -277,13 +279,13 @@ class SearchClient {
     final response = await request.close();
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw SearchException(
-        '搜索请求失败（HTTP ${response.statusCode}），请检查密钥、额度和接口地址。',
+        F('i18n.search_http_failed', [response.statusCode]),
       );
     }
     final bytes = <int>[];
     await for (final chunk in response) {
       if (bytes.length + chunk.length > 512 * 1024) {
-        throw const SearchException('搜索响应过大，请减少结果数量。');
+        throw SearchException(T('i18n.search_response_too_large_reduce'));
       }
       bytes.addAll(chunk);
     }
@@ -294,7 +296,7 @@ class SearchClient {
             value['code'] != null &&
             value['code'] != 200 &&
             value['code'] != '200') {
-      throw const SearchException('搜索服务返回错误，请检查密钥和额度。');
+      throw SearchException(T('i18n.the_search_service_returned'));
     }
     final bochaData = config.service == SearchService.bocha
         ? value['data'] ?? value
@@ -304,13 +306,13 @@ class SearchClient {
         ? (pages is Map ? pages['value'] : null)
         : value['results'];
     if (raw is! List) {
-      throw const SearchException('搜索服务返回格式无效，请检查服务类型和接口地址。');
+      throw SearchException(T('i18n.invalid_search_response_check'));
     }
     final sources = <SearchSource>[];
     final seen = <String>{};
     String redact(String text) => text
-        .replaceAll(apiKey, '[已隐藏]')
-        .replaceAll(Uri.encodeComponent(apiKey), '[已隐藏]');
+        .replaceAll(apiKey, T('i18n.redacted'))
+        .replaceAll(Uri.encodeComponent(apiKey), T('i18n.redacted'));
     for (final item in raw.whereType<Map>()) {
       final url = item['url'];
       if (url is! String ||
@@ -350,7 +352,7 @@ class SearchClient {
       if (sources.length == config.maxResults) break;
     }
     if (sources.isEmpty) {
-      throw const SearchException('未找到可用网页资料，请修改问题或关闭联网搜索。');
+      throw SearchException(T('i18n.no_usable_web_content_was'));
     }
     return SearchResult(sources: sources, searchedAt: DateTime.now());
   }

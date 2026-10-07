@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:mulit_ai_flutter/api/api_client.dart';
-import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/chat/chat_model_selector.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 import 'package:mulit_ai_flutter/voice/voice_settings_screen.dart';
 
@@ -78,14 +78,14 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
     } on PlatformException {
       if (mounted) {
         setState(() {
-          _watchCheckError = tr('无法检查手表数据连接，请稍后重试');
+          _watchCheckError = T('i18n.could_not_check_the_watch');
           _checkingWatches = false;
         });
       }
     } on MissingPluginException {
       if (mounted) {
         setState(() {
-          _watchCheckError = tr('此设备不支持手表安装引导');
+          _watchCheckError = T('i18n.watch_installation_guidance_is_unavailable');
           _checkingWatches = false;
         });
       }
@@ -98,11 +98,11 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
     String message;
     try {
       await _companion.invokeMethod<void>('openWatchStore', {'nodeId': nodeId});
-      message = tr('已请求在手表打开安装页。若商店没有此应用，请从原安装渠道获取手表版。');
+      message = T('i18n.requested_the_installation_page');
     } on PlatformException {
-      message = tr('无法在手表打开安装页，请检查连接或手动安装');
+      message = T('i18n.watch_install_page_failed_hint');
     } catch (_) {
-      message = tr('无法在手表打开安装页');
+      message = T('i18n.could_not_open_the_installation');
     } finally {
       if (mounted) setState(() => _openingStore = false);
     }
@@ -110,11 +110,11 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
     await showCupertinoDialog<void>(
       context: context,
       builder: (context) => CupertinoAlertDialog(
-        title: Text(tr('手表应用安装')),
+        title: Text(T('i18n.install_watch_app')),
         content: Text(message),
         actions: [
           CupertinoDialogAction(
-            child: Text(tr('确定')),
+            child: Text(T('i18n.confirm')),
             onPressed: () => Navigator.pop(context),
           ),
         ],
@@ -124,18 +124,18 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
   }
 
   String get _watchStatus {
-    if (_checkingWatches) return tr('正在检查已连接的手表…');
+    if (_checkingWatches) return T('i18n.checking_connected_watches');
     if (_watchCheckError != null) return _watchCheckError!;
     if (_isAppleWatch) {
-      if (_connectedWatches == 0) return tr('尚未配对 Apple Watch');
-      if (!_watchAppInstalled) return tr('Apple Watch 尚未安装 AI Link');
-      return _watchReachable ? tr('Apple Watch 已连接') : tr('手表应用已安装，等待连接');
+      if (_connectedWatches == 0) return T('i18n.no_apple_watch_paired');
+      if (!_watchAppInstalled) return T('i18n.ai_link_is_not_installed');
+      return _watchReachable ? T('i18n.apple_watch_connected') : T('i18n.watch_app_installed_waiting');
     }
-    if (_connectedWatches == 0) return tr('尚未建立 Wear OS 数据连接');
+    if (_connectedWatches == 0) return T('i18n.wear_os_data_connection');
     if (_missingWatches.isNotEmpty) {
-      return tr('有手表尚未安装应用');
+      return T('i18n.a_connected_watch_needs');
     }
-    return tr('已连接的手表均已安装应用');
+    return T('i18n.app_installed_on_all_connected');
   }
 
   Future<void> _load() async {
@@ -171,7 +171,7 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
           loadModels: (provider) async {
             final key = await ChatStore.instance.apiKey(provider.id);
             if (key == null || key.isEmpty) {
-              throw const ApiException('请先在服务设置中填写 API Key');
+              throw ApiException(T('i18n.enter_api_key_in_settings'));
             }
             final models = await ModelApiClient(provider, key).fetchModels();
             if (models.isNotEmpty) {
@@ -195,7 +195,7 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: IosColors.background,
     appBar: iosAppBar(
-      title: tr('手表'),
+      title: T('i18n.watch'),
       leading: IosNavButton(
         icon: CupertinoIcons.back,
         onPressed: () => Navigator.pop(context),
@@ -205,14 +205,14 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
       child: ListView(
         children: [
           IosSection(
-            footer: tr(
+            footer: T(
               _isAppleWatch
-                  ? '在 iPhone 的 Watch 应用中安装 AI Link 手表版。首次使用请先在手机端配置文字和语音服务；手表与手机配对并连接后，点上方状态重新检查。'
-                  : '蓝牙配对后，还需完成 Wear OS 配套应用的连接设置。模拟器请使用 Android Studio 的 Pair Wearable；完成后点上方状态重新检查。商店暂无本应用时，请从原安装渠道获取手表版。',
+                  ? 'i18n.install_ai_link_for_apple'
+                  : 'i18n.after_bluetooth_pairing_finish_connecting',
             ),
             children: [
               IosRow(
-                title: tr('配套手表应用'),
+                title: T('i18n.watch_companion_app'),
                 subtitle: _watchStatus,
                 leading: Icon(
                   CupertinoIcons.device_phone_portrait,
@@ -226,7 +226,7 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
               for (final (id, name)
                   in _isAppleWatch ? <(String, String)>[] : _missingWatches)
                 IosRow(
-                  title: tr('在手表安装'),
+                  title: T('i18n.install_on_watch'),
                   subtitle: name,
                   leading: Icon(
                     CupertinoIcons.arrow_down_circle,
@@ -237,16 +237,16 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
             ],
           ),
           IosSection(
-            footer: tr(
+            footer: T(
               _isAppleWatch
-                  ? 'Apple Watch 优先在手表请求语音和模型服务，手表网络不可用且手机可达时再交给 iPhone。所选密钥同步并保存在手表钥匙串；问答在手表保存，重连后同步到手机。明确且可安全重试的网络故障才换路，超时或已有部分回答时不重发。'
-                  : '已连接手机时优先使用手机网络，失败后尝试手表网络；未连接时先用手表 Wi-Fi 或蜂窝网络。仅明确的网络故障才自动换路，避免重复请求。配置与密钥由手机同步到手表。',
+                  ? 'i18n.apple_watch_requests_voice'
+                  : 'i18n.use_the_phone_network_first',
             ),
             children: [
               IosRow(
-                title: tr('手表使用的模型'),
+                title: T('i18n.watch_model'),
                 subtitle: _providerId == null
-                    ? tr('请先配置模型服务')
+                    ? T('i18n.configure_a_model_provider_first')
                     : '${_providers.where((p) => p.id == _providerId).first.name} · ${_model ?? ''}',
                 leading: Icon(
                   CupertinoIcons.square_stack,
@@ -255,7 +255,7 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
                 onTap: _chooseModel,
               ),
               IosRow(
-                title: tr('手表播报回复'),
+                title: T('i18n.speak_replies_on_watch'),
                 chevron: false,
                 trailing: CupertinoSwitch(
                   value: _speak,
@@ -271,12 +271,12 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
             ],
           ),
           IosSection(
-            footer: tr(
-              '在语音服务中选择识别服务，并设置转写后是否自动发送；该开关同时适用于手机和手表。开启播报时还需选择朗读服务。',
+            footer: T(
+              'i18n.voice_transcription_setup_hint',
             ),
             children: [
               IosRow(
-                title: tr('语音服务'),
+                title: T('i18n.voice_services'),
                 leading: Icon(CupertinoIcons.waveform, color: IosColors.blue),
                 onTap: () => Navigator.push<void>(
                   context,

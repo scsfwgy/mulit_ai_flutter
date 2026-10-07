@@ -2,8 +2,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 
 const apiKeyTutorialUrl = 'https://www.tools24.uk/app/ai-link/help/apikey';
@@ -74,7 +74,7 @@ Future<void> openApiKeyHelp(BuildContext context, String url) async {
   await showCupertinoDialog<void>(
     context: context,
     builder: (dialogContext) => CupertinoAlertDialog(
-      title: Text(tr('无法打开浏览器')),
+      title: Text(T('i18n.could_not_open_a_browser')),
       content: Text(url),
       actions: [
         CupertinoDialogAction(
@@ -82,11 +82,11 @@ Future<void> openApiKeyHelp(BuildContext context, String url) async {
             await Clipboard.setData(ClipboardData(text: url));
             if (dialogContext.mounted) Navigator.pop(dialogContext);
           },
-          child: Text(tr('复制网址')),
+          child: Text(T('i18n.copy_url')),
         ),
         CupertinoDialogAction(
           onPressed: () => Navigator.pop(dialogContext),
-          child: Text(tr('好')),
+          child: Text(T('i18n.ok')),
         ),
       ],
     ),
@@ -97,7 +97,7 @@ class ApiKeyHelpRow extends StatelessWidget {
   const ApiKeyHelpRow({
     super.key,
     required this.url,
-    this.title = 'API Key 获取教程',
+    this.title = 'i18n.api_key_guide',
     this.enabled = true,
   });
 
@@ -107,7 +107,7 @@ class ApiKeyHelpRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => IosRow(
-    title: title,
+    title: T(title),
     subtitle: url.replaceFirst('https://', ''),
     leading: Icon(CupertinoIcons.link, color: IosColors.blue, size: 22),
     onTap: enabled ? () => openApiKeyHelp(context, url) : null,
@@ -128,10 +128,10 @@ class ApiKeyHelpSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => IosSection(
-    title: '获取 API Key',
+    title: T('i18n.get_api_key'),
     children: [
       if (officialUrl != null)
-        ApiKeyHelpRow(title: '申请 API Key', url: officialUrl!, enabled: enabled),
+        ApiKeyHelpRow(title: T('i18n.get_an_api_key'), url: officialUrl!, enabled: enabled),
       ApiKeyHelpRow(url: '$apiKeyTutorialUrl#$category', enabled: enabled),
     ],
   );

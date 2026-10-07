@@ -1,7 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 import 'package:mulit_ai_flutter/voice/voice_catalog.dart';
 
@@ -61,7 +61,7 @@ class _VoiceCatalogPickerState extends State<VoiceCatalogPicker> {
         setState(
           () => _error = error is FormatException
               ? error.message
-              : '无法获取模型列表，请检查网络或手动填写',
+              : T('i18n.model_list_unavailable_manual'),
         );
       }
     } finally {
@@ -106,7 +106,7 @@ class _VoiceCatalogPickerState extends State<VoiceCatalogPicker> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
               child: CupertinoSearchTextField(
-                placeholder: tr('搜索 ID 或名称'),
+                placeholder: T('i18n.search_id_or_name'),
                 onChanged: (value) => setState(() => _query = value.trim()),
               ),
             ),
@@ -114,34 +114,34 @@ class _VoiceCatalogPickerState extends State<VoiceCatalogPicker> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(30, 12, 30, 0),
                 child: Text(
-                  tr(_error!),
+                  T(_error!),
                   style: TextStyle(color: IosColors.destructive),
                 ),
               ),
             if (visibleRemote.isNotEmpty)
               IosSection(
-                title: '服务端返回',
-                footer: '模型列表仅包含服务端返回的 ID，语音接口和账号权限仍需实际验证。',
+                title: T('i18n.returned_by_server'),
+                footer: T('i18n.the_server_returned_these_ids'),
                 children: [
                   for (final item in visibleRemote)
                     IosRow(
                       title: item.id,
-                      subtitle: item.name == null ? null : tr(item.name!),
+                      subtitle: item.name == null ? null : T(item.name!),
                       onTap: () => Navigator.pop(context, item.id),
                     ),
                 ],
               ),
             if (visibleExamples.isNotEmpty)
               IosSection(
-                title: '官方示例',
+                title: T('i18n.official_examples'),
                 footer: widget.onRefresh == null
-                    ? '此服务没有可用的 API Key 列表接口。示例不代表账号已开通；也可返回手动填写。'
-                    : '示例来自官方文档，不代表当前账号已开通；也可返回手动填写。',
+                    ? T('i18n.no_api_key_catalog')
+                    : T('i18n.examples_come_from_official_docs'),
                 children: [
                   for (final item in visibleExamples)
                     IosRow(
                       title: item.id,
-                      subtitle: item.name == null ? null : tr(item.name!),
+                      subtitle: item.name == null ? null : T(item.name!),
                       onTap: () => Navigator.pop(context, item.id),
                     ),
                 ],
@@ -150,14 +150,14 @@ class _VoiceCatalogPickerState extends State<VoiceCatalogPicker> {
               Padding(
                 padding: const EdgeInsets.all(30),
                 child: Text(
-                  tr('没有匹配的模型'),
+                  T('i18n.no_matching_models'),
                   style: TextStyle(color: IosColors.secondary),
                 ),
               ),
             IosSection(
               children: [
                 IosRow(
-                  title: '手动输入 ID',
+                  title: T('i18n.enter_an_id_manually'),
                   leading: Icon(CupertinoIcons.pencil, color: IosColors.blue),
                   onTap: _enterManually,
                 ),
@@ -201,7 +201,7 @@ class _ManualVoiceIdDialogState extends State<_ManualVoiceIdDialog> {
 
   @override
   Widget build(BuildContext context) => CupertinoAlertDialog(
-    title: Text(tr('手动输入 ID')),
+    title: Text(T('i18n.enter_an_id_manually')),
     content: Padding(
       padding: const EdgeInsets.only(top: 12),
       child: CupertinoTextField(
@@ -209,16 +209,16 @@ class _ManualVoiceIdDialogState extends State<_ManualVoiceIdDialog> {
         autofocus: true,
         autocorrect: false,
         maxLength: 160,
-        placeholder: tr('输入模型或音色 ID'),
+        placeholder: T('i18n.enter_a_model_or_voice'),
         onSubmitted: (_) => _useId(),
       ),
     ),
     actions: [
       CupertinoDialogAction(
         onPressed: () => Navigator.pop(context),
-        child: Text(tr('取消')),
+        child: Text(T('i18n.cancel')),
       ),
-      CupertinoDialogAction(onPressed: _useId, child: Text(tr('使用此 ID'))),
+      CupertinoDialogAction(onPressed: _useId, child: Text(T('i18n.use_this_id'))),
     ],
   );
 }

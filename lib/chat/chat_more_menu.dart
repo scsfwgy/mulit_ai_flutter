@@ -1,6 +1,6 @@
 import 'package:flutter/cupertino.dart';
 
-import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 
 enum ChatMoreAction { newTopic, model, messages, models, voice, search }
@@ -28,38 +28,38 @@ class ChatMoreButton extends StatelessWidget {
     final action = await showAppModalPopup<ChatMoreAction>(
       context: context,
       builder: (sheetContext) => CupertinoActionSheet(
-        title: Text(tr('更多')),
+        title: Text(T('i18n.more')),
         actions: [
           CupertinoActionSheetAction(
             onPressed: () =>
                 Navigator.pop(sheetContext, ChatMoreAction.newTopic),
-            child: Text(tr('新对话')),
+            child: Text(T('i18n.new_chat')),
           ),
           CupertinoActionSheetAction(
             onPressed: () => Navigator.pop(sheetContext, ChatMoreAction.model),
-            child: Text(tr('切换模型')),
+            child: Text(T('i18n.switch_model')),
           ),
           CupertinoActionSheetAction(
             onPressed: () =>
                 Navigator.pop(sheetContext, ChatMoreAction.messages),
-            child: Text(tr('消息设置')),
+            child: Text(T('i18n.message_settings')),
           ),
           CupertinoActionSheetAction(
             onPressed: () => Navigator.pop(sheetContext, ChatMoreAction.models),
-            child: Text(tr('模型设置')),
+            child: Text(T('i18n.model_settings')),
           ),
           CupertinoActionSheetAction(
             onPressed: () => Navigator.pop(sheetContext, ChatMoreAction.voice),
-            child: Text(tr('语音服务')),
+            child: Text(T('i18n.voice_services')),
           ),
           CupertinoActionSheetAction(
             onPressed: () => Navigator.pop(sheetContext, ChatMoreAction.search),
-            child: Text(tr('联网搜索')),
+            child: Text(T('i18n.web_search')),
           ),
         ],
         cancelButton: CupertinoActionSheetAction(
           onPressed: () => Navigator.pop(sheetContext),
-          child: Text(tr('取消')),
+          child: Text(T('i18n.cancel')),
         ),
       ),
     );
@@ -84,7 +84,7 @@ class ChatMoreButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Semantics(
-    label: tr('更多'),
+    label: T('i18n.more'),
     button: true,
     child: IosNavButton(
       icon: CupertinoIcons.ellipsis,

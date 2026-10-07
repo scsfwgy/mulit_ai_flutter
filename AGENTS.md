@@ -44,8 +44,20 @@
 ### 核心数据（core/）
 
 - `lib/core/data.dart`：服务配置、话题、消息模型；SQLite 和密钥存储。
-- `lib/core/app_preferences.dart`：本地语言、白天/黑夜/跟随系统和主题色偏好、界面文案翻译。
+- `lib/core/app_preferences.dart`：本地语言、白天/黑夜/跟随系统和主题色偏好；语言枚举与文案表已迁到 `lib/i18n/`，此处仅 re-export 保持旧导入路径可用。
 - `lib/core/apple_purchases.dart`：Apple 内购状态与刷新。
+
+### 本地化（i18n/）
+
+- `lib/i18n/app_language.dart`：`AppLanguage` 枚举（`system`/`zh`/`zh-TW`/`en`），`code` 同时作为资源文件名与持久化值；`resolve()` 按系统 locale 解析（zh-Hant/HK/MO → zhTW），`languageSelfName()` 提供语言自名。
+- `lib/i18n/strings.dart`：文案表载入与查表。启动时 `I18n.load()` 一次性读入全部语言；`T(key)`/`F(key, args)` 同步查内存表，回退链为「当前语言 → 简体中文 → key 本身」。`T` 具备幂等性：非 key 文本原样返回，因此上游已翻译的文本可安全再次经过 `T`。
+- `assets/i18n/zh.json`、`en.json`、`zh-TW.json`：每语言一份独立配置，key 统一 `i18n.` 前缀，带参数文案写成 `{0}`、`{1}` 模板。
+- **新增语言的完整步骤**：① 在 `AppLanguage` 增加枚举项（`code` 即文件名）；② 在 `assets/i18n/` 放入同名 JSON；③ 在 `I18n.languages` 预载列表登记。第 ③ 步可选，未登记则不会在启动时载入。
+- **新增文案**：三份 JSON 同时补齐同名 key，源码里用 `T('i18n.x')` / `F('i18n.x', [...])`；模型 ID、用户内容、服务名称和品牌名不翻译。`assets/i18n/` 已加入 `pubspec.yaml` 的 assets。
+- **文案表必须在首帧之前就绪**：`lib/main.dart` 的 `main()` 是 `async`，在 `runApp` 之前 `await AppPreferences.instance.loadLocalization()`。启动页（`lib/settings/startup_screen.dart`）在 `AppPreferences.load` 完成前就会渲染，若资源未载入会直接显示裸 key（减少动画时尤其明显）。该页用 `I18n.loaded` 守卫标语（`Visibility` + `maintainSize` 保留占位高度），`main()` 的预载是第二道防线。
+- **后台 FlutterEngine 必须自行载入文案，且要随手机语言变化刷新**：`lib/watch/watch_chat.dart` 的 `startWatchWorker()` 在 `ready` 之前调用 `_refreshLanguage()`，并在**每次 `process` 请求前**再调一次。iOS `FlutterEngine.run(withEntrypoint:)` 与 Android `DartExecutor` 都会新建独立 engine，前台的静态文案表（`I18n._tables`）不共享过去；不加载就会把手表错误文案回传成裸 key。而 iPhone 的 `AppleWatchBridge` 启动后会**长期复用同一个 engine**，只在启动时读一次语言会让「先以英文启动、再把手机切成中文」之后的错误文案一直停留在英文，所以刷新必须按请求做。两端原生都只在收到 `ready` 后才下发请求（Android 侧有 20 秒超时），因此等待不会丢请求。
+- **`supportedLocales` 必须登记全部繁体 locale**：`AppPreferences.supportedLocales = [Locale('zh'), zh_Hant_TW, zh_Hant_HK, zh_Hant_MO, Locale('en')]`，`AppPreferences.locale` 在繁体模式返回 `zh_Hant_TW`。只登记 `Locale('zh')` 时 `basicLocaleListResolution` 会把 `zh-Hant-TW` 归一到 `zh`，框架内置控件（复制/取消等）退回简体。注意解析顺序是「三位全匹配 → `lang_script` → `lang_country` → `lang`」：`zh_Hant_TW` 的 `countryCode` 为 `TW`，会先命中 `lang_country`，所以 `Locale('zh','TW')` 不能省略；澳门同理。澳门还有一个额外坑：框架 `getMaterialTranslation` 对**没有脚本标签**的 `zh` 只在国家为 HK/TW 时返回繁体，裸 `zh-MO` 会落到简体（复制按钮显示「复制」），必须靠带 `Hant` 的 `zh_Hant_MO` 接住——`lang_country` 匹配只比较 `languageCode` 与 `countryCode`，所以登记 `zh_Hant_MO` 即可同时命中 `zh-MO` 与 `zh-Hant-MO`。此约定与「手表只支持简中/英文」无关：`_syncWatchLanguage` 仍把繁体上报为 `zh`。
+- **`presetForProvider` 需兼容历史服务名**：`ProviderPreset.name` 现在是翻译 key，但旧配置的 `name` 存的是当时语言下的译文（如 `GLM 智谱`）。`presetForProvider` 在 `presetId` 与 `baseUrl` 都匹配后，用 `I18n.lookupIn` 遍历 `I18n.languages` 把各语言译文还原回 key 再比对，否则这些配置会失去预设图标与新消息的预设元数据。
 
 ### 网络与协议（api/）
 
@@ -93,7 +105,7 @@
 - `ios/AILinkWatch/`：SwiftUI Apple Watch 配套应用，长按录音、松手发送、左上滑取消、右上滑转文字后确认，显示最近问答和可选的模型语音播放；语言跟随手机 App，外观跟随手表系统。经 WatchConnectivity 同步所选服务配置，密钥仅在手表 Keychain 保存；优先使用 URLSession 直接请求，手表网络明确不可用且手机可达时复用配对 iPhone 无落库接口。`WatchNetworkClient.swift` 适配文字与语音协议，`WatchPhoneRelay.swift` 关联请求阶段，`WatchNetworkConfiguration.swift` 管理安全配置、路由与确认同步；真实服务及 Wi-Fi/蜂窝待真机验证。
 - `ios/Runner/AppleWatchBridge.swift`：iPhone 端 WatchConnectivity 与后台 Flutter worker 桥接；沿用 `WatchChatProcessor` 云端识别、聊天、可选合成及 SQLite 入库。Apple 平台待 Xcode 编译、后台唤醒和配对设备验证，不能仅凭 Swift 语法检查声明可运行。
 - `ios/AILinkWatchWidgets/` 与 `ios/AILinkWatchShared/`：表盘复杂功能和智能叠放入口源码。2026-10-03 因开发者账号及扩展签名未就绪，按用户要求暂时关闭 `AILinkWatch` 对扩展的构建依赖和嵌入阶段；默认真机调试不构建该扩展。源码和 target 保留，不使用 App Groups。用户确认账号准备好并要求开启后，再按 `doc/ios/README.md` 恢复两处引用并验证签名与点击跳转；不要在普通调试修复中自动重新开启。
-- 手表应用是手机应用的功能子集，界面语言跟随手机 App，支持中文和英文。手机选“跟随系统”时，同步手机实际使用的语言，不能改为跟随手表系统语言；手机切换语言、冷启动和恢复前台时发送最新设置。Wear OS 用持久化 DataItem，Apple Watch 用 applicationContext；手表离线保留最后收到的语言，重连补同步。外观仍跟随手表自身日夜模式。
+- 手表应用是手机应用的功能子集，界面语言跟随手机 App，支持中文和英文。手机选“跟随系统”时，同步手机实际使用的语言，不能改为跟随手表系统语言；手机切换语言、冷启动和恢复前台时发送最新设置。Wear OS 用持久化 DataItem，Apple Watch 用 applicationContext；手表离线保留最后收到的语言，重连补同步。外观仍跟随手表自身日夜模式。手机端的繁體中文不在手表支持范围内，`_syncWatchLanguage` 会按「非英文即中文」上报为 `zh`，手表显示简体中文；新增手表语言需同步改这里与两端原生资源。
 - 手表按住录音时使用全屏浮层中的圆形录音弹窗，显示实时音量波形、计时和松开提示；左上滑时变红并在松手后取消，右上滑时显示转文字状态并在转写后等待确认，原位松手直接转写并发送。浮层只负责显示，不抢占聊天区域的长按手势。
 - 两端手表设置提供本地保存的「新手模式 / 简洁模式」，默认新手模式。新手录音界面保留方向提示、波形、计时与松开提示，避免重复说明；简洁录音界面仅显示一个大语音图标及音量呼吸环，取消变红、转文字变绿。两种模式只改变录音反馈，长按、滑动、松手、0.6 秒误触过滤和转写确认行为完全相同。
 - 两端手表双击聊天进入设置，双击设置返回聊天；设置页也可横向右滑返回，竖向滑动继续滚动内容。顶部只显示设置标题和返回手势说明，底部保留可点按的「返回聊天」入口。录音模式选项下用中英文解释显示内容的区别及手势相同。
@@ -101,7 +113,11 @@
 - `android/app/.../MainActivity.kt` 与 `android/wear/.../WatchActivity.kt`：手机和手表通过静态 capability 检查另一端安装状态，并向缺失设备发送商店安装页跳转；未上架的测试包仍需分别安装。
 - `android/app/src/main/kotlin/com/maxhall/ailink/WatchRequestListener.kt` 与 `WatchRequestWorker.kt`：Data Layer 处理手表配置请求、手机网络路径与问答同步；兼容旧版录音请求。
 - `test/`：协议、配置、Markdown 和界面行为测试。测试全部用 `package:mulit_ai_flutter/<路径>.dart` 导入，因此 `lib/` 目录调整后测试也会一并编译校验。
-- `test/translation_coverage_test.dart`：基于 Dart AST 的静态中文 UI 和错误文案英文覆盖守卫；变量引用和插值文案需另补测试。
+- `test/flutter_test_config.dart`：`flutter test` 的全局钩子，在整套测试运行前注入文案表。**刻意不调用 `TestWidgetsFlutterBinding.ensureInitialized()`**：该 binding 会把 `HttpOverrides.global` 换成「所有 HTTP 请求返回 400」的桩，而本仓库大量协议测试依赖真实回环 `HttpServer`，提前初始化会让它们全部失败。文案表由 `test/i18n_assets.dart` 直接读 `assets/i18n/*.json`（不走 `rootBundle`，因此不需要 binding）。
+- `test/translation_coverage_test.dart`：基于 Dart AST 的文案守卫。校验三份 JSON 的 key 集合一致、无空值与重复 key、源码 `T`/`F` 引用的 key 全部存在、界面中不再有未本地化的中文字面量、`T`/`F` 幂等性、`AppLanguage` 解析与扫描器自测。扫描器已知盲区：字符串插值内部的字面量无法用 AST 精确归属，需人工检查。
+- `test/i18n_leak_test.dart` 与 `test/sqflite_stub.dart`：渲染级守卫，逐页断言界面不会直接显示 `i18n.*` key。`IosRow`/`IosSection`/`iosAppBar` 内部会对 title/subtitle/footer 调用 `T`，所以经它们传入的 key 安全；风险点在 `Text`、`SelectableText`、`CupertinoTextField.placeholder` 与 `TextEditingController` 的初始文本。`sqflite_stub.dart` 提供空数据库桩，让依赖 `ChatStore` 的页面渲染出空状态。
+- `test/i18n_locale_test.dart`：用 `basicLocaleListResolution` 断言 `zh-TW`/`zh-HK`/`zh-MO` 解析到显式 `Hant` locale，简中与英文不受影响；并端到端 `await GlobalMaterialLocalizations.delegate.load(resolved)` 断言台/港/澳的 `copyButtonLabel` 都是「複製」、简体是「复制」。同时校验 `AppPreferences.locale` 与 `supportedLocales` 对齐、`AppLanguage` 持久化值可往返。
+- `test/watch_worker_i18n_test.dart`：验证手表后台 worker 在发出 `ready` 之前已载入文案表，且**每次请求前会重新读取手机语言**。**必须用纯 `test()`，不能用 `testWidgets()`**——`testWidgets` 运行在 FakeAsync 中，平台通道的真实异步回调不会被推进，`ready` 永远等不到而挂起。`flutter_test_config.dart` 注入的文案表不覆盖此场景：测试内先 `I18n.resetForTesting()`，再断言 worker 自行载入后 `I18n.loaded` 为 true。向 worker 投递请求用 `TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.handlePlatformMessage(channel.name, StandardMethodCodec().encodeMethodCall(MethodCall('process', args)), (_) {})`；用 `kind: 'bogus'` 触发「请求无效」分支即可观察当前语言，无需网络与凭据。`test/sqflite_stub.dart` 的 `installEmptyDatabaseStub(settings: {...})` 按引用持有 Map，测试中途改它即模拟「手机改了设置」。
 - `android/app/src/main/AndroidManifest.xml` 与 `res/xml/network_security_config.xml`：网络权限与明文连接范围。
 - `release.sh`、`android/key.properties.example`、`android/key.test.properties`、`localConfig/ai-link-test.jks`、`doc/google_play/`：本地正式/测试签名打包和 Google Play 上架资料。测试签名及配置允许入库，其密码视为公开信息；正式 `android/key.properties`、`localConfig/ai-link-upload.jks`、正式密码和构建产物绝对不得提交。正式手机和手表使用包名 `com.maxhall.ailink`；普通 Debug 与 `--test` 包使用 `com.maxhall.ailink.debug`、名称「AI Link Debug」和同一测试签名，可与正式包并存；同一套手机与手表包必须共用包名和签名；`./release.sh` 出正式 AAB，`./release.sh --test` 出测试 APK。
 - 官方网站为 `https://www.tools24.uk/app/ai-link`，公开隐私政策为 `https://www.tools24.uk/app/ai-link/privacy`；上架前核对线上政策与最终安装包行为一致。
@@ -119,7 +135,7 @@
 - 新消息记录发送时的模型 ID；助手回复额外记录首段可见文字耗时、流式总耗时与服务端报告的输入/输出 Token。历史消息和未报告用量的服务保留空值，不推算为精确 Token。OpenAI 兼容流式请求可带 `stream_options.include_usage`，遇到明确不支持该字段的 400/422 响应时重试普通流式请求；Claude Messages 从 `message_start`/`message_delta` 读取用量。
 - 新消息同时记录发送时的服务 ID、名称与图标预设，切换服务后仍按每条消息原来的服务展示；旧版本消息没有这些字段，不要用话题当前服务回填为确切来源。生成中隐藏气泡下的统计，回复结束后再展示。
 - 气泡信息的五项显示开关存在 SQLite `settings` 表，只影响展示，不删除已保存的统计。输入 Token 指整次请求上下文，不是最后一条用户消息的 Token。复制原文保留 Markdown 标记；格式化复制提供 HTML 和可读纯文本，接收应用可自行选择粘贴格式。
-- 语言、外观模式和主题色选择保存在 SQLite 的 `settings` 表。外观模式支持跟随系统、白天和黑夜；所有页面复用 `IosColors` 的动态语义色，不写死浅色背景与文字。新增可见文案时同步补充 `app_preferences.dart` 的英文翻译；模型 ID、用户内容和服务名称不要翻译。
+- 语言、外观模式和主题色选择保存在 SQLite 的 `settings` 表。外观模式支持跟随系统、白天和黑夜；所有页面复用 `IosColors` 的动态语义色，不写死浅色背景与文字。新增可见文案时在 `assets/i18n/` 的三份 JSON 同时补 key，并在源码里写 `T('i18n.x')`；模型 ID、用户内容和服务名称不要翻译。枚举字段、Map 值、默认参数等「数据载体」可以保存 key，但消费点必须再经过 `T`——`IosRow`/`IosSection`/`iosAppBar` 会自动翻译，其余渲染点需显式调用，`test/i18n_leak_test.dart` 会拦截漏翻译。
 - 先检查页面信息结构，再调整颜色与圆角。聊天、话题、服务配置都要保持同一视觉语言。
 - Android 和 iOS 复用同一 widget 树；新增 UI 不使用 `Platform.isAndroid`、`Platform.isIOS` 等平台分支。系统状态栏、键盘、底部导航属于系统界面，可能不同。
 - 改动 UI 后用 Android 模拟器截图检查欢迎页、已有聊天、话题页、服务列表和编辑页；检查长文本、Markdown 表格、键盘遮挡及返回路径。没有 iOS 构建或设备证据时明确说明。

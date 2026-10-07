@@ -1,7 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
 import 'package:mulit_ai_flutter/core/app_platform.dart';
-import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 
 /// 聊天页底部输入区：语音/文字切换、按住说话与发送按钮。
@@ -65,7 +65,7 @@ class ChatComposer extends StatelessWidget {
               voiceMode ? CupertinoIcons.keyboard : CupertinoIcons.mic,
               color: transcribing ? IosColors.secondary : IosColors.blue,
               size: 27,
-              semanticLabel: tr(voiceMode ? '切换到文字输入' : '切换到语音输入'),
+              semanticLabel: T(voiceMode ? 'i18n.switch_to_text_input' : 'i18n.switch_to_voice_input'),
             ),
           ),
           const SizedBox(width: 4),
@@ -75,8 +75,8 @@ class ChatComposer extends StatelessWidget {
                     button: true,
                     enabled: !transcribing,
                     label: transcribing
-                        ? tr('正在识别语音…')
-                        : tr('按住说话，松开发送，左滑取消，右滑转文字'),
+                        ? T('i18n.transcribing')
+                        : T('i18n.hold_to_speak_release'),
                     child: Listener(
                       behavior: HitTestBehavior.opaque,
                       onPointerDown: transcribing ? null : onVoiceDown,
@@ -95,7 +95,7 @@ class ChatComposer extends StatelessWidget {
                           border: Border.all(color: IosColors.separator),
                         ),
                         child: Text(
-                          tr(transcribing ? '正在识别语音…' : '按住说话'),
+                          T(transcribing ? 'i18n.transcribing' : 'i18n.hold_to_talk'),
                           style: TextStyle(
                             color: transcribing
                                 ? IosColors.secondary
@@ -119,8 +119,8 @@ class ChatComposer extends StatelessWidget {
                     onSubmitted: isDesktopApp ? null : (_) => onSend(),
                     textCapitalization: TextCapitalization.sentences,
                     placeholder: !hasProviders
-                        ? tr('先接入模型服务')
-                        : tr(isDesktopApp ? '发送消息，Shift+Enter 换行' : '发送消息'),
+                        ? T('i18n.add_a_model_service_first')
+                        : T(isDesktopApp ? 'i18n.message_shift_enter' : 'i18n.message'),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 14,
                       vertical: 11,

@@ -3,7 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 
 import 'package:mulit_ai_flutter/core/app_platform.dart';
-import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 
 enum DesktopSection {
@@ -35,7 +35,7 @@ class DesktopNavigationMenu extends StatelessWidget {
           height: 56,
           child: Center(
             child: Text(
-              tr('设置'),
+              T('i18n.settings'),
               style: TextStyle(
                 color: IosColors.label,
                 fontSize: 17,
@@ -50,14 +50,14 @@ class DesktopNavigationMenu extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
             children: [
               for (final item in [
-                (DesktopSection.settings, CupertinoIcons.gear, '通用设置'),
-                (DesktopSection.providers, CupertinoIcons.square_stack, '模型服务'),
-                (DesktopSection.prompts, CupertinoIcons.text_quote, '提示词'),
-                (DesktopSection.voice, CupertinoIcons.waveform, '语音服务'),
-                (DesktopSection.search, CupertinoIcons.search, '联网搜索'),
-                (DesktopSection.messages, CupertinoIcons.info, '消息设置'),
-                (DesktopSection.privacy, CupertinoIcons.lock, '数据与隐私'),
-                (DesktopSection.about, CupertinoIcons.info_circle, '关于'),
+                (DesktopSection.settings, CupertinoIcons.gear, T('i18n.general')),
+                (DesktopSection.providers, CupertinoIcons.square_stack, T('i18n.model_services')),
+                (DesktopSection.prompts, CupertinoIcons.text_quote, T('i18n.prompts')),
+                (DesktopSection.voice, CupertinoIcons.waveform, T('i18n.voice_services')),
+                (DesktopSection.search, CupertinoIcons.search, T('i18n.web_search')),
+                (DesktopSection.messages, CupertinoIcons.info, T('i18n.message_settings')),
+                (DesktopSection.privacy, CupertinoIcons.lock, T('i18n.data_privacy')),
+                (DesktopSection.about, CupertinoIcons.info_circle, T('i18n.about')),
               ])
                 Padding(
                   padding: const EdgeInsets.only(bottom: 4),
@@ -86,7 +86,7 @@ class DesktopNavigationMenu extends StatelessWidget {
                           ),
                           const SizedBox(width: 12),
                           Text(
-                            tr(item.$3),
+                            T(item.$3),
                             style: TextStyle(
                               fontSize: 14,
                               color: selected == item.$1
@@ -113,7 +113,7 @@ class DesktopNavigationMenu extends StatelessWidget {
               children: [
                 Icon(CupertinoIcons.back, color: IosColors.blue, size: 22),
                 const SizedBox(width: 8),
-                Text(tr('返回聊天'), style: TextStyle(color: IosColors.blue)),
+                Text(T('i18n.back_to_chat'), style: TextStyle(color: IosColors.blue)),
               ],
             ),
           ),

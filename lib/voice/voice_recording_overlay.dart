@@ -4,7 +4,7 @@ import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 
-import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 
 enum VoiceReleaseAction {
@@ -151,12 +151,12 @@ class _VoiceRecordingOverlayState extends State<VoiceRecordingOverlay>
                                         ),
                                         const SizedBox(height: 12),
                                         Text(
-                                          tr(switch (action) {
+                                          T(switch (action) {
                                             VoiceReleaseAction.cancel =>
-                                              '松开取消录音',
+                                              'i18n.release_to_cancel_recording',
                                             VoiceReleaseAction.review =>
-                                              '松开转文字',
-                                            VoiceReleaseAction.send => '正在录音',
+                                              'i18n.release_to_transcribe',
+                                            VoiceReleaseAction.send => 'i18n.recording',
                                           }),
                                           style: TextStyle(
                                             color: IosColors.label,
@@ -190,11 +190,11 @@ class _VoiceRecordingOverlayState extends State<VoiceRecordingOverlay>
                                         ),
                                         const SizedBox(height: 10),
                                         Text(
-                                          tr(switch (action) {
-                                            VoiceReleaseAction.cancel => '松开取消',
+                                          T(switch (action) {
+                                            VoiceReleaseAction.cancel => 'i18n.release_to_cancel',
                                             VoiceReleaseAction.review =>
-                                              '识别后确认发送',
-                                            VoiceReleaseAction.send => '松开发送',
+                                              'i18n.review_the_transcript_before_sending',
+                                            VoiceReleaseAction.send => 'i18n.release_to_send',
                                           }),
                                           style: TextStyle(
                                             color:
@@ -260,7 +260,7 @@ class _VoiceRecordingOverlayState extends State<VoiceRecordingOverlay>
                             children: [
                               Expanded(
                                 child: _target(
-                                  label: '左滑取消',
+                                  label: T('i18n.slide_left_to_cancel'),
                                   selected: action == VoiceReleaseAction.cancel,
                                   accent: IosColors.destructive,
                                   right: false,
@@ -269,7 +269,7 @@ class _VoiceRecordingOverlayState extends State<VoiceRecordingOverlay>
                               const SizedBox(width: 28),
                               Expanded(
                                 child: _target(
-                                  label: '右滑转文字',
+                                  label: T('i18n.slide_right_to_transcribe'),
                                   selected: action == VoiceReleaseAction.review,
                                   accent: CupertinoColors.systemGreen
                                       .resolveFrom(context),
@@ -306,7 +306,7 @@ class _VoiceRecordingOverlayState extends State<VoiceRecordingOverlay>
       child: Transform.rotate(
         angle: right ? .16 : -.16,
         child: Text(
-          tr(label),
+          T(label),
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 15,

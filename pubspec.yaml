@@ -73,6 +73,8 @@ flutter:
   assets:
     - assets/branding/ai_link_icon_source.png
     - assets/provider_icons/
+    # 每语言一份文案配置；新增语言只需在此目录增加同名 JSON。
+    - assets/i18n/
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

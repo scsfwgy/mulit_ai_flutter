@@ -13,6 +13,7 @@ import 'package:mulit_ai_flutter/chat/chat_message_meta.dart';
 import 'package:mulit_ai_flutter/chat/chat_model_selector.dart';
 import 'package:mulit_ai_flutter/chat/chat_model_title.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 import 'package:mulit_ai_flutter/chat/model_picker.dart';
 import 'package:mulit_ai_flutter/provider/provider_screen.dart';
@@ -150,8 +151,8 @@ void main() {
       final previous = preferences.language;
       preferences.language = AppLanguage.en;
       try {
-        expect(tr('模型服务'), 'Model services');
-        expect(tr('claude-opus-4-6'), 'claude-opus-4-6');
+        expect(T('i18n.model_services'), 'Model services');
+        expect(T('claude-opus-4-6'), 'claude-opus-4-6');
       } finally {
         preferences.language = previous;
       }
@@ -307,7 +308,7 @@ void main() {
     expect(groups?.map((group) => group.prefix), [
       'anthropic',
       'openai',
-      '其他模型',
+      'i18n.other_models',
     ]);
     expect(groups?[1].models.length, 12);
     expect(groupModelsByPrefix(models.take(6).toList()), isNull);
@@ -335,7 +336,11 @@ void main() {
       for (var i = 0; i < 50; i++) 'other_$i',
     ];
     final groups = groupModelsByPrefix(models)!;
-    expect(groups.map((group) => group.prefix), ['claude', 'MiniMax', '其他模型']);
+    expect(groups.map((group) => group.prefix), [
+      'claude',
+      'MiniMax',
+      'i18n.other_models',
+    ]);
     expect(groups[0].models, contains('claude-opus-4-17'));
     expect(groups[1].models, contains('MiniMax-M3-highspeed'));
     expect(groups[2].models, contains('LongCat-2.0'));

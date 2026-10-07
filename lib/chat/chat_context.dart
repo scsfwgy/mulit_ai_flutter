@@ -6,9 +6,8 @@ abstract final class ChatContext {
   static const defaultWindowTokens = 32768;
   static const replyReserveTokens = 4096;
   static const windowOptions = [8192, 16384, 32768, 65536, 131072, 262144];
-  static const limitMessage = '当前消息、提示词或搜索内容超过上下文预算。请缩短内容，或在上下文设置中调整预算。';
-  static const serverLimitMessage =
-      '模型上下文已超出限制。请在上下文设置中降低预算后重试，或新建对话；单条消息过长时请缩短内容。';
+  static const limitMessageKey = 'i18n.context_limit_local';
+  static const serverLimitMessageKey = 'i18n.context_limit_server';
 
   static int parseWindow(String? value) {
     final parsed = int.tryParse(value ?? '');
@@ -61,7 +60,7 @@ abstract final class ChatContext {
     for (var i = start; i < messages.length; i++) {
       used += cost(messages[i]);
     }
-    if (used > budget) throw const ChatContextException(limitMessage);
+    if (used > budget) throw const ChatContextException(limitMessageKey);
     for (var turn = starts.length - 2; turn >= 0; turn--) {
       final candidate = starts[turn];
       var turnCost = 0;

@@ -8,6 +8,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:mulit_ai_flutter/chat/chat_context.dart';
 import 'package:mulit_ai_flutter/chat/chat_context_screen.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/main.dart' as app;
 
 /// Real SQLite and secure-storage integration against a local HTTP fixture.
@@ -122,7 +123,7 @@ void main() {
           if (find.text('调整上下文').evaluate().isNotEmpty) break;
         }
         await tester.pumpAndSettle();
-        expect(find.text(ChatContext.serverLimitMessage), findsOneWidget);
+        expect(find.text(T(ChatContext.serverLimitMessageKey)), findsOneWidget);
         expect(requests, hasLength(1));
         expect(requests.first['messages'], hasLength(3));
         await binding.convertFlutterSurfaceToImage();
@@ -155,7 +156,7 @@ void main() {
         );
         expect(stored[1].content.length, 10000);
         expect(stored.last.content, 'Context **retry** works.');
-        expect(find.text(ChatContext.serverLimitMessage), findsNothing);
+        expect(find.text(T(ChatContext.serverLimitMessageKey)), findsNothing);
         expect(tester.takeException(), isNull);
         await binding.takeScreenshot('android-context-retry');
       } finally {

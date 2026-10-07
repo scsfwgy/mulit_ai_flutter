@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'package:mulit_ai_flutter/api/api_client.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
-import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 import 'package:mulit_ai_flutter/chat/model_picker.dart';
 
@@ -132,7 +132,7 @@ class _ChatModelSelectorState extends State<ChatModelSelector> {
     try {
       final models = await widget.loadModels(_provider);
       if (models.isEmpty) {
-        throw const ApiException('服务没有返回可用模型，可手动输入模型 ID。');
+        throw ApiException(T('i18n.no_usable_models_manual'));
       }
       if (!mounted || _providerId != providerId) return;
       setState(() {
@@ -144,13 +144,12 @@ class _ChatModelSelectorState extends State<ChatModelSelector> {
     } catch (error) {
       if (!mounted || _providerId != providerId) return;
       setState(() {
-        _error = _models.isNotEmpty
-            ? (AppPreferences.instance.english
-                  ? 'Refresh failed: $error\nThe cached models are still available.'
-                  : '刷新失败：$error\n已保留缓存的模型列表。')
-            : (AppPreferences.instance.english
-                  ? 'Could not fetch models: $error\nYou can still enter a model ID.'
-                  : '获取模型列表失败：$error\n仍可手动输入模型 ID。');
+        _error = F(
+          _models.isNotEmpty
+              ? 'i18n.model_list_refresh_failed_cached'
+              : 'i18n.model_list_fetch_failed_manual',
+          [error],
+        );
       });
     } finally {
       if (mounted) setState(() => _fetching = false);
@@ -167,16 +166,13 @@ class _ChatModelSelectorState extends State<ChatModelSelector> {
         '${time.year}-${time.month.toString().padLeft(2, '0')}-${time.day.toString().padLeft(2, '0')}';
     final clock =
         '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
-    if (AppPreferences.instance.english) {
-      return '${_fromCache ? 'Cached' : 'Updated'} $date $clock';
-    }
-    return '${_fromCache ? '已缓存' : '更新于'} $date $clock';
+    return F(_fromCache ? 'i18n.cached_at' : 'i18n.updated_at', ['$date $clock']);
   }
 
   void _useManual() {
     final model = _model.text.trim();
     if (model.isEmpty) {
-      setState(() => _error = '请输入模型 ID');
+      setState(() => _error = T('i18n.enter_model_id_prompt'));
       return;
     }
     _choose(model);
@@ -194,7 +190,7 @@ class _ChatModelSelectorState extends State<ChatModelSelector> {
     return Scaffold(
       backgroundColor: IosColors.background,
       appBar: iosAppBar(
-        title: '切换模型',
+        title: T('i18n.switch_model'),
         leading: IosNavButton(
           icon: CupertinoIcons.back,
           onPressed: () => Navigator.pop(context),
@@ -204,7 +200,7 @@ class _ChatModelSelectorState extends State<ChatModelSelector> {
         child: ListView(
           children: [
             IosSection(
-              title: '模型服务',
+              title: T('i18n.model_services'),
               children: [
                 for (final provider in widget.providers)
                   IosRow(
@@ -230,23 +226,21 @@ class _ChatModelSelectorState extends State<ChatModelSelector> {
             ),
             if (recent.isNotEmpty)
               IosSection(
-                title: '最近使用',
+                title: T('i18n.recently_used'),
                 children: [
                   for (final model in recent)
                     IosRow(title: model, onTap: () => _choose(model)),
                 ],
               ),
             IosSection(
-              title: '手动输入模型 ID',
-              footer: '可以使用未出现在服务端列表中的模型。',
+              title: T('i18n.enter_a_model_id'),
+              footer: T('i18n.you_can_use_a_model'),
               children: [
                 Padding(
                   padding: const EdgeInsets.all(14),
                   child: CupertinoTextField(
                     controller: _model,
-                    placeholder: AppPreferences.instance.english
-                        ? 'e.g. ${_provider.model}'
-                        : '例如 ${_provider.model}',
+                    placeholder: F('i18n.model_id_example', [_provider.model]),
                     textInputAction: TextInputAction.done,
                     onSubmitted: (_) => _useManual(),
                     padding: const EdgeInsets.symmetric(
@@ -259,17 +253,17 @@ class _ChatModelSelectorState extends State<ChatModelSelector> {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: IosPrimaryButton(label: '使用此模型', onPressed: _useManual),
+              child: IosPrimaryButton(label: T('i18n.use_this_model'), onPressed: _useManual),
             ),
             IosSection(
-              title: '服务端模型',
+              title: T('i18n.server_models'),
               children: [
                 IosRow(
                   title: _fetching
-                      ? '正在获取模型列表…'
+                      ? T('i18n.fetching_models')
                       : _models.isNotEmpty
-                      ? '刷新模型列表'
-                      : '从服务端获取模型列表',
+                      ? T('i18n.refresh_model_list')
+                      : T('i18n.fetch_models_from_server'),
                   subtitle: _cacheSubtitle,
                   leading: _fetching
                       ? const CupertinoActivityIndicator()
@@ -288,7 +282,7 @@ class _ChatModelSelectorState extends State<ChatModelSelector> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(30, 10, 30, 0),
                 child: Text(
-                  tr(_error!),
+                  T(_error!),
                   style: TextStyle(
                     color: IosColors.destructive,
                     fontSize: 13,
@@ -301,7 +295,7 @@ class _ChatModelSelectorState extends State<ChatModelSelector> {
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                 child: CupertinoSearchTextField(
                   controller: _search,
-                  placeholder: tr('搜索模型 ID'),
+                  placeholder: T('i18n.search_model_id'),
                   onChanged: (_) => setState(() {}),
                 ),
               ),

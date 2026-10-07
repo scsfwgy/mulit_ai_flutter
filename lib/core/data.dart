@@ -7,18 +7,18 @@ import 'package:sqflite/sqflite.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
 
 class KeychainAccessException implements Exception {
   const KeychainAccessException();
 
   @override
-  String toString() =>
-      '无法访问 macOS 钥匙串。请解锁登录钥匙串，并在系统授权弹窗中允许 AI Link 访问密钥。若曾拒绝，请重新打开应用后再试，或重新填写并保存密钥。';
+  String toString() => T('i18n.cannot_access_the_macos_keychain');
 }
 
 enum ApiProtocol {
-  openAi('openai_chat', 'OpenAI 兼容'),
+  openAi('openai_chat', 'i18n.openai_compatible'),
   anthropic('anthropic_messages', 'Claude Messages');
 
   const ApiProtocol(this.value, this.label);
@@ -27,7 +27,7 @@ enum ApiProtocol {
 
   static ApiProtocol parse(String value) => ApiProtocol.values.firstWhere(
     (item) => item.value == value,
-    orElse: () => throw const FormatException('不支持的协议'),
+    orElse: () => throw FormatException(T('i18n.unsupported_protocol')),
   );
 }
 
@@ -78,35 +78,35 @@ const providerPresets = <ProviderPreset>[
   ),
   ProviderPreset(
     'glm',
-    'GLM 智谱',
+    'i18n.glm_zhipu',
     'https://open.bigmodel.cn/api/paas/v4',
     'glm-4.5',
     ApiProtocol.openAi,
   ),
   ProviderPreset(
     'qwen',
-    '千问 Qwen',
+    'i18n.qwen',
     'https://dashscope.aliyuncs.com/compatible-mode/v1',
     'qwen-plus',
     ApiProtocol.openAi,
   ),
   ProviderPreset(
     'doubao',
-    '豆包 / 火山方舟',
+    'i18n.doubao_volcengine',
     'https://ark.cn-beijing.volces.com/api/v3',
     'doubao-seed-2-1-pro-260628',
     ApiProtocol.openAi,
   ),
   ProviderPreset(
     'baidu',
-    '百度千帆 / 文心',
+    'i18n.baidu_qianfan_ernie',
     'https://qianfan.baidubce.com/v2',
     'ernie-5.0',
     ApiProtocol.openAi,
   ),
   ProviderPreset(
     'hunyuan',
-    '腾讯混元 TokenHub',
+    'i18n.tencent_hunyuan_tokenhub',
     'https://tokenhub.tencentmaas.com/v1',
     'hy3',
     ApiProtocol.openAi,
@@ -127,7 +127,7 @@ const providerPresets = <ProviderPreset>[
   ),
   ProviderPreset(
     'siliconflow',
-    '硅基流动',
+    'i18n.siliconflow',
     'https://api.siliconflow.cn/v1',
     'deepseek-ai/DeepSeek-V4-Flash',
     ApiProtocol.openAi,
@@ -190,11 +190,11 @@ String validateBaseUrl(String input) {
       uri.hasQuery ||
       uri.hasFragment ||
       uri.userInfo.isNotEmpty) {
-    throw const FormatException('请输入有效的 API 根地址');
+    throw FormatException(T('i18n.enter_a_valid_api_base'));
   }
   final local = {'localhost', '127.0.0.1', '10.0.2.2'}.contains(uri.host);
   if (uri.scheme != 'https' && !(uri.scheme == 'http' && local)) {
-    throw const FormatException('API 地址必须使用 HTTPS；模拟器本机地址可用 HTTP');
+    throw FormatException(T('i18n.the_api_url_must_use'));
   }
   return input.trim().replaceAll(RegExp(r'/+$'), '');
 }
@@ -202,10 +202,10 @@ String validateBaseUrl(String input) {
 String validateScannedApiKey(String input) {
   final key = input.trim();
   if (key.isEmpty || key.contains(RegExp(r'[\x00-\x1F]'))) {
-    throw const FormatException('二维码中没有有效的 API Key');
+    throw FormatException(T('i18n.the_qr_code_has'));
   }
   if (key.startsWith('{') && key.endsWith('}')) {
-    throw const FormatException('请扫描仅包含 API Key 字符串的二维码');
+    throw FormatException(T('i18n.scan_api_key_qr_hint'));
   }
   return key;
 }
@@ -274,13 +274,13 @@ class ProviderConfig {
   }) {
     final decoded = jsonDecode(source);
     if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('配置必须是 JSON 对象');
+      throw FormatException(T('i18n.the_configuration_must'));
     }
     final name = (decoded['name'] as String?)?.trim() ?? '';
     final model = (decoded['model'] as String?)?.trim() ?? '';
     final key = (decoded['apiKey'] as String?)?.trim() ?? '';
     if (name.isEmpty || model.isEmpty) {
-      throw const FormatException('名称和模型不能为空');
+      throw FormatException(T('i18n.service_name_and_model_cannot'));
     }
     final protocol = ApiProtocol.parse(decoded['protocol'] as String? ?? '');
     final baseUrl = validateBaseUrl(decoded['baseUrl'] as String? ?? '');
@@ -306,25 +306,36 @@ class ProviderConfig {
     } on FormatException catch (error) {
       throw FormatException(error.message);
     } catch (_) {
-      throw const FormatException('二维码配置字段格式不正确');
+      throw FormatException(T('i18n.invalid_configuration_fields'));
     }
     if (value.key.isEmpty) {
-      throw const FormatException('二维码缺少 API Key');
+      throw FormatException(T('i18n.the_qr_code_is_missing'));
     }
     return value;
   }
 }
 
+/// 识别服务来自哪个预设：先按 `presetId`，再回退到「地址 + 名称」。
+///
+/// 名称可能是 key 本身，也可能是历史上在某个语言下保存下来的译文——旧版
+/// 配置存的是当时的服务名（例如中文的 `GLM 智谱`），因此要把所有已载入语言
+/// 的译文都比对一遍，否则这些配置会失去预设图标与新消息的预设元数据。
 ProviderPreset? presetForProvider(ProviderConfig config) {
   for (final preset in providerPresets) {
-    if (preset.id == config.presetId ||
-        (config.presetId == null &&
-            preset.baseUrl == config.baseUrl &&
-            preset.name == config.name)) {
-      return preset;
-    }
+    if (preset.id == config.presetId) return preset;
+    if (config.presetId != null) continue;
+    if (preset.baseUrl != config.baseUrl) continue;
+    if (_matchesPresetName(preset, config.name)) return preset;
   }
   return null;
+}
+
+bool _matchesPresetName(ProviderPreset preset, String name) {
+  if (preset.name == name) return true;
+  for (final language in I18n.languages) {
+    if (I18n.lookupIn(language, preset.name) == name) return true;
+  }
+  return false;
 }
 
 String composeSystemPrompt(String globalPrompt, String modelPrompt) => [
@@ -790,7 +801,7 @@ class ChatStore {
         config.id.isEmpty ||
         config.maxResults < 1 ||
         config.maxResults > 10) {
-      throw const FormatException('请填写服务名称，搜索结果数量须为 1 至 10');
+      throw FormatException(T('i18n.search_name_and_count_required'));
     }
     validateBaseUrl(config.endpoint);
     if (key.isEmpty &&
@@ -798,10 +809,10 @@ class ChatStore {
             previous.service != config.service ||
             previous.endpoint != config.endpoint ||
             (await searchApiKey(config.id))?.isNotEmpty != true)) {
-      throw const FormatException('请填写搜索服务 API Key；更换服务类型或地址时须重新填写。');
+      throw FormatException(T('i18n.enter_the_search_api_key'));
     }
     if (key.contains(RegExp(r'[\x00-\x1F]'))) {
-      throw const FormatException('API Key 不能包含换行或控制字符');
+      throw FormatException(T('i18n.api_keys_cannot_contain_line'));
     }
     if (key.isNotEmpty) {
       await _withSecureStorage(
@@ -1076,7 +1087,7 @@ class ChatStore {
   ) async {
     final database = await db;
     final normalizedModel = model.trim();
-    if (normalizedModel.isEmpty) throw const FormatException('请输入模型 ID');
+    if (normalizedModel.isEmpty) throw FormatException(T('i18n.enter_model_id_prompt'));
     if (prompt.trim().isEmpty) {
       await deleteModelPrompt(providerId, normalizedModel);
       return;
@@ -1183,7 +1194,7 @@ class ChatStore {
         model.length > 500 ||
         providerName is! String ||
         providerName.length > 200) {
-      throw const FormatException('手表会话数据无效');
+      throw FormatException(T('i18n.invalid_watch_conversation_data'));
     }
     final providerId = turn['providerId'] is int
         ? turn['providerId'] as int
@@ -1224,7 +1235,7 @@ class ChatStore {
           existingTopicId == null &&
           sequence > 0;
       if (sequence != expected && !restoresMissingAppleConversation) {
-        throw StateError('等待前一条手表会话同步');
+        throw StateError(T('i18n.watch_sync_waiting'));
       }
       final existingTopic = existingTopicId == null
           ? <Map<String, Object?>>[]

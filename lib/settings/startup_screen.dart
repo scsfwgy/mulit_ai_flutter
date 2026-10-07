@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 
-import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 
 /// Paints immediately, then keeps the launch artwork visible until local data
@@ -146,12 +146,22 @@ class AppLaunchArtwork extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        Text(
-                          tr('连接你的 AI'),
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: IosColors.secondary,
-                            decoration: TextDecoration.none,
+                        // 文案表就绪前不显示这句：它会在 `AppPreferences.load`
+                        // 完成之前就渲染，直接显示会暴露裸 key。保留占位高度，
+                        // 避免文案出现时整列跳动。
+                        Visibility(
+                          key: const ValueKey('launchTagline'),
+                          visible: I18n.loaded,
+                          maintainSize: true,
+                          maintainAnimation: true,
+                          maintainState: true,
+                          child: Text(
+                            T('i18n.connect_with_your_ai'),
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: IosColors.secondary,
+                              decoration: TextDecoration.none,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 28),

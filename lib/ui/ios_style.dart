@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/core/app_platform.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 
 /// Phone routes keep Cupertino transitions; desktop pages change immediately.
 PageRoute<T> appPageRoute<T>({required WidgetBuilder builder}) => isDesktopApp
@@ -116,7 +117,7 @@ AppBar iosAppBar({
 }) => AppBar(
   title:
       titleWidget ??
-      Text(tr(title), maxLines: 1, overflow: TextOverflow.ellipsis),
+      Text(T(title), maxLines: 1, overflow: TextOverflow.ellipsis),
   centerTitle: !isDesktopApp,
   leading: leading,
   leadingWidth: leading == null ? null : (isDesktopApp ? 56 : 90),
@@ -223,7 +224,7 @@ class IosSection extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 0, 0, 8),
             child: Text(
-              tr(title!).toUpperCase(),
+              T(title!).toUpperCase(),
               style: TextStyle(
                 color: IosColors.secondary,
                 fontSize: 13,
@@ -257,7 +258,7 @@ class IosSection extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
             child: Text(
-              tr(footer!),
+              T(footer!),
               style: TextStyle(
                 color: IosColors.secondary,
                 fontSize: 12,
@@ -308,7 +309,7 @@ class IosRow extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    tr(title),
+                    T(title),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: IosColors.label, fontSize: 16),
@@ -316,7 +317,7 @@ class IosRow extends StatelessWidget {
                   if (subtitle != null) ...[
                     const SizedBox(height: 3),
                     Text(
-                      tr(subtitle!),
+                      T(subtitle!),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -373,7 +374,7 @@ class IosPrimaryButton extends StatelessWidget {
             const SizedBox(width: 8),
           ],
           Text(
-            tr(label),
+            T(label),
             style: TextStyle(
               color: IosColors.onAccent,
               fontSize: 16,

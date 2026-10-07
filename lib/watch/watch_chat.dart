@@ -9,8 +9,10 @@ import 'package:flutter/widgets.dart';
 
 import 'package:mulit_ai_flutter/api/api_client.dart';
 import 'package:mulit_ai_flutter/core/apple_purchases.dart';
+import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
 import 'package:mulit_ai_flutter/chat/message_copy.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
 import 'package:mulit_ai_flutter/voice/voice_client.dart';
 import 'package:mulit_ai_flutter/voice/voice_send_preference.dart';
@@ -31,6 +33,10 @@ void startWatchWorker() {
           if (kind.startsWith('remote-')) 'remote': true,
           ...update,
         });
+    // 手机可能在上次请求之后切换了语言：后台 engine 会被长期复用（iPhone 的
+    // AppleWatchBridge 尤其如此），只在启动时读一次语言会让后续回传的错误文案
+    // 停留在旧语言。放在 `try` 之前，刷新失败也不会被当成请求错误上报。
+    await _refreshLanguage();
     try {
       if ([
             'audio',
@@ -40,7 +46,7 @@ void startWatchWorker() {
             'remote-tts',
           ].contains(kind) &&
           !await ApplePurchases.instance.refresh()) {
-        throw const WatchChatException('请在 iPhone 领取试用或永久解锁，再刷新手表权益');
+        throw WatchChatException(T('i18n.start_a_trial_or_unlock'));
       }
       final processor = WatchChatProcessor();
       if (kind == 'confirm') {
@@ -102,7 +108,7 @@ void startWatchWorker() {
           'audioFormat': result.format,
         });
       } else {
-        throw const WatchChatException('手表请求无效');
+        throw WatchChatException(T('i18n.invalid_watch_request'));
       }
     } catch (error) {
       if (kind == 'config' || kind == 'turn') rethrow;
@@ -111,7 +117,7 @@ void startWatchWorker() {
         VoiceException() => error.message,
         ApiException() => error.message,
         SearchException() => error.message,
-        _ => '手机处理请求失败，请重试',
+        _ => T('i18n.watch_phone_request_failed'),
       };
       await publish({
         'stage': 'error',
@@ -121,11 +127,39 @@ void startWatchWorker() {
       });
     }
   });
-  channel.invokeMethod<void>('ready');
+  unawaited(_announceReady(channel));
+}
+
+/// 重新读取手机当前的语言偏好并切换文案表。
+///
+/// 后台 engine 会被长期复用：iPhone 的 `AppleWatchBridge` 启动一次 worker 后
+/// 一直用它处理后续请求，Android 侧也可能复用。语言只在启动时读一次是不够的
+/// ——先以英文启动、再把手机切成中文，之后的错误文案会一直停留在英文。因此
+/// 每次处理请求前刷新一次，两个平台都覆盖。
+///
+/// 载入失败不抛异常：沿用已载入的文案表，请求继续，至少不会返回裸 key。
+Future<void> _refreshLanguage() async {
+  try {
+    await AppPreferences.instance.loadLocalization();
+  } catch (_) {
+    // 忽略：保留现有文案表。
+  }
+}
+
+/// 载入文案后宣告 worker 就绪。
+///
+/// 后台是原生新建的独立 FlutterEngine，与前台的静态文案表不共享，所以必须
+/// 在这里自行读取语言偏好并载入资源，否则回传手表的错误文案会是裸 key
+/// （例如 `i18n.invalid_recording_or_recording_exceeds`）。
+///
+/// 两端原生都只在收到 `ready` 之后才下发请求，因此这里的等待不会丢请求；
+/// Android 侧 `ready` 有 20 秒超时，`loadLocalization` 不会抛异常。
+Future<void> _announceReady(MethodChannel channel) async {
+  await _refreshLanguage();
+  await channel.invokeMethod<void>('ready');
 }
 
 typedef WatchUpdate = Future<void> Function(Map<String, Object?> update);
-
 bool _isNetworkFailure(Object error) =>
     error is SocketException ||
     error is TimeoutException ||
@@ -152,14 +186,14 @@ class WatchChatProcessor {
   /// the conversation; the watch stores one result and syncs it afterward.
   Future<String> remoteTranscribe(Uint8List audio) async {
     if (audio.isEmpty || audio.length > 4 * 1024 * 1024) {
-      throw const WatchChatException('录音无效或超过大小限制');
+      throw WatchChatException(T('i18n.invalid_recording_or_recording_exceeds'));
     }
     await _requireRecordingSetup();
     final asr = await _selectedVoice('voice_asr_id');
-    if (asr == null) throw const WatchChatException('请先在手机端配置语音识别服务');
+    if (asr == null) throw WatchChatException(T('i18n.configure_transcription_on_your_phone'));
     final key = await store.voiceApiKey(asr);
     if (key == null || key.isEmpty) {
-      throw const WatchChatException('手机端语音识别密钥未配置');
+      throw WatchChatException(T('i18n.no_transcription_key_configured'));
     }
     final client = VoiceClient(asr, key);
     try {
@@ -184,7 +218,7 @@ class WatchChatProcessor {
         source.length > 25 ||
         model.isEmpty ||
         model.length > 500) {
-      throw const WatchChatException('手表会话上下文无效');
+      throw WatchChatException(T('i18n.invalid_watch_conversation_context'));
     }
     final history = <ChatMessage>[];
     for (final item in source) {
@@ -192,7 +226,7 @@ class WatchChatProcessor {
           (item['role'] != 'user' && item['role'] != 'assistant') ||
           item['content'] is! String ||
           (item['content'] as String).length > 100000) {
-        throw const WatchChatException('手表会话上下文无效');
+        throw WatchChatException(T('i18n.invalid_watch_conversation_context'));
       }
       history.add(
         ChatMessage(
@@ -205,14 +239,14 @@ class WatchChatProcessor {
       );
     }
     if (history.last.role != 'user') {
-      throw const WatchChatException('手表会话上下文无效');
+      throw WatchChatException(T('i18n.invalid_watch_conversation_context'));
     }
     final providers = await store.providers();
     final provider = providers.where((p) => p.id == providerId).firstOrNull;
-    if (provider == null) throw const WatchChatException('手机端模型服务已变更，请同步手表配置');
+    if (provider == null) throw WatchChatException(T('i18n.the_phone_model_service_changed'));
     final key = await store.apiKey(providerId);
     if (key == null || key.isEmpty) {
-      throw const WatchChatException('手机端文字模型密钥未配置');
+      throw WatchChatException(T('i18n.no_text_model_key_configured'));
     }
     final client = ModelApiClient(provider, key);
     final answer = StringBuffer();
@@ -232,13 +266,13 @@ class WatchChatProcessor {
         onSearchResults: (_) => searched = true,
       )) {
         answer.write(chunk);
-        if (answer.length > 100000) throw const WatchChatException('模型回复过长');
+        if (answer.length > 100000) throw WatchChatException(T('i18n.the_model_reply_is_too'));
         if (clock.elapsedMilliseconds - lastPublished >= 500) {
           lastPublished = clock.elapsedMilliseconds;
           await onUpdate({'stage': 'replying', 'answer': answer.toString()});
         }
       }
-      if (answer.isEmpty) throw const WatchChatException('模型没有返回文字');
+      if (answer.isEmpty) throw WatchChatException(T('i18n.the_model_did_not_return'));
       await onUpdate({'stage': 'complete', 'answer': answer.toString()});
     } catch (error) {
       await onUpdate({
@@ -247,7 +281,7 @@ class WatchChatProcessor {
           ApiException() => error.message,
           SearchException() => error.message,
           WatchChatException() => error.message,
-          _ => '手机模型请求失败',
+          _ => T('i18n.watch_phone_model_failed'),
         },
         'networkFailure':
             answer.isEmpty && !searched && _isNetworkFailure(error),
@@ -262,13 +296,13 @@ class WatchChatProcessor {
   Future<WatchAudio> remoteSpeak(String text) async {
     final clean = text.trim();
     if (clean.isEmpty || clean.runes.length > 1800) {
-      throw const WatchChatException('朗读文字无效或过长');
+      throw WatchChatException(T('i18n.speech_text_is_invalid'));
     }
     final tts = await _selectedVoice('voice_tts_id');
-    if (tts == null) throw const WatchChatException('请先在手机端配置朗读服务');
+    if (tts == null) throw WatchChatException(T('i18n.configure_speech_synthesis'));
     final key = await store.voiceApiKey(tts);
     if (key == null || key.isEmpty) {
-      throw const WatchChatException('手机端朗读服务密钥未配置');
+      throw WatchChatException(T('i18n.no_speech_synthesis_key_configured'));
     }
     final client = VoiceClient(tts, key);
     try {
@@ -377,7 +411,7 @@ class WatchChatProcessor {
               .firstOrNull;
     final key = config == null ? null : await store.searchApiKey(config.id);
     if (config == null || key == null || key.trim().isEmpty) {
-      throw const WatchChatException('请先在手机端配置联网搜索并同步手表');
+      throw WatchChatException(T('i18n.configure_web_search'));
     }
     return (config: config, apiKey: key);
   }
@@ -385,7 +419,7 @@ class WatchChatProcessor {
   Future<void> syncTurn(String raw) async {
     final value = jsonDecode(raw);
     if (value is! Map<String, dynamic>) {
-      throw const WatchChatException('手表会话格式无效');
+      throw WatchChatException(T('i18n.invalid_watch_conversation_format'));
     }
     await store.saveWatchTurn(value);
   }
@@ -406,13 +440,13 @@ class WatchChatProcessor {
   Future<void> _requireRecordingSetup() async {
     final setup = await preferences();
     if (setup['textReady'] != true && setup['asrReady'] != true) {
-      throw const WatchChatException('请先在手机端配置文字模型和语音识别服务及密钥');
+      throw WatchChatException(T('i18n.configure_text_and_transcription_services'));
     }
     if (setup['textReady'] != true) {
-      throw const WatchChatException('请先在手机端配置文字模型服务、模型和密钥');
+      throw WatchChatException(T('i18n.configure_a_text_service_model'));
     }
     if (setup['asrReady'] != true) {
-      throw const WatchChatException('请先在手机端配置语音识别服务、识别模型和密钥');
+      throw WatchChatException(T('i18n.configure_a_transcription_service_model'));
     }
   }
 
@@ -423,14 +457,14 @@ class WatchChatProcessor {
     required WatchUpdate onUpdate,
   }) async {
     if (audio.isEmpty || audio.length > 4 * 1024 * 1024) {
-      throw const WatchChatException('录音无效或超过大小限制');
+      throw WatchChatException(T('i18n.invalid_recording_or_recording_exceeds'));
     }
     await _requireRecordingSetup();
     final asr = await _selectedVoice('voice_asr_id');
-    if (asr == null) throw const WatchChatException('请先在手机端配置语音识别服务');
+    if (asr == null) throw WatchChatException(T('i18n.configure_transcription_on_your_phone'));
     final asrKey = await store.voiceApiKey(asr);
     if (asrKey == null || asrKey.isEmpty) {
-      throw const WatchChatException('手机端语音识别密钥未配置');
+      throw WatchChatException(T('i18n.no_transcription_key_configured'));
     }
 
     final asrClient = VoiceClient(asr, asrKey);
@@ -469,14 +503,14 @@ class WatchChatProcessor {
         providers.where((p) => p.id == selection?.providerId).firstOrNull ??
         providers.firstOrNull;
     if (provider == null) {
-      throw const WatchChatException('请先在手机端配置文字模型服务');
+      throw WatchChatException(T('i18n.configure_a_text_model_service'));
     }
     final model = provider.id == selection?.providerId
         ? selection!.model
         : provider.model;
     final key = await store.apiKey(provider.id);
     if (key == null || key.isEmpty) {
-      throw const WatchChatException('手机端文字模型密钥未配置');
+      throw WatchChatException(T('i18n.no_text_model_key_configured'));
     }
 
     final previousId = int.tryParse(
@@ -556,7 +590,7 @@ class WatchChatProcessor {
         );
       }
     }
-    if (answer.isEmpty) throw const WatchChatException('模型没有返回文字');
+    if (answer.isEmpty) throw WatchChatException(T('i18n.the_model_did_not_return'));
     final complete = answer.toString();
     await onUpdate({
       'stage': 'complete',

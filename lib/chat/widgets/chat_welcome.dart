@@ -1,6 +1,6 @@
 import 'package:flutter/cupertino.dart';
 
-import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 
 /// 空会话欢迎页：品牌图标、标语与主操作按钮。
@@ -36,7 +36,7 @@ class ChatWelcome extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           Text(
-            tr('AI Link'),
+            T('AI Link'),
             style: TextStyle(
               color: IosColors.label,
               fontSize: 28,
@@ -45,7 +45,7 @@ class ChatWelcome extends StatelessWidget {
           ),
           const SizedBox(height: 9),
           Text(
-            tr('一个地方，和不同模型继续对话。'),
+            T('i18n.keep_every_model_conversation'),
             textAlign: TextAlign.center,
             style: TextStyle(color: IosColors.secondary, fontSize: 15),
           ),
@@ -53,7 +53,7 @@ class ChatWelcome extends StatelessWidget {
           SizedBox(
             width: 225,
             child: IosPrimaryButton(
-              label: hasProviders ? tr('开始新对话') : tr('接入模型服务'),
+              label: hasProviders ? T('i18n.start_a_new_chat') : T('i18n.add_a_model_service'),
               onPressed: onPrimary,
             ),
           ),

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
 import 'package:mulit_ai_flutter/search/search_settings_screen.dart';
 import 'package:mulit_ai_flutter/search/search_sources.dart';
@@ -224,12 +225,12 @@ void main() {
     final before = AppPreferences.instance.language;
     AppPreferences.instance.language = AppLanguage.en;
     try {
-      expect(tr('联网搜索'), 'Web search');
-      expect(tr('消息设置'), 'Message settings');
-      expect(tr('正在搜索网页…'), 'Searching the web…');
-      expect(tr('搜索来源'), 'Search sources');
-      expect(tr('搜索请求失败（HTTP 401），请检查密钥、额度和接口地址。'), contains('HTTP 401'));
-      expect(tr('未找到可用网页资料，请修改问题或关闭联网搜索。'), startsWith('No usable'));
+      expect(T('i18n.web_search'), 'Web search');
+      expect(T('i18n.message_settings'), 'Message settings');
+      expect(T('i18n.searching_the_web'), 'Searching the web…');
+      expect(T('i18n.search_sources'), 'Search sources');
+      expect(F('i18n.search_http_failed', [401]), contains('HTTP 401'));
+      expect(T('i18n.no_usable_web_content_was'), startsWith('No usable'));
     } finally {
       AppPreferences.instance.language = before;
     }

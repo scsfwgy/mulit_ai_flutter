@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
 import 'package:mulit_ai_flutter/chat/chat_context.dart';
 
@@ -174,15 +175,15 @@ class ModelApiClient {
       SearchResult? search;
       if (webSearch != null) {
         if (history.isEmpty || history.last.role != 'user') {
-          throw const SearchException('搜索内容不能为空');
+          throw SearchException(T('i18n.the_search_query_cannot'));
         }
         _searchClient = SearchClient(webSearch.config, webSearch.apiKey);
         if (_cancelled) _searchClient!.cancel();
         search = await _searchClient!.search(history.last.content);
-        if (_cancelled) throw const SearchException('联网搜索已停止');
+        if (_cancelled) throw SearchException(T('i18n.web_search_stopped'));
         onSearchResults?.call(search.sources);
       }
-      if (_cancelled) throw const ApiException('回复已停止');
+      if (_cancelled) throw ApiException(T('i18n.reply_stopped'));
       var includeUsage =
           onUsage != null && provider.protocol == ApiProtocol.openAi;
       var response = await _sendReplyRequest(
@@ -253,34 +254,34 @@ class ModelApiClient {
         }
       }
       if (!received) {
-        throw const ApiException(
-          '服务未返回文本，请检查模型和接口协议',
+        throw ApiException(
+          T('i18n.the_service_returned_no_text'),
           kind: ApiErrorKind.model,
         );
       }
       if (requireComplete && !finished) {
-        throw const ApiException('模型回复未完整结束，请稍后检查再重试');
+        throw ApiException(T('i18n.the_model_reply_did'));
       }
     } on ChatContextException catch (error) {
-      throw ApiException(error.message, kind: ApiErrorKind.context);
+      throw ApiException(T(error.message), kind: ApiErrorKind.context);
     } on FormatException {
-      throw const ApiException('服务返回的数据格式不正确，请检查接口协议');
+      throw ApiException(T('i18n.the_service_returned_invalid_data'));
     } on SocketException catch (error) {
       throw ApiException(
-        '网络连接失败：${error.message}',
+        F('i18n.network_connection_failed', [error.message]),
         kind: ApiErrorKind.network,
         retrySafe: !_requestSent,
       );
     } on HttpException {
-      throw const ApiException(
-        '连接中断，请检查 API 地址或稍后重试',
+      throw ApiException(
+        T('i18n.connection_interrupted_check_the_api'),
         kind: ApiErrorKind.network,
       );
     } on HandshakeException {
-      throw const ApiException('HTTPS 证书验证失败');
+      throw ApiException(T('i18n.https_certificate_verification_failed'));
     } on TimeoutException {
-      throw const ApiException(
-        '请求超时，请检查网络和 API 地址',
+      throw ApiException(
+        T('i18n.request_timed_out_check'),
         kind: ApiErrorKind.network,
       );
     } finally {
@@ -299,7 +300,7 @@ class ModelApiClient {
     int contextWindowTokens,
     void Function(int omittedMessages)? onContextTrimmed,
   ) async {
-    if (_cancelled) throw const ApiException('回复已停止');
+    if (_cancelled) throw ApiException(T('i18n.reply_stopped'));
     // Validate the mandatory newest turn before opening or sending a request.
     final body = _body(
       history,
@@ -360,12 +361,12 @@ class ModelApiClient {
     if (value is! Map<String, dynamic>) return '';
     if (value['type'] == 'error') {
       if (ChatContext.isServerLimit(payload)) {
-        throw const ApiException(
-          ChatContext.serverLimitMessage,
+        throw ApiException(
+          T(ChatContext.serverLimitMessageKey),
           kind: ApiErrorKind.context,
         );
       }
-      throw ApiException('服务错误：${_errorMessage(payload)}');
+      throw ApiException(F('i18n.service_error', [_errorMessage(payload)]));
     }
     if (onUsage != null) {
       final message = value['message'];
@@ -410,12 +411,12 @@ class ModelApiClient {
     }
     if (value['error'] != null) {
       if (ChatContext.isServerLimit(payload)) {
-        throw const ApiException(
-          ChatContext.serverLimitMessage,
+        throw ApiException(
+          T(ChatContext.serverLimitMessageKey),
           kind: ApiErrorKind.context,
         );
       }
-      throw ApiException('服务错误：${_errorMessage(payload)}');
+      throw ApiException(F('i18n.service_error', [_errorMessage(payload)]));
     }
     final choices = value['choices'];
     if (choices is! List || choices.isEmpty) return '';
@@ -437,13 +438,13 @@ class ModelApiClient {
       if (response.statusCode < 200 || response.statusCode >= 300) {
         final raw = await _readErrorBody(response);
         throw ApiException(
-          '获取模型失败 (${response.statusCode})：${_errorMessage(raw)}',
+          F('i18n.model_fetch_failed', [response.statusCode, _errorMessage(raw)]),
         );
       }
       final raw = await utf8.decoder.bind(_readBody(response)).join();
       final json = jsonDecode(raw);
       final data = json is Map ? json['data'] : null;
-      if (data is! List) throw const ApiException('此服务未提供兼容的模型列表');
+      if (data is! List) throw ApiException(T('i18n.this_service_does_not_provide'));
       return data
           .whereType<Map>()
           .map((item) => item['id'])
@@ -453,9 +454,9 @@ class ModelApiClient {
           .toList()
         ..sort();
     } on FormatException {
-      throw const ApiException('模型列表格式不正确，请手动输入模型 ID');
+      throw ApiException(T('i18n.invalid_model_list_enter'));
     } on TimeoutException {
-      throw const ApiException('获取模型超时');
+      throw ApiException(T('i18n.fetching_models_timed_out'));
     } finally {
       _client.close(force: true);
     }
@@ -479,8 +480,8 @@ class ModelApiClient {
     bodyIdleTimeout,
     onTimeout: (sink) {
       sink.addError(
-        const ApiException(
-          '服务长时间未返回数据，连接已停止。已收到的回复会保留，请检查网络或稍后重试。',
+        ApiException(
+          T('i18n.the_service_stopped_sending_data'),
           kind: ApiErrorKind.network,
         ),
       );
@@ -491,13 +492,13 @@ class ModelApiClient {
   ApiException _responseError(int status, String raw) {
     if ((status == 400 || status == 413 || status == 422) &&
         ChatContext.isServerLimit(raw)) {
-      return const ApiException(
-        ChatContext.serverLimitMessage,
+      return ApiException(
+        T(ChatContext.serverLimitMessageKey),
         kind: ApiErrorKind.context,
       );
     }
     return ApiException(
-      '请求失败 ($status)：${_errorMessage(raw)}',
+      F('i18n.request_failed', [status, _errorMessage(raw)]),
       kind: status == 401 || status == 403
           ? ApiErrorKind.auth
           : ApiErrorKind.other,
@@ -520,7 +521,7 @@ class ModelApiClient {
       // Some compatible APIs return plain text errors.
     }
     for (final value in {apiKey, Uri.encodeComponent(apiKey)}) {
-      if (value.isNotEmpty) message = message.replaceAll(value, '[已隐藏]');
+      if (value.isNotEmpty) message = message.replaceAll(value, T('i18n.redacted'));
     }
     final compact = message.replaceAll(RegExp(r'\s+'), ' ').trim();
     return compact.length > 240 ? '${compact.substring(0, 240)}…' : compact;

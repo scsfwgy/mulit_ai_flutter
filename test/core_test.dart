@@ -7,6 +7,39 @@ import 'package:mulit_ai_flutter/api/api_client.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
 
 void main() {
+  test('legacy provider names still resolve to their preset', () {
+    // 旧配置没有 presetId，name 存的是当时语言下的译文（如中文的「GLM 智谱」），
+    // 只拿当前的翻译 key 去比对会让这些配置失去预设图标与预设元数据。
+    ProviderConfig config(String name, {String? baseUrl, String? presetId}) =>
+        ProviderConfig(
+          id: 1,
+          name: name,
+          baseUrl: baseUrl ?? 'https://open.bigmodel.cn/api/paas/v4',
+          model: 'glm-4.5',
+          protocol: ApiProtocol.openAi,
+          presetId: presetId,
+        );
+
+    expect(presetForProvider(config('GLM 智谱'))?.id, 'glm');
+    expect(presetForProvider(config('GLM (Zhipu)'))?.id, 'glm');
+    expect(presetForProvider(config('i18n.glm_zhipu'))?.id, 'glm');
+    expect(presetForProvider(config('我的中转服务')), isNull);
+
+    // 地址不匹配时不按名称兜底。
+    expect(
+      presetForProvider(config('GLM 智谱', baseUrl: 'https://example.com/v1')),
+      isNull,
+    );
+
+    // presetId 仍然优先，不受名称和地址影响。
+    expect(
+      presetForProvider(
+        config('自定义名称', baseUrl: 'https://example.com/v1', presetId: 'qwen'),
+      )?.id,
+      'qwen',
+    );
+  });
+
   test('generated titles keep one short plain-text line', () {
     expect(initialTopicTitle('  第一行\n第二行  '), '第一行 第二行');
     expect(normalizeGeneratedTopicTitle('标题："人工智能入门"\n解释内容'), '人工智能入门');

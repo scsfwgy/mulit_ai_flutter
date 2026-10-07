@@ -1,9 +1,9 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-import 'package:mulit_ai_flutter/core/app_preferences.dart';
 
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 
 class TopicScreen extends StatefulWidget {
@@ -64,17 +64,17 @@ class _TopicScreenState extends State<TopicScreen> {
         actions: [
           CupertinoActionSheetAction(
             onPressed: () => Navigator.pop(context, 'rename'),
-            child: Text(tr('重命名')),
+            child: Text(T('i18n.rename')),
           ),
           CupertinoActionSheetAction(
             isDestructiveAction: true,
             onPressed: () => Navigator.pop(context, 'delete'),
-            child: Text(tr('删除话题')),
+            child: Text(T('i18n.delete_chat')),
           ),
         ],
         cancelButton: CupertinoActionSheetAction(
           onPressed: () => Navigator.pop(context),
-          child: Text(tr('取消')),
+          child: Text(T('i18n.cancel')),
         ),
       ),
     );
@@ -88,24 +88,24 @@ class _TopicScreenState extends State<TopicScreen> {
     final title = await showCupertinoDialog<String>(
       context: context,
       builder: (context) => CupertinoAlertDialog(
-        title: Text(tr('重命名话题')),
+        title: Text(T('i18n.rename_chat')),
         content: Padding(
           padding: const EdgeInsets.only(top: 14),
           child: CupertinoTextField(
             controller: controller,
             autofocus: true,
             maxLength: 60,
-            placeholder: tr('话题名称'),
+            placeholder: T('i18n.chat_title'),
           ),
         ),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(context),
-            child: Text(tr('取消')),
+            child: Text(T('i18n.cancel')),
           ),
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: Text(tr('保存')),
+            child: Text(T('i18n.save')),
           ),
         ],
       ),
@@ -122,12 +122,12 @@ class _TopicScreenState extends State<TopicScreen> {
       await showCupertinoDialog<void>(
         context: context,
         builder: (context) => CupertinoAlertDialog(
-          title: Text(tr('请先停止生成')),
-          content: Text(tr('停止当前回复后即可删除这个话题。')),
+          title: Text(T('i18n.stop_the_response_first')),
+          content: Text(T('i18n.stop_before_delete_chat')),
           actions: [
             CupertinoDialogAction(
               onPressed: () => Navigator.pop(context),
-              child: Text(tr('好')),
+              child: Text(T('i18n.ok')),
             ),
           ],
         ),
@@ -137,17 +137,17 @@ class _TopicScreenState extends State<TopicScreen> {
     final confirmed = await showCupertinoDialog<bool>(
       context: context,
       builder: (context) => CupertinoAlertDialog(
-        title: Text(tr('删除这个话题？')),
-        content: Text(tr('本地聊天记录会一并删除，无法恢复。')),
+        title: Text(T('i18n.delete_this_chat')),
+        content: Text(T('i18n.its_local_messages_will')),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(context, false),
-            child: Text(tr('取消')),
+            child: Text(T('i18n.cancel')),
           ),
           CupertinoDialogAction(
             isDestructiveAction: true,
             onPressed: () => Navigator.pop(context, true),
-            child: Text(tr('删除')),
+            child: Text(T('i18n.delete')),
           ),
         ],
       ),
@@ -177,7 +177,7 @@ class _TopicScreenState extends State<TopicScreen> {
                   const SizedBox(width: 16),
                 Expanded(
                   child: Text(
-                    tr(widget.persistent ? 'AI Link' : '对话列表'),
+                    T(widget.persistent ? 'AI Link' : 'i18n.chats'),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: IosColors.label,
@@ -209,7 +209,7 @@ class _TopicScreenState extends State<TopicScreen> {
                         ),
                         const SizedBox(height: 14),
                         Text(
-                          tr('还没有对话'),
+                          T('i18n.no_chats_yet'),
                           style: TextStyle(color: IosColors.secondary),
                         ),
                       ],
@@ -217,13 +217,13 @@ class _TopicScreenState extends State<TopicScreen> {
                   )
                 else
                   IosSection(
-                    title: '最近',
+                    title: T('i18n.recent'),
                     children: [
                       for (final topic in _topics)
                         IosRow(
                           title: topic.title,
                           subtitle:
-                              '${_providers.where((p) => p.id == topic.providerId).firstOrNull?.name ?? '服务已删除'} · ${topic.model}',
+                              '${_providers.where((p) => p.id == topic.providerId).firstOrNull?.name ?? T('i18n.service_deleted')} · ${topic.model}',
                           leading: Icon(
                             _watchTopicIds.contains(topic.id)
                                 ? Icons.watch_outlined
@@ -264,7 +264,7 @@ class _TopicScreenState extends State<TopicScreen> {
                   children: [
                     Icon(CupertinoIcons.gear, color: IosColors.blue, size: 22),
                     const SizedBox(width: 6),
-                    Text(tr('设置'), style: TextStyle(color: IosColors.blue)),
+                    Text(T('i18n.settings'), style: TextStyle(color: IosColors.blue)),
                   ],
                 ),
               ),

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 
 enum VoiceCatalogKind { asr, tts, voice }
 
@@ -22,20 +23,20 @@ List<VoiceCatalogOption> voiceCatalogExamples(
     case VoiceProtocol.doubao:
       return switch (kind) {
         VoiceCatalogKind.asr => const [
-          VoiceCatalogOption('volc.bigasr.auc_turbo', '录音识别极速版'),
+          VoiceCatalogOption('volc.bigasr.auc_turbo', 'i18n.fast_transcription'),
         ],
         VoiceCatalogKind.tts => const [
-          VoiceCatalogOption('seed-tts-2.0', '语音合成 2.0'),
+          VoiceCatalogOption('seed-tts-2.0', 'i18n.speech_synthesis_v2'),
         ],
         VoiceCatalogKind.voice => const [
           VoiceCatalogOption('zh_female_vv_uranus_bigtts', 'Vivi 2.0'),
-          VoiceCatalogOption('zh_female_tianmeitaozi_mars_bigtts', '甜美桃子'),
-          VoiceCatalogOption('zh_male_dayi_saturn_bigtts', '大壹'),
-          VoiceCatalogOption('zh_female_mizai_saturn_bigtts', '黑猫侦探社咪仔'),
-          VoiceCatalogOption('zh_female_jitangnv_saturn_bigtts', '鸡汤女'),
-          VoiceCatalogOption('zh_female_meilinvyou_saturn_bigtts', '魅力女友'),
-          VoiceCatalogOption('zh_female_santongyongns_saturn_bigtts', '流畅女声'),
-          VoiceCatalogOption('zh_male_ruyayichen_saturn_bigtts', '儒雅逸辰'),
+          VoiceCatalogOption('zh_female_tianmeitaozi_mars_bigtts', 'i18n.sweet_peach'),
+          VoiceCatalogOption('zh_male_dayi_saturn_bigtts', 'i18n.da_yi'),
+          VoiceCatalogOption('zh_female_mizai_saturn_bigtts', 'i18n.mizai'),
+          VoiceCatalogOption('zh_female_jitangnv_saturn_bigtts', 'i18n.warm_narrator'),
+          VoiceCatalogOption('zh_female_meilinvyou_saturn_bigtts', 'i18n.charming_girlfriend'),
+          VoiceCatalogOption('zh_female_santongyongns_saturn_bigtts', 'i18n.fluent_female_voice'),
+          VoiceCatalogOption('zh_male_ruyayichen_saturn_bigtts', 'i18n.yichen'),
         ],
       };
     case VoiceProtocol.mimo:
@@ -43,15 +44,15 @@ List<VoiceCatalogOption> voiceCatalogExamples(
         VoiceCatalogKind.asr => const [VoiceCatalogOption('mimo-v2.5-asr')],
         VoiceCatalogKind.tts => const [VoiceCatalogOption('mimo-v2.5-tts')],
         VoiceCatalogKind.voice => const [
-          VoiceCatalogOption('mimo_default', '默认'),
-          VoiceCatalogOption('冰糖', '中文女声'),
-          VoiceCatalogOption('茉莉', '中文女声'),
-          VoiceCatalogOption('苏打', '中文男声'),
-          VoiceCatalogOption('白桦', '中文男声'),
-          VoiceCatalogOption('Mia', '英文女声'),
-          VoiceCatalogOption('Chloe', '英文女声'),
-          VoiceCatalogOption('Milo', '英文男声'),
-          VoiceCatalogOption('Dean', '英文男声'),
+          VoiceCatalogOption('mimo_default', 'i18n.default'),
+          VoiceCatalogOption('冰糖', 'i18n.chinese_female_voice'),
+          VoiceCatalogOption('茉莉', 'i18n.chinese_female_voice'),
+          VoiceCatalogOption('苏打', 'i18n.chinese_male_voice'),
+          VoiceCatalogOption('白桦', 'i18n.chinese_male_voice'),
+          VoiceCatalogOption('Mia', 'i18n.english_female_voice'),
+          VoiceCatalogOption('Chloe', 'i18n.english_female_voice'),
+          VoiceCatalogOption('Milo', 'i18n.english_male_voice'),
+          VoiceCatalogOption('Dean', 'i18n.english_male_voice'),
         ],
       };
     case VoiceProtocol.openAi:
@@ -125,7 +126,7 @@ class VoiceCatalogClient {
     if (protocol == VoiceProtocol.doubao || kind == VoiceCatalogKind.voice) {
       return const [];
     }
-    if (apiKey.trim().isEmpty) throw const FormatException('请先填写 API Key');
+    if (apiKey.trim().isEmpty) throw FormatException(T('i18n.enter_an_api_key_first'));
     final root = validateBaseUrl(baseUrl);
     final request = http.Request('GET', Uri.parse('$root/models'))
       ..followRedirects = false
@@ -136,7 +137,7 @@ class VoiceCatalogClient {
           .send(request)
           .timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) {
-        throw FormatException('获取模型列表失败（HTTP ${response.statusCode}）');
+        throw FormatException(F('i18n.voice_catalog_http_failed', [response.statusCode]));
       }
       final bytes = <int>[];
       await for (final chunk in response.stream.timeout(
@@ -144,17 +145,17 @@ class VoiceCatalogClient {
       )) {
         bytes.addAll(chunk);
         if (bytes.length > 1024 * 1024) {
-          throw const FormatException('模型列表过大');
+          throw FormatException(T('i18n.model_list_is_too_large'));
         }
       }
       Object? decoded;
       try {
         decoded = jsonDecode(utf8.decode(bytes));
       } catch (_) {
-        throw const FormatException('服务未提供模型列表');
+        throw FormatException(T('i18n.the_service_has_no_model'));
       }
       final data = decoded is Map ? decoded['data'] : null;
-      if (data is! List) throw const FormatException('服务未提供模型列表');
+      if (data is! List) throw FormatException(T('i18n.the_service_has_no_model'));
       final ids = <String>{};
       for (final item in data) {
         if (item is! Map || item['id'] is! String) continue;
@@ -176,7 +177,7 @@ class VoiceCatalogClient {
     } on FormatException {
       rethrow;
     } catch (_) {
-      throw const FormatException('无法获取模型列表，请检查网络或手动填写');
+      throw FormatException(T('i18n.model_list_unavailable_manual'));
     }
   }
 }

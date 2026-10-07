@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mulit_ai_flutter/api/api_client.dart';
 import 'package:mulit_ai_flutter/chat/chat_context.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
 
 ProviderConfig provider(
@@ -365,7 +366,7 @@ void main() {
                 .having(
                   (e) => e.message,
                   'message',
-                  ChatContext.serverLimitMessage,
+                  T(ChatContext.serverLimitMessageKey),
                 ),
           ),
         );

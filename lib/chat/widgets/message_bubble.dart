@@ -5,7 +5,7 @@ import 'package:flutter/material.dart' show SelectableText;
 import 'package:mulit_ai_flutter/chat/assistant_markdown.dart';
 import 'package:mulit_ai_flutter/chat/chat_loading_status.dart';
 import 'package:mulit_ai_flutter/chat/chat_message_meta.dart';
-import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
 import 'package:mulit_ai_flutter/search/search_sources.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
@@ -120,14 +120,14 @@ class MessageBubble extends StatelessWidget {
                             ),
                             child: ChatLoadingStatus(
                               elapsedMilliseconds: replyElapsedMs,
-                              label: searching ? '正在搜索网页…' : '加载中',
+                              label: searching ? T('i18n.searching_the_web') : T('i18n.loading'),
                             ),
                           ),
                         if (loading && contextTrimmed)
                           Padding(
                             padding: const EdgeInsets.only(top: 8),
                             child: Text(
-                              tr('已按预算省略较早消息，本机历史保留。'),
+                              T('i18n.earlier_messages_were_omitted'),
                               style: TextStyle(
                                 color: IosColors.secondary,
                                 fontSize: 12,

@@ -4,6 +4,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/provider/api_key_help.dart';
 import 'package:mulit_ai_flutter/core/apple_purchases.dart';
 import 'package:mulit_ai_flutter/settings/purchase_screen.dart';
@@ -36,7 +37,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final choice = await showAppModalPopup<AppLanguage>(
       context: context,
       builder: (sheetContext) => CupertinoActionSheet(
-        title: Text(tr('语言')),
+        title: Text(T('i18n.language')),
         actions: [
           for (final language in AppLanguage.values)
             CupertinoActionSheetAction(
@@ -46,7 +47,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
         cancelButton: CupertinoActionSheetAction(
           onPressed: () => Navigator.pop(sheetContext),
-          child: Text(tr('取消')),
+          child: Text(T('i18n.cancel')),
         ),
       ),
     );
@@ -55,11 +56,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (mounted) setState(() {});
   }
 
-  String _languageName(AppLanguage language) => switch (language) {
-    AppLanguage.system => tr('跟随系统'),
-    AppLanguage.zh => '简体中文',
-    AppLanguage.en => 'English',
-  };
+  String _languageName(AppLanguage language) =>
+      languageSelfName(language) ?? T('i18n.follow_system');
 
   Future<void> _openPrivacy() async {
     final cleared = await Navigator.push<bool>(
@@ -80,7 +78,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SizedBox(
             width: 120,
             child: Text(
-              tr(label),
+              T(label),
               style: TextStyle(fontSize: 15, color: IosColors.label),
             ),
           ),
@@ -99,7 +97,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         IosSection(
           children: [
             IosRow(
-              title: '上下文设置',
+              title: T('i18n.context_settings'),
               leading: Icon(
                 CupertinoIcons.text_alignleft,
                 color: IosColors.blue,
@@ -112,7 +110,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ],
         ),
         row(
-          '语言',
+          'i18n.language',
           CupertinoSlidingSegmentedControl<AppLanguage>(
             groupValue: _preferences.language,
             children: {
@@ -129,7 +127,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         Divider(color: IosColors.separator),
         row(
-          '模式',
+          'i18n.mode',
           CupertinoSlidingSegmentedControl<AppAppearance>(
             groupValue: _preferences.appearance,
             children: {
@@ -137,10 +135,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 mode: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Text(
-                    tr(switch (mode) {
-                      AppAppearance.system => '跟随系统',
-                      AppAppearance.light => '白天',
-                      AppAppearance.dark => '黑夜',
+                    T(switch (mode) {
+                      AppAppearance.system => 'i18n.follow_system',
+                      AppAppearance.light => 'i18n.light',
+                      AppAppearance.dark => 'i18n.dark',
                     }),
                   ),
                 ),
@@ -152,7 +150,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         Divider(color: IosColors.separator),
         row(
-          '主题色',
+          'i18n.accent_color',
           Wrap(
             spacing: 10,
             runSpacing: 10,
@@ -185,7 +183,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          tr(skin.label),
+                          T(skin.label),
                           style: TextStyle(
                             color: IosColors.label,
                             fontSize: 14,
@@ -206,7 +204,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: IosColors.background,
     appBar: iosAppBar(
-      title: tr('设置'),
+      title: T('i18n.settings'),
       leading: IosNavButton(
         icon: CupertinoIcons.back,
         onPressed: () => Navigator.pop(context),
@@ -223,15 +221,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ? IosSection(
                           children: [
                             IosRow(
-                              title: tr('试用与永久解锁'),
+                              title: T('i18n.trial_permanent_unlock'),
                               leading: Icon(
                                 CupertinoIcons.sparkles,
                                 color: IosColors.blue,
                               ),
-                              subtitle: tr(
+                              subtitle: T(
                                 ApplePurchases.instance.permanent
-                                    ? '已永久解锁'
-                                    : '7 天试用，一次买断',
+                                    ? 'i18n.permanently_unlocked'
+                                    : 'i18n.7_day_trial_one_time',
                               ),
                               onTap: () => Navigator.push<void>(
                                 context,
@@ -247,7 +245,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 IosSection(
                   children: [
                     IosRow(
-                      title: tr('模型设置'),
+                      title: T('i18n.model_settings'),
                       leading: Icon(
                         CupertinoIcons.square_stack,
                         color: IosColors.blue,
@@ -263,7 +261,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     IosRow(
-                      title: tr('语音服务'),
+                      title: T('i18n.voice_services'),
                       leading: Icon(
                         CupertinoIcons.waveform,
                         color: IosColors.blue,
@@ -276,7 +274,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     IosRow(
-                      title: tr('联网搜索'),
+                      title: T('i18n.web_search'),
                       leading: Icon(
                         CupertinoIcons.search,
                         color: IosColors.blue,
@@ -290,7 +288,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     if (supportsWatchCompanion)
                       IosRow(
-                        title: tr('手表'),
+                        title: T('i18n.watch'),
                         leading: Icon(
                           CupertinoIcons.device_phone_portrait,
                           color: IosColors.blue,
@@ -303,7 +301,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       ),
                     IosRow(
-                      title: tr('消息设置'),
+                      title: T('i18n.message_settings'),
                       leading: Icon(CupertinoIcons.info, color: IosColors.blue),
                       onTap: () => Navigator.push<void>(
                         context,
@@ -315,7 +313,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                     ),
                     IosRow(
-                      title: tr('语言'),
+                      title: T('i18n.language'),
                       subtitle: _languageName(_preferences.language),
                       leading: Icon(
                         CupertinoIcons.globe,
@@ -324,11 +322,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       onTap: _chooseLanguage,
                     ),
                     IosRow(
-                      title: tr('换肤'),
-                      subtitle: tr(switch (_preferences.appearance) {
-                        AppAppearance.system => '跟随系统',
-                        AppAppearance.light => '白天',
-                        AppAppearance.dark => '黑夜',
+                      title: T('i18n.appearance_skin'),
+                      subtitle: T(switch (_preferences.appearance) {
+                        AppAppearance.system => 'i18n.follow_system',
+                        AppAppearance.light => 'i18n.light',
+                        AppAppearance.dark => 'i18n.dark',
                       }),
                       leading: Icon(
                         CupertinoIcons.paintbrush,
@@ -345,7 +343,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           }),
                     ),
                     IosRow(
-                      title: tr('关于'),
+                      title: T('i18n.about'),
                       leading: Icon(
                         CupertinoIcons.info_circle,
                         color: IosColors.blue,
@@ -429,11 +427,11 @@ class _MessageSettingsScreenState extends State<MessageSettingsScreen> {
         await showCupertinoDialog<void>(
           context: context,
           builder: (dialogContext) => CupertinoAlertDialog(
-            content: Text(tr('无法保存搜索配置，请重试。')),
+            content: Text(T('i18n.could_not_save_search_settings')),
             actions: [
               CupertinoDialogAction(
                 onPressed: () => Navigator.pop(dialogContext),
-                child: Text(tr('好')),
+                child: Text(T('i18n.ok')),
               ),
             ],
           ),
@@ -450,7 +448,7 @@ class _MessageSettingsScreenState extends State<MessageSettingsScreen> {
     builder: (context, _) => Scaffold(
       backgroundColor: IosColors.background,
       appBar: iosAppBar(
-        title: tr('消息设置'),
+        title: T('i18n.message_settings'),
         leading: IosNavButton(
           icon: CupertinoIcons.back,
           onPressed: () => Navigator.pop(context),
@@ -460,12 +458,12 @@ class _MessageSettingsScreenState extends State<MessageSettingsScreen> {
         child: ListView(
           children: [
             IosSection(
-              footer: tr(
-                '用户消息显示模型与字数；耗时和 Token 属于整次回复请求。旧消息缺少的统计不显示；服务未提供用量时显示 Token —。',
+              footer: T(
+                'i18n.your_messages_show_the_model',
               ),
               children: [
                 IosRow(
-                  title: '简洁模式',
+                  title: T('i18n.simple_mode'),
                   chevron: false,
                   trailing: CupertinoSwitch(
                     value: AppPreferences.instance.simpleMessageInfo,
@@ -474,7 +472,7 @@ class _MessageSettingsScreenState extends State<MessageSettingsScreen> {
                   ),
                 ),
                 IosRow(
-                  title: '联网搜索',
+                  title: T('i18n.web_search'),
                   chevron: false,
                   trailing: CupertinoSwitch(
                     value: _searchEnabled,
@@ -488,7 +486,7 @@ class _MessageSettingsScreenState extends State<MessageSettingsScreen> {
                   ),
                 ),
                 IosRow(
-                  title: '回复完成后自动朗读',
+                  title: T('i18n.read_replies_aloud_automatically'),
                   chevron: false,
                   trailing: CupertinoSwitch(
                     value: AppPreferences.instance.autoReadReplies,
@@ -498,7 +496,7 @@ class _MessageSettingsScreenState extends State<MessageSettingsScreen> {
                 ),
                 for (final field in ChatInfoField.values)
                   IosRow(
-                    title: tr(field.label),
+                    title: T(field.label),
                     chevron: false,
                     trailing: CupertinoSwitch(
                       value: AppPreferences.instance.showChatInfo(field),
@@ -532,7 +530,7 @@ class ModelSettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: IosColors.background,
     appBar: iosAppBar(
-      title: '模型设置',
+      title: T('i18n.model_settings'),
       leading: IosNavButton(
         icon: CupertinoIcons.back,
         onPressed: () => Navigator.pop(context),
@@ -542,10 +540,10 @@ class ModelSettingsScreen extends StatelessWidget {
       child: ListView(
         children: [
           IosSection(
-            footer: '首轮回复后，会额外请求当前模型生成会话标题，可能产生少量用量。',
+            footer: T('i18n.after_the_first_reply'),
             children: [
               IosRow(
-                title: '模型服务',
+                title: T('i18n.model_services'),
                 leading: Icon(
                   CupertinoIcons.square_stack,
                   color: IosColors.blue,
@@ -558,8 +556,8 @@ class ModelSettingsScreen extends StatelessWidget {
                 ),
               ),
               IosRow(
-                title: '提示词',
-                subtitle: '全局和单模型提示词',
+                title: T('i18n.prompts'),
+                subtitle: T('i18n.global_and_model_prompts'),
                 leading: Icon(CupertinoIcons.text_quote, color: IosColors.blue),
                 onTap: () => Navigator.push<void>(
                   context,
@@ -567,7 +565,7 @@ class ModelSettingsScreen extends StatelessWidget {
                 ),
               ),
               IosRow(
-                title: '上下文设置',
+                title: T('i18n.context_settings'),
                 leading: Icon(
                   CupertinoIcons.text_alignleft,
                   color: IosColors.blue,
@@ -578,7 +576,7 @@ class ModelSettingsScreen extends StatelessWidget {
                 ),
               ),
               IosRow(
-                title: '数据与隐私',
+                title: T('i18n.data_privacy'),
                 leading: Icon(
                   CupertinoIcons.lock_shield,
                   color: IosColors.blue,
@@ -607,23 +605,23 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
     final choice = await showAppModalPopup<AppAppearance>(
       context: context,
       builder: (sheetContext) => CupertinoActionSheet(
-        title: Text(tr('模式')),
+        title: Text(T('i18n.mode')),
         actions: [
           for (final mode in AppAppearance.values)
             CupertinoActionSheetAction(
               onPressed: () => Navigator.pop(sheetContext, mode),
               child: Text(
-                tr(switch (mode) {
-                  AppAppearance.system => '跟随系统',
-                  AppAppearance.light => '白天',
-                  AppAppearance.dark => '黑夜',
+                T(switch (mode) {
+                  AppAppearance.system => 'i18n.follow_system',
+                  AppAppearance.light => 'i18n.light',
+                  AppAppearance.dark => 'i18n.dark',
                 }),
               ),
             ),
         ],
         cancelButton: CupertinoActionSheetAction(
           onPressed: () => Navigator.pop(sheetContext),
-          child: Text(tr('取消')),
+          child: Text(T('i18n.cancel')),
         ),
       ),
     );
@@ -636,17 +634,17 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
     final choice = await showAppModalPopup<AppSkin>(
       context: context,
       builder: (sheetContext) => CupertinoActionSheet(
-        title: Text(tr('主题色')),
+        title: Text(T('i18n.accent_color')),
         actions: [
           for (final skin in AppSkin.values)
             CupertinoActionSheetAction(
               onPressed: () => Navigator.pop(sheetContext, skin),
-              child: Text(tr(skin.label)),
+              child: Text(T(skin.label)),
             ),
         ],
         cancelButton: CupertinoActionSheetAction(
           onPressed: () => Navigator.pop(sheetContext),
-          child: Text(tr('取消')),
+          child: Text(T('i18n.cancel')),
         ),
       ),
     );
@@ -659,7 +657,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: IosColors.background,
     appBar: iosAppBar(
-      title: '换肤',
+      title: T('i18n.appearance_skin'),
       leading: IosNavButton(
         icon: CupertinoIcons.back,
         onPressed: () => Navigator.pop(context),
@@ -671,18 +669,18 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
           IosSection(
             children: [
               IosRow(
-                title: '模式',
+                title: T('i18n.mode'),
                 subtitle: switch (_preferences.appearance) {
-                  AppAppearance.system => '跟随系统',
-                  AppAppearance.light => '白天',
-                  AppAppearance.dark => '黑夜',
+                  AppAppearance.system => T('i18n.follow_system'),
+                  AppAppearance.light => T('i18n.light'),
+                  AppAppearance.dark => T('i18n.dark'),
                 },
                 leading: Icon(CupertinoIcons.moon_stars, color: IosColors.blue),
                 onTap: _chooseMode,
               ),
               IosRow(
-                title: '主题色',
-                subtitle: _preferences.skin.label,
+                title: T('i18n.accent_color'),
+                subtitle: T(_preferences.skin.label),
                 leading: Icon(CupertinoIcons.paintbrush, color: IosColors.blue),
                 onTap: _chooseSkin,
               ),
@@ -722,7 +720,7 @@ class _AboutScreenState extends State<AboutScreen> {
     await Clipboard.setData(const ClipboardData(text: address));
     if (mounted) {
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(tr('邮箱已复制'))));
+          .showSnackBar(SnackBar(content: Text(T('i18n.email_address_copied'))));
     }
   }
 
@@ -751,7 +749,7 @@ class _AboutScreenState extends State<AboutScreen> {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: IosColors.background,
     appBar: iosAppBar(
-      title: tr('关于'),
+      title: T('i18n.about'),
       leading: IosNavButton(
         icon: CupertinoIcons.back,
         onPressed: () => Navigator.pop(context),
@@ -761,31 +759,31 @@ class _AboutScreenState extends State<AboutScreen> {
       child: ListView(
         children: [
           IosSection(
-            title: tr('应用信息'),
+            title: T('i18n.app_information'),
             children: [
-              IosRow(title: tr('AI Link'), chevron: false),
+              IosRow(title: T('AI Link'), chevron: false),
               IosRow(
-                title: tr('版本'),
+                title: T('i18n.version'),
                 subtitle: _version ?? '…',
                 chevron: false,
               ),
               IosRow(
-                title: tr('版本 Code'),
+                title: T('i18n.version_code'),
                 subtitle: _versionCode ?? '…',
                 chevron: false,
               ),
             ],
           ),
           IosSection(
-            title: tr('数据与隐私'),
+            title: T('i18n.data_privacy'),
             children: [
               _AboutNote(
-                title: tr('本地保存'),
-                detail: tr('话题和消息保存在设备的 SQLite 数据库中。API Key 保存在系统安全存储中。'),
+                title: T('i18n.stored_locally'),
+                detail: T('i18n.chats_and_messages_are_stored'),
               ),
-              _AboutNote(title: tr('请求直连'), detail: tr('请求从设备直接发送到你配置的模型服务商。')),
+              _AboutNote(title: T('i18n.direct_requests'), detail: T('i18n.requests_go_directly')),
               IosRow(
-                title: tr('隐私协议'),
+                title: T('i18n.privacy_policy'),
                 subtitle: 'tools24.uk/app/ai-link/privacy',
                 leading: Icon(CupertinoIcons.doc_text, color: IosColors.blue),
                 onTap: () => launchUrl(
@@ -798,23 +796,23 @@ class _AboutScreenState extends State<AboutScreen> {
           IosSection(
             children: [
               IosRow(
-                title: tr('官方网站'),
+                title: T('i18n.official_website'),
                 subtitle: 'tools24.uk/app/ai-link',
                 leading: Icon(CupertinoIcons.globe, color: IosColors.blue),
                 onTap: _openWebsite,
               ),
               const ApiKeyHelpRow(url: apiKeyTutorialUrl),
               IosRow(
-                title: tr('联系与反馈'),
+                title: T('i18n.contact_and_feedback'),
                 subtitle: 'mateolim93@gmail.com',
                 leading: Icon(CupertinoIcons.mail, color: IosColors.blue),
                 onTap: _contact,
               ),
               IosRow(
-                title: tr('开源许可'),
+                title: T('i18n.open_source_licenses'),
                 onTap: () => showLicensePage(
                   context: context,
-                  applicationName: tr('AI Link'),
+                  applicationName: T('AI Link'),
                   applicationVersion: _version,
                 ),
               ),

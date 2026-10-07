@@ -1,9 +1,9 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-import 'package:mulit_ai_flutter/core/app_preferences.dart';
 
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 
 class PromptSettingsScreen extends StatefulWidget {
@@ -56,7 +56,7 @@ class _PromptSettingsScreenState extends State<PromptSettingsScreen> {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: IosColors.background,
     appBar: iosAppBar(
-      title: '提示词',
+      title: T('i18n.prompts'),
       leading: IosNavButton(
         icon: CupertinoIcons.back,
         onPressed: () => Navigator.pop(context),
@@ -66,20 +66,20 @@ class _PromptSettingsScreenState extends State<PromptSettingsScreen> {
       child: ListView(
         children: [
           IosSection(
-            title: '全局',
-            footer: '在所有模型的每次请求中生效。',
+            title: T('i18n.global'),
+            footer: T('i18n.applied_to_every_model_request'),
             children: [
               IosRow(
-                title: '全局提示词',
-                subtitle: _global.isEmpty ? '尚未设置' : _preview(_global),
+                title: T('i18n.global_prompt'),
+                subtitle: _global.isEmpty ? T('i18n.not_set_short') : _preview(_global),
                 leading: Icon(CupertinoIcons.text_quote, color: IosColors.blue),
                 onTap: () => _edit(global: true),
               ),
             ],
           ),
           IosSection(
-            title: '单模型',
-            footer: '按服务和模型 ID 区分；发送时接在全局提示词之后。留空的模型只使用全局提示词。',
+            title: T('i18n.per_model'),
+            footer: T('i18n.set_per_service_and_model'),
             children: [
               for (final item in _modelPrompts)
                 IosRow(
@@ -93,7 +93,7 @@ class _PromptSettingsScreenState extends State<PromptSettingsScreen> {
                   onTap: () => _edit(modelPrompt: item),
                 ),
               IosRow(
-                title: '新增模型提示词',
+                title: T('i18n.add_model_prompt'),
                 leading: Icon(
                   CupertinoIcons.add_circled,
                   color: IosColors.blue,
@@ -106,7 +106,7 @@ class _PromptSettingsScreenState extends State<PromptSettingsScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(30, 14, 30, 0),
               child: Text(
-                tr('接入模型服务后，即可为指定模型设置提示词。'),
+                T('i18n.add_a_model_service_hint'),
                 style: TextStyle(color: IosColors.secondary, fontSize: 13),
               ),
             ),
@@ -120,7 +120,7 @@ class _PromptSettingsScreenState extends State<PromptSettingsScreen> {
           .where((item) => item.id == id)
           .map((item) => item.name)
           .firstOrNull ??
-      '已删除的服务';
+      T('i18n.deleted_service');
 
   String _preview(String value) {
     final line = value.replaceAll(RegExp(r'\s+'), ' ').trim();
@@ -177,7 +177,7 @@ class _PromptEditorState extends State<PromptEditor> {
     final selected = await showAppModalPopup<int>(
       context: context,
       builder: (context) => CupertinoActionSheet(
-        title: Text(tr('选择服务')),
+        title: Text(T('i18n.choose_service')),
         actions: [
           for (final provider in widget.providers!)
             CupertinoActionSheetAction(
@@ -187,7 +187,7 @@ class _PromptEditorState extends State<PromptEditor> {
         ],
         cancelButton: CupertinoActionSheetAction(
           onPressed: () => Navigator.pop(context),
-          child: Text(tr('取消')),
+          child: Text(T('i18n.cancel')),
         ),
       ),
     );
@@ -206,7 +206,7 @@ class _PromptEditorState extends State<PromptEditor> {
     final prompt = _prompt.text.trim();
     if (!_global &&
         (_providerId == null || _model.text.trim().isEmpty || prompt.isEmpty)) {
-      _showError('请选择服务，并填写模型 ID 和提示词');
+      _showError(T('i18n.choose_a_service_then_enter'));
       return;
     }
     setState(() => _busy = true);
@@ -238,16 +238,16 @@ class _PromptEditorState extends State<PromptEditor> {
     final confirmed = await showCupertinoDialog<bool>(
       context: context,
       builder: (context) => CupertinoAlertDialog(
-        title: Text(tr('删除模型提示词？')),
+        title: Text(T('i18n.delete_model_prompt')),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(context, false),
-            child: Text(tr('取消')),
+            child: Text(T('i18n.cancel')),
           ),
           CupertinoDialogAction(
             isDestructiveAction: true,
             onPressed: () => Navigator.pop(context, true),
-            child: Text(tr('删除')),
+            child: Text(T('i18n.delete')),
           ),
         ],
       ),
@@ -264,12 +264,12 @@ class _PromptEditorState extends State<PromptEditor> {
     showCupertinoDialog<void>(
       context: context,
       builder: (context) => CupertinoAlertDialog(
-        title: Text(tr('无法保存')),
-        content: Text(tr(message)),
+        title: Text(T('i18n.unable_to_save')),
+        content: Text(T(message)),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(context),
-            child: Text(tr('好')),
+            child: Text(T('i18n.ok')),
           ),
         ],
       ),
@@ -284,7 +284,7 @@ class _PromptEditorState extends State<PromptEditor> {
     return Scaffold(
       backgroundColor: IosColors.background,
       appBar: iosAppBar(
-        title: _global ? '全局提示词' : '模型提示词',
+        title: _global ? T('i18n.global_prompt') : T('i18n.model_prompts'),
         leading: IosNavButton(
           icon: CupertinoIcons.back,
           onPressed: () => Navigator.pop(context),
@@ -302,14 +302,14 @@ class _PromptEditorState extends State<PromptEditor> {
                 children: [
                   if (!_global)
                     IosSection(
-                      title: '适用模型',
+                      title: T('i18n.applies'),
                       footer: widget.existing == null
-                          ? '模型 ID 可以手动填写，例如当前服务的默认模型。'
-                          : '已保存的服务和模型 ID 固定；需要更换时请新增一条。',
+                          ? T('i18n.model_id_manual_hint')
+                          : T('i18n.the_saved_service_and_model'),
                       children: [
                         IosRow(
-                          title: '模型服务',
-                          subtitle: selectedProvider?.name ?? '请选择',
+                          title: T('i18n.model_services'),
+                          subtitle: selectedProvider?.name ?? T('i18n.please_choose'),
                           onTap: widget.existing == null
                               ? _chooseProvider
                               : null,
@@ -320,23 +320,23 @@ class _PromptEditorState extends State<PromptEditor> {
                           child: CupertinoTextField(
                             controller: _model,
                             readOnly: widget.existing != null,
-                            placeholder: tr('模型 ID'),
+                            placeholder: T('i18n.model_id'),
                             padding: const EdgeInsets.all(12),
                           ),
                         ),
                       ],
                     ),
                   IosSection(
-                    title: '系统提示词',
+                    title: T('i18n.system_prompt'),
                     footer: _global
-                        ? '清空并保存即可关闭全局提示词。'
-                        : '仅对上方服务与模型 ID 的请求生效，不会显示在聊天记录中。',
+                        ? T('i18n.clear_and_save_to_disable')
+                        : T('i18n.applied_only_to_this_service'),
                     children: [
                       Padding(
                         padding: const EdgeInsets.all(14),
                         child: CupertinoTextField(
                           controller: _prompt,
-                          placeholder: tr('写下模型应遵循的规则、角色或输出格式'),
+                          placeholder: T('i18n.describe_the_rules_role'),
                           minLines: 11,
                           maxLines: 11,
                           textAlignVertical: TextAlignVertical.top,
@@ -355,7 +355,7 @@ class _PromptEditorState extends State<PromptEditor> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
               child: IosPrimaryButton(
-                label: _busy ? '正在保存…' : '保存提示词',
+                label: _busy ? T('i18n.saving') : T('i18n.save_prompt'),
                 onPressed: _busy ? null : _save,
               ),
             ),

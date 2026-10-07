@@ -1,7 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 
-import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 
 String formatLoadingDuration(int milliseconds) {
@@ -15,7 +15,7 @@ class ChatLoadingStatus extends StatelessWidget {
   const ChatLoadingStatus({
     super.key,
     required this.elapsedMilliseconds,
-    this.label = '加载中',
+    this.label = 'i18n.loading',
   });
 
   final ValueListenable<int> elapsedMilliseconds;
@@ -30,7 +30,7 @@ class ChatLoadingStatus extends StatelessWidget {
         const CupertinoActivityIndicator(radius: 7),
         const SizedBox(width: 8),
         Text(
-          '${tr(label)} · ${formatLoadingDuration(elapsed)}',
+          '${T(label)} · ${formatLoadingDuration(elapsed)}',
           style: TextStyle(
             color: IosColors.secondary,
             fontSize: 12,

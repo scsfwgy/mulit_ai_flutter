@@ -1,8 +1,8 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/core/apple_purchases.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 
 class PurchaseScreen extends StatefulWidget {
@@ -22,25 +22,25 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   }
 
   String get status {
-    if (store.permanent) return tr('已永久解锁');
-    if (!store.ready) return tr('正在检查购买记录');
-    if (store.canUse && store.trialEnd != null) return tr('7 天试用中');
-    if (store.error == 'clockUnavailable') return tr('等待联网验证试用');
-    if (store.hadTrial) return tr('试用已结束');
-    return tr('先试用，再决定');
+    if (store.permanent) return T('i18n.permanently_unlocked');
+    if (!store.ready) return T('i18n.checking_purchases');
+    if (store.canUse && store.trialEnd != null) return T('i18n.7_day_trial_active');
+    if (store.error == 'clockUnavailable') return T('i18n.connect_to_verify_your_trial');
+    if (store.hadTrial) return T('i18n.trial_has_ended');
+    return T('i18n.try_it_then_decide');
   }
 
-  String get feedback => tr(switch (store.error) {
-    'clockUnavailable' => '请联网校准试用时间后重试。',
-    'verificationFailed' => '购买记录验证失败，请联网重试或恢复购买。',
-    'productsUnavailable' => '商店商品暂不可用，请稍后刷新。',
-    'purchaseFailed' => '购买未完成，请重试。',
-    'restoreFailed' => '恢复购买未完成，请联网重试。',
+  String get feedback => T(switch (store.error) {
+    'clockUnavailable' => 'i18n.connect_to_the_internet',
+    'verificationFailed' => 'i18n.purchases_could_not_be_verified',
+    'productsUnavailable' => 'i18n.store_products_are_unavailable_refresh',
+    'purchaseFailed' => 'i18n.purchase_was_not_completed_try',
+    'restoreFailed' => 'i18n.restore_was_not_completed_connect',
     _ => switch (store.outcome) {
-      'pending' => '购买正在等待批准，批准后会自动解锁。',
-      'alreadyClaimed' => '此 Apple 账户已领取过试用，恢复购买不会重新开始试用。',
-      'nothingToRestore' => '没有可恢复的有效权益；已领取的试用不会重新开始。',
-      'restored' => '购买记录已恢复。',
+      'pending' => 'i18n.purchase_is_awaiting_approval_access',
+      'alreadyClaimed' => 'i18n.this_apple_account_has_already',
+      'nothingToRestore' => 'i18n.no_active_access_was_restored',
+      'restored' => 'i18n.purchases_restored',
       _ => '',
     },
   });
@@ -50,7 +50,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     animation: store,
     builder: (context, _) => Scaffold(
       appBar: iosAppBar(
-        title: tr('试用与永久解锁'),
+        title: T('i18n.trial_permanent_unlock'),
         leading: IosNavButton(
           icon: CupertinoIcons.back,
           onPressed: () => Navigator.pop(context),
@@ -73,14 +73,14 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              tr('一次买断，永久使用 iPhone、iPad 与配对 Apple Watch 功能。'),
+              T('i18n.one_purchase_permanently_unlocks_iphone'),
               textAlign: TextAlign.center,
               style: TextStyle(color: IosColors.secondary, height: 1.5),
             ),
             if (store.trialEnd case final end?) ...[
               const SizedBox(height: 10),
               Text(
-                '${tr('试用截止时间')}：${end.year}-${end.month.toString().padLeft(2, '0')}-${end.day.toString().padLeft(2, '0')} ${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}',
+                '${T('i18n.trial_ends')}：${end.year}-${end.month.toString().padLeft(2, '0')}-${end.day.toString().padLeft(2, '0')} ${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: IosColors.secondary),
               ),
@@ -89,18 +89,18 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
             IosSection(
               children: [
                 IosRow(
-                  title: tr('文字、语音与联网搜索'),
-                  subtitle: tr('自选模型、自备 API Key，保留本机聊天与配置。'),
+                  title: T('i18n.text_voice_and_web_search'),
+                  subtitle: T('i18n.choose_your_models_and_use'),
                   chevron: false,
                 ),
                 IosRow(
-                  title: tr('7 天全部功能试用'),
-                  subtitle: tr('主动领取后开始，不自动续费、不自动扣款。'),
+                  title: T('i18n.7_day_full_feature_trial'),
+                  subtitle: T('i18n.starts_when_you_claim'),
                   chevron: false,
                 ),
                 IosRow(
-                  title: tr('第三方服务费用另计'),
-                  subtitle: tr('买断价格不包含模型、语音或搜索服务的用量。'),
+                  title: T('i18n.third_party_usage_costs_extra'),
+                  subtitle: T('i18n.the_unlock_price_does'),
                   chevron: false,
                 ),
               ],
@@ -109,7 +109,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
             if (!store.permanent) ...[
               if (!store.hadTrial)
                 IosPrimaryButton(
-                  label: tr('免费领取 7 天试用'),
+                  label: T('i18n.start_free_7_day_trial'),
                   onPressed: store.busy || !store.trialAvailable
                       ? null
                       : () => store.purchase(ApplePurchases.trialId),
@@ -117,8 +117,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               const SizedBox(height: 12),
               IosPrimaryButton(
                 label: store.price == null
-                    ? tr('永久解锁（价格加载中）')
-                    : '${tr('永久解锁')} · ${store.price}',
+                    ? T('i18n.permanent_unlock_loading_price')
+                    : '${T('i18n.permanent_unlock')} · ${store.price}',
                 onPressed: store.busy || store.price == null
                     ? null
                     : () => store.purchase(ApplePurchases.permanentId),
@@ -126,13 +126,13 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
             ],
             CupertinoButton(
               onPressed: store.busy ? null : store.restore,
-              child: Text(tr('恢复购买')),
+              child: Text(T('i18n.restore_purchases')),
             ),
             CupertinoButton(
               onPressed: store.busy
                   ? null
                   : () => store.refresh(products: true),
-              child: Text(tr('刷新商店')),
+              child: Text(T('i18n.refresh_store')),
             ),
             if (store.busy) const CupertinoActivityIndicator(),
             if (feedback.isNotEmpty)
@@ -146,7 +146,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               ),
             const SizedBox(height: 16),
             Text(
-              tr('试用到期后，仍可阅读历史、管理配置及恢复购买。继续发起聊天、语音和搜索请求需要永久解锁。'),
+              T('i18n.after_the_trial_you_can'),
               style: TextStyle(
                 color: IosColors.secondary,
                 fontSize: 13,

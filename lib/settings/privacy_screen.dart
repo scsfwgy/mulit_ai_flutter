@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:mulit_ai_flutter/core/data.dart';
-import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/core/app_platform.dart';
 import 'package:mulit_ai_flutter/core/apple_purchases.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 
 class PrivacyScreen extends StatefulWidget {
@@ -25,36 +25,36 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
   Future<void> _clear() async {
     if (_clearing) return;
     if (widget.canClearData?.call() == false) {
-      setState(() => _error = tr('请先停止回复或等待标题生成完成，再清空数据。'));
+      setState(() => _error = T('i18n.stop_the_reply_or_wait'));
       return;
     }
     final confirmed = await showCupertinoDialog<bool>(
       context: context,
       builder: (context) => CupertinoAlertDialog(
-        title: Text(tr('清空本地数据？')),
+        title: Text(T('i18n.clear_local_data')),
         content: Text(
-          tr(
+          T(
             isDesktopApp
-                ? '本机的话题、聊天记录、服务配置、API Key 和提示词会被删除。其他设备的数据不会被删除。此操作无法撤销。'
-                : '手机上的话题、聊天记录、服务配置、API Key 和提示词会被删除。手表上的配置、密钥和问答不会自动清除；Wear OS 需卸载手表应用，Apple Watch 请在手表设置中清除配置和问答。此操作无法撤销。',
+                ? 'i18n.topics_messages_service_settings_api'
+                : 'i18n.chats_service_settings_api_keys',
           ),
         ),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(context, false),
-            child: Text(tr('取消')),
+            child: Text(T('i18n.cancel')),
           ),
           CupertinoDialogAction(
             isDestructiveAction: true,
             onPressed: () => Navigator.pop(context, true),
-            child: Text(tr('清空')),
+            child: Text(T('i18n.clear')),
           ),
         ],
       ),
     );
     if (confirmed != true || !mounted) return;
     if (widget.canClearData?.call() == false) {
-      setState(() => _error = tr('请先停止回复或等待标题生成完成，再清空数据。'));
+      setState(() => _error = T('i18n.stop_the_reply_or_wait'));
       return;
     }
     setState(() {
@@ -66,7 +66,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
       if (mounted) Navigator.pop(context, true);
     } catch (_) {
       if (mounted) {
-        setState(() => _error = '清理未完成，请重试。');
+        setState(() => _error = T('i18n.could_not_finish_clearing_data'));
       }
     } finally {
       if (mounted) setState(() => _clearing = false);
@@ -77,7 +77,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: IosColors.background,
     appBar: iosAppBar(
-      title: '数据与隐私',
+      title: T('i18n.data_privacy'),
       leading: IosNavButton(
         icon: CupertinoIcons.back,
         onPressed: () => Navigator.pop(context),
@@ -87,64 +87,64 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
       child: ListView(
         children: [
           IosSection(
-            title: '数据存放',
+            title: T('i18n.storage'),
             children: [
               _PrivacyRow(
                 title: 'API Key',
-                detail: tr('保存在设备的安全存储中，不写入聊天数据库。'),
+                detail: T('i18n.stored_in_the_device_secure'),
               ),
               _PrivacyRow(
-                title: '聊天与配置',
-                detail: tr('话题、消息、提示词和非密钥配置保存在本机数据库中，数据库内容未加密。'),
+                title: T('i18n.chats_settings'),
+                detail: T('i18n.chats_messages_prompts_and_settings'),
               ),
               _PrivacyRow(
-                title: '模型请求',
-                detail: tr('对话内容、提示词和 API Key 从设备直接发送到你选择的服务地址，由该服务处理。'),
+                title: T('i18n.model_requests'),
+                detail: T('i18n.chats_prompts_and_api_keys'),
               ),
               _PrivacyRow(
-                title: '联网搜索',
-                detail: tr(
+                title: T('i18n.web_search'),
+                detail: T(
                   isDesktopApp
-                      ? '开启联网搜索后，当前问题与搜索密钥直接发送到所选搜索服务，网页资料随后发送给文本模型。回复的来源资料保存在本机明文数据库中。'
-                      : '开启联网搜索后，当前问题与搜索密钥直接发送到所选搜索服务，网页资料随后发送给文本模型。手机回复的来源资料保存在本机明文数据库中。联网开关、所选搜索服务及密钥经配对通道同步到手表；Wear OS 加密保存，Apple Watch 使用钥匙串。手表问答重连后同步到手机。',
+                      ? 'i18n.when_web_search_is_enabled'
+                      : 'i18n.web_search_privacy_watch',
                 ),
               ),
               if (supportsWatchCompanion)
                 _PrivacyRow(
-                  title: '手表数据',
-                  detail: tr(
-                    '手表安全保存所选服务密钥和问答。Apple Watch 优先在手表请求，手表网络不可用时再尝试手机；Wear OS 优先通过手机请求，不可达时使用手表网络。Wear OS 使用加密存储，Apple Watch 使用钥匙串；问答重连后同步到手机。清空手机数据不会自动清除手表数据。',
+                  title: T('i18n.watch_data'),
+                  detail: T(
+                    'i18n.watches_securely_store_selected_service',
                   ),
                 ),
               if (ApplePurchases.instance.enabled)
                 _PrivacyRow(
-                  title: tr('购买与试用'),
-                  detail: tr(
-                    'Apple 购买由 App Store 处理，应用仅使用经 Apple 验证的商品和交易记录判断试用及永久权益，不接触付款卡资料。手机与手表分别验证同一 Apple 账户的权益。试用冷启动时向 www.apple.com 发起 HTTPS 校时请求，不携带聊天、API Key 或录音；联网失败时保留历史读取及恢复入口，验证后可继续试用。',
+                  title: T('i18n.purchases_and_trial'),
+                  detail: T(
+                    'i18n.app_store_handles_apple_purchases',
                   ),
                 ),
               _PrivacyRow(
-                title: tr('使用统计'),
-                detail: tr(
-                  isDesktopApp ? 'macOS 版未接入 Firebase Analytics 使用统计。' : 'Android 和 iOS 正式版使用 Firebase Analytics 记录应用使用事件、应用实例标识与设备信息，不收集广告标识符。不会主动上传聊天内容、API Key、录音或服务地址。调试和测试版停用统计；手表暂未接入。',
+                title: T('i18n.usage_analytics'),
+                detail: T(
+                  isDesktopApp ? 'i18n.the_macos_app_does' : 'i18n.android_and_ios_production_builds',
                 ),
               ),
             ],
           ),
           IosSection(
-            title: '本地数据管理',
-            footer: '清空后无法在应用内恢复聊天记录。已经发送给第三方模型服务的内容不受此操作影响。',
+            title: T('i18n.local_data'),
+            footer: T('i18n.cleared_chats_cannot_be_recovered'),
             children: [
               _PrivacyRow(
-                title: '单独删除',
-                detail: tr('可在话题列表删除某个话题，在模型服务页删除某项服务及其密钥。'),
+                title: T('i18n.delete_individually'),
+                detail: T('i18n.delete_individual_chats_in_chats'),
               ),
             ],
           ),
           IosSection(
             children: [
               IosRow(
-                title: tr('完整隐私政策'),
+                title: T('i18n.full_privacy_policy'),
                 subtitle: 'tools24.uk/app/ai-link/privacy',
                 leading: Icon(
                   CupertinoIcons.doc_text,
@@ -161,7 +161,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
           IosSection(
             children: [
               IosRow(
-                title: _clearing ? '正在清空…' : '清空所有本地数据',
+                title: _clearing ? T('i18n.clearing') : T('i18n.clear_all_local_data'),
                 leading: Icon(
                   CupertinoIcons.delete,
                   color: IosColors.destructive,
@@ -176,7 +176,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(30, 12, 30, 0),
               child: Text(
-                tr(_error!),
+                T(_error!),
                 style: TextStyle(color: IosColors.destructive),
               ),
             ),
@@ -202,7 +202,7 @@ class _PrivacyRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            tr(title),
+            T(title),
             style: TextStyle(color: IosColors.label, fontSize: 16),
           ),
           const SizedBox(height: 5),

@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 import 'package:mulit_ai_flutter/chat/message_copy.dart';
 import 'package:mulit_ai_flutter/provider/provider_badge.dart';
@@ -52,20 +53,20 @@ class ChatMessageMeta extends StatelessWidget {
       if (assistant &&
           firstTokenMs != null &&
           preferences.showChatInfo(ChatInfoField.firstFrame))
-        '${tr('首帧')} ${_time(firstTokenMs)}',
+        '${T('i18n.first_text')} ${_time(firstTokenMs)}',
       if (assistant &&
           totalMs != null &&
           preferences.showChatInfo(ChatInfoField.totalTime))
-        '${tr('耗时')} ${_time(totalMs)}',
+        '${T('i18n.time')} ${_time(totalMs)}',
       if (assistant && preferences.showChatInfo(ChatInfoField.tokens)) ...[
         if (inputTokens != null || outputTokens != null) ...[
-          '${tr('输入')} ${inputTokens ?? '—'}',
-          '${tr('输出')} ${outputTokens ?? '—'}',
+          '${T('i18n.input')} ${inputTokens ?? '—'}',
+          '${T('i18n.output')} ${outputTokens ?? '—'}',
         ] else if (modelId != null)
           'Token —',
       ],
       if (preferences.showChatInfo(ChatInfoField.characters))
-        '${visibleCharacterCount(assistant ? readableMarkdown(content) : content)} ${tr('字')}',
+        '${visibleCharacterCount(assistant ? readableMarkdown(content) : content)} ${T('i18n.chars')}',
     ];
     final showIdentity = preferences.showChatInfo(ChatInfoField.modelId);
     final showModel = modelId != null && showIdentity;
@@ -159,7 +160,7 @@ class ChatMessageMeta extends StatelessWidget {
                       CupertinoIcons.doc_on_doc,
                       size: 14,
                       color: IosColors.secondary,
-                      semanticLabel: tr('复制消息'),
+                      semanticLabel: T('i18n.copy_message'),
                     ),
                   ),
                 ),
@@ -233,10 +234,10 @@ class _SpeechPlaybackIndicatorState extends State<SpeechPlaybackIndicator>
 
   @override
   Widget build(BuildContext context) => Semantics(
-    label: tr(switch (widget.state) {
-      SpeechPlaybackState.idle => '朗读回复',
-      SpeechPlaybackState.loading => '正在生成语音',
-      SpeechPlaybackState.playing => '停止朗读',
+    label: T(switch (widget.state) {
+      SpeechPlaybackState.idle => 'i18n.read_reply_aloud',
+      SpeechPlaybackState.loading => 'i18n.generating_speech',
+      SpeechPlaybackState.playing => 'i18n.stop_reading_aloud',
     }),
     child: SizedBox(
       width: 20,
