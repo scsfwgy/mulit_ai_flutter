@@ -117,7 +117,8 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
        let state = WatchComplicationState(rawValue: args[index + 1]) {
       complicationReady = false
       let sample = WatchComplicationSnapshot(state: state,
-        preview: "今天可以先完成最重要的一件事，再安排休息。保持专注，也给自己留一点余地。", language: "zh", updatedAt: .now)
+        preview: state == .thinking ? "请帮我安排今天的工作，先处理最重要的任务，再留出休息时间。"
+          : "今天可以先完成最重要的一件事，再安排休息。保持专注，也给自己留一点余地。", language: "zh", updatedAt: .now)
       if WatchComplicationStore().save(sample) { WidgetCenter.shared.reloadTimelines(ofKind: WatchChatShortcut.kind) }
     }
     #endif
@@ -134,7 +135,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     let secrets = [config?.apiKey, config?.asr?.apiKey, config?.tts?.apiKey, config?.search?.apiKey].compactMap { $0 }
     let snapshot = WatchComplicationSnapshot.make(phase: phase, recording: recording,
       loadingAudio: loadingAudio, playing: playing, confirming: awaitingConfirmation,
-      answer: answer, lastAnswer: turns.last?.answer ?? "", language: language, secrets: secrets)
+      question: transcript, answer: answer, lastAnswer: turns.last?.answer ?? "", language: language, secrets: secrets)
     let changedState = lastComplication?.state != snapshot.state || lastComplication?.language != snapshot.language
     if !force && !changedState && lastComplication?.preview == snapshot.preview { return }
     // Intermediate text coalesces to at most one request per five seconds.

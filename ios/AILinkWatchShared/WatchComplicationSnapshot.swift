@@ -67,7 +67,7 @@ struct WatchComplicationSnapshot: Codable, Equatable {
   }
 
   static func make(phase: String, recording: Bool, loadingAudio: Bool, playing: Bool,
-                   confirming: Bool, answer: String, lastAnswer: String, language: String,
+                   confirming: Bool, question: String, answer: String, lastAnswer: String, language: String,
                    secrets: [String] = [], date: Date = .now) -> Self {
     let state: WatchComplicationState
     if recording { state = .recording }
@@ -84,7 +84,9 @@ struct WatchComplicationSnapshot: Codable, Equatable {
       default: state = lastAnswer.isEmpty ? .idle : .complete
       }
     }
-    let text = answer.isEmpty && state == .complete ? lastAnswer : answer
+    let text: String
+    if state == .thinking && answer.isEmpty { text = question }
+    else { text = answer.isEmpty && state == .complete ? lastAnswer : answer }
     return Self(state: state, preview: excerpt(text, tail: state == .replying, secrets: secrets),
                 language: language, updatedAt: date)
   }

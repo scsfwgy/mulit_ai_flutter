@@ -7,16 +7,17 @@ import WidgetKit
 @main
 struct RenderWatchComplications {
   @MainActor static func main() throws {
-    let states: [WatchComplicationState] = [.replying, .complete, .loadingAudio, .playing]
+    let states: [WatchComplicationState] = [.thinking, .replying, .complete, .loadingAudio, .playing]
     let content = VStack(alignment: .leading, spacing: 20) {
       Text("AI Link · 复杂功能").font(.system(size: 24, weight: .bold))
-      Text("SwiftUI 布局预览 · 示例回复").font(.system(size: 13)).foregroundStyle(.secondary)
+      Text("SwiftUI 布局预览 · 示例内容").font(.system(size: 13)).foregroundStyle(.secondary)
       ForEach(states, id: \.rawValue) { state in
         VStack(alignment: .leading, spacing: 8) {
           Text(state.label(chinese: true)).font(.system(size: 13)).foregroundStyle(.secondary)
           HStack(spacing: 24) {
             ChatComplicationContentView(snapshot: WatchComplicationSnapshot(state: state,
-              preview: state == .replying ? "…保持专注，也给自己留一点休息的时间。" : "今天可以先完成最重要的一件事，再安排休息。",
+              preview: state == .thinking ? "请帮我安排今天的工作，先处理最重要的任务，再留出休息时间。"
+                : state == .replying ? "…保持专注，也给自己留一点休息的时间。" : "今天可以先完成最重要的一件事，再安排休息。",
               language: "zh", updatedAt: .now), layout: .rectangular)
               .frame(width: 184, height: 58)
               .padding(10).background(.black, in: RoundedRectangle(cornerRadius: 14))

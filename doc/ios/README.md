@@ -55,8 +55,8 @@
 - Apple Watch 按住录制 16 kHz、16 位、单声道 WAV，原位松手转写并发送，左上滑取消，右上滑转文字并等待确认。识别/聊天/合成分别优先由 `WatchNetworkClient` 使用 URLSession 请求，手表网络明确不可用且手机可达时再通过 iPhone 无落库接口处理。文字支持 OpenAI 兼容 Chat Completions 与 Claude Messages；语音支持 OpenAI、MiMo 和豆包。
 - 选定服务的完整配置经 WatchConnectivity applicationContext 同步，API Key 仅保存在手表 Keychain（AfterFirstUnlockThisDeviceOnly、不同步 iCloud）；手机 UserDefaults 只缓存不含密钥的显示摘要。手表保留最近 50 条问答及最多 100 条未确认同步记录，后者不随显示历史裁剪。每条问答具有会话 UUID、turn UUID 和序号，手机 SQLite 事务保存并确认后，手表才删除待同步记录。录音/合成音频使用临时文件。界面语言跟随手机 App，外观跟随手表系统。
 - `AILinkWatchWidgets` 的 WidgetKit 复杂功能已恢复默认构建与嵌入（2026-10-07）。`Runner` → `AILinkWatch` → `AILinkWatchWidgets` 在同一次构建中生成，手机、手表、扩展须使用同一签名团队。
-- 扩展最低 watchOS 10，支持圆形、矩形与行内复杂功能；矩形样式也支持智能叠放。矩形显示最近手表回复的两行摘要，生成中截取尾部并优先保留最新文字；圆形显示状态图标，行内显示简短状态。覆盖就绪、录音、识别、待确认、思考、回答、完成、语音加载、播放和失败。点击通过本地 URL 打开聊天页，即使 App 停在设置页也会返回聊天；首次使用保留操作引导。不请求网络、不自动录音，无需 App Groups。Debug/Profile 使用 `com.maxhall.ailink.debug.watchkitapp.widgets` 与 `ailink-watch-debug://chat`；Release 使用 `com.maxhall.ailink.watchkitapp.widgets` 与 `ailink-watch://chat`，开发版和正式版入口分开。
-- `WatchComplicationSnapshot.swift` 仅保存状态、有限回复摘要、语言和更新时间。通过专用 Keychain Sharing 组共享：Debug/Profile 为 `$(AppIdentifierPrefix)com.maxhall.ailink.debug.watchkitapp.preview`，Release 为 `$(AppIdentifierPrefix)com.maxhall.ailink.watchkitapp.preview`；不向扩展分享 API Key、服务配置、完整聊天库或音频。共享项使用 AfterFirstUnlockThisDeviceOnly，不同步 iCloud；摘要写入前移除已知密钥和 Markdown 标记，正文标记 `privacySensitive()`。原有手表凭据组保留为 entitlements 第一项，扩展使用自己的默认组，不能读取手表私有凭据组。清除手表数据或开启新话题会更新为空摘要。
+- 扩展最低 watchOS 10，支持圆形、矩形与行内复杂功能；矩形样式也支持智能叠放。矩形在思考时显示本次问题（两行，超长省略），开始回答后显示回复摘要，生成中截取尾部并优先保留最新文字；圆形显示状态图标，行内显示简短状态。覆盖就绪、录音、识别、待确认、思考、回答、完成、语音加载、播放和失败。点击通过本地 URL 打开聊天页，即使 App 停在设置页也会返回聊天；首次使用保留操作引导。不请求网络、不自动录音，无需 App Groups。Debug/Profile 使用 `com.maxhall.ailink.debug.watchkitapp.widgets` 与 `ailink-watch-debug://chat`；Release 使用 `com.maxhall.ailink.watchkitapp.widgets` 与 `ailink-watch://chat`，开发版和正式版入口分开。
+- `WatchComplicationSnapshot.swift` 仅保存状态、有限问题或回复摘要、语言和更新时间。通过专用 Keychain Sharing 组共享：Debug/Profile 为 `$(AppIdentifierPrefix)com.maxhall.ailink.debug.watchkitapp.preview`，Release 为 `$(AppIdentifierPrefix)com.maxhall.ailink.watchkitapp.preview`；不向扩展分享 API Key、服务配置、完整聊天库或音频。共享项使用 AfterFirstUnlockThisDeviceOnly，不同步 iCloud；摘要写入前移除已知密钥和 Markdown 标记，正文标记 `privacySensitive()`。原有手表凭据组保留为 entitlements 第一项，扩展使用自己的默认组，不能读取手表私有凭据组。清除手表数据或开启新话题会更新为空摘要。
 
 - 界面沿用两页聊天与设置：长按屏幕录音、双击进入设置、滑动阅读；右上滑转写后等待确认。自动播报可在手表单独设置。离开录音页或前台取消录音，实际录音不足 0.6 秒静默忽略。设置提供需明确确认的「清除手表配置和问答」，同时删除 Keychain、最近问答及待同步记录；清除后屏蔽缓存配置，直到用户手动同步。
 
@@ -93,7 +93,7 @@ xcrun swiftc -swift-version 5 -parse-as-library \
 /tmp/ailink-watch-complication-tests
 ```
 
-仅 Debug 模拟器支持启动参数 `--complication-preview replying|complete|loadingAudio|playing` 来写入示例状态；不改聊天历史或服务配置。恢复普通启动会重新发布实际状态。真机验收需分别检查正常完成、流式中途回表盘、语音加载/播放/结束、失败、手机语言切换和清除手表数据后的显示。
+仅 Debug 模拟器支持启动参数 `--complication-preview thinking|replying|complete|loadingAudio|playing` 来写入示例状态；不改聊天历史或服务配置。恢复普通启动会重新发布实际状态。真机验收需分别检查思考阶段问题及长问题省略、正常完成、流式中途回表盘、语音加载/播放/结束、失败、手机语言切换和清除手表数据后的显示。
 
 ## 添加表盘快捷入口
 
