@@ -38,9 +38,14 @@ def check_ios_app(app, version, number):
     info = check_app(watch, "com.maxhall.ailink.watchkitapp", version, number)
     if info.get("WKCompanionAppBundleIdentifier") != "com.maxhall.ailink":
         raise ValueError("Apple Watch 配套手机标识不匹配。")
+    check_app(watch / "PlugIns/AILinkWatchWidgets.appex",
+              "com.maxhall.ailink.watchkitapp.widgets", version, number)
 
 
 def build_ios(output, version, number, export_options=None):
+    local_options = ROOT / "localConfig/ios-export-options.plist"
+    if export_options is None and local_options.is_file():
+        export_options = local_options
     # Flutter can report success after an IPA export failure. Remove old exports
     # so only the current successful export can satisfy the artifact checks.
     ipa_directory = ROOT / "build/ios/ipa"
@@ -68,8 +73,7 @@ def build_ios(output, version, number, export_options=None):
             if any(char in inherited for char in ('"', '\n', '\r')):
                 raise ValueError("XCODE_XCCONFIG_FILE 路径包含不支持的字符。")
             contents = f'#include "{inherited}"\n'
-        # Apply the same version to Runner and the embedded watch target without
-        # changing the project or re-enabling the disabled Widgets extension.
+        # Keep Runner, the watch app, and its complication extension at one version.
         config.write_text(contents + f"MARKETING_VERSION = {version}\nCURRENT_PROJECT_VERSION = {number}\n")
         run(command, env={**os.environ, "XCODE_XCCONFIG_FILE": str(config)})
     ipas = list(ipa_directory.glob("*.ipa"))

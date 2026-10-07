@@ -8,7 +8,8 @@
 - [ ] **配对设备端到端验证**：配对模拟器已验证两页界面和配置摘要同步；在 iPhone 与 Apple Watch 配对真机验证录音权限、WAV 传输、转写确认、流式回答、音频播放、手机后台唤醒、断连重试和历史入库。手机和手表的请求均需核验后台时限；新增独立请求还需验证 Wi-Fi/蜂窝、Keychain 配置、重连确认同步。
 - [x] **Apple Watch 独立网络代码**：已接入手表优先、手机网络兜底和 Keychain 配置、OpenAI/Claude 及三类 ASR/TTS 的 URLSession 直连、安全失败换路、手表问答与确认同步。构建/本地测试不代表真机独立联网验证；真实服务、Wi-Fi/蜂窝与后台行为见上一项和 [Apple 平台说明](doc/ios/README.md)。
 - [ ] **Apple 发布准备**：核对 Apple Developer 签名、App Store Connect、手表截图及线上隐私政策对 Apple Watch 数据流的描述。细节见 [Apple 平台说明](doc/ios/README.md)。
-- [ ] **重新启用 Apple Watch 复杂功能**：2026-10-03 已实现 WidgetKit 圆形、矩形、行内入口和智能叠放矩形小组件，因本机开发者账号及扩展描述文件未就绪，按用户要求暂时关闭默认构建和嵌入。源码与 target 保留，无 App Groups 要求；账号准备好后恢复 `AILinkWatch` 的扩展构建依赖和嵌入阶段，为新扩展配置签名，再验证表盘添加和点击跳转。具体恢复位置见 [Apple 平台说明](doc/ios/README.md#后续重新启用复杂功能)。
+- [x] **重新启用 Apple Watch 复杂功能**：2026-10-07 已恢复 WidgetKit 扩展构建依赖与嵌入，补齐扩展 Release 团队；支持圆形、矩形、行内入口和智能叠放。签名构建与设备验证范围见 [Apple 平台说明](doc/ios/README.md#复杂功能恢复记录)。
+- [ ] **复杂功能配对真机验收**：在支持的表盘中添加圆形、矩形、行内入口，检查智能叠放及点击回到聊天页；签名构建不代替实际操作验证。
 
 ## macOS 客户端
 

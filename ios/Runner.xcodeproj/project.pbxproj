@@ -300,12 +300,12 @@
 				AA1100000000000000000021 /* Sources */,
 				AA1100000000000000000023 /* Frameworks */,
 				AA1100000000000000000022 /* Resources */,
-				/* 复杂功能暂关：开发者账号及扩展签名准备好后恢复 AA2200000000000000000025。详见 doc/ios/README.md。 */
+				AA2200000000000000000025 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				/* 复杂功能暂关：启用时恢复 AA2200000000000000000027，连同上面的 Embed App Extensions。 */
+				AA2200000000000000000027 /* PBXTargetDependency */,
 			);
 			name = AILinkWatch;
 			productName = AILinkWatch;
@@ -575,6 +575,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 7AFA3C8E1D35360C0083082E /* Release.xcconfig */;
 			buildSettings = {
+				DEVELOPMENT_TEAM = T94W2V3B6M;
 				APP_DISPLAY_NAME = "AI Link Debug";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
@@ -862,6 +863,7 @@
 		AA110000000000000000002B /* Profile */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				DEVELOPMENT_TEAM = T94W2V3B6M;
 				AILINK_WATCH_URL_SCHEME = ailink-watch-debug;
 				INFOPLIST_FILE = AILinkWatch/Info.plist;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -916,6 +918,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = T94W2V3B6M;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = AILinkWatchWidgets/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "AI Link";

@@ -172,7 +172,9 @@ class InstallDevTest(unittest.TestCase):
     def make_apple_artifacts(self, root, companion=installer.PHONE_ID):
         phone = root / "build/ios/iphoneos/Runner.app"
         watch = phone / "Watch/AILinkWatch.app"
-        for path, identifier in ((phone, installer.PHONE_ID), (watch, installer.WATCH_ID)):
+        widget = watch / "PlugIns/AILinkWatchWidgets.appex"
+        for path, identifier in ((phone, installer.PHONE_ID), (watch, installer.WATCH_ID),
+                                 (widget, installer.WATCH_ID + ".widgets")):
             path.mkdir(parents=True, exist_ok=True)
             info = {"CFBundleIdentifier": identifier}
             if path == watch:
@@ -201,6 +203,15 @@ class InstallDevTest(unittest.TestCase):
             root = Path(temp)
             self.make_apple_artifacts(root, companion="wrong.phone")
             with patch.object(installer, "ROOT", root), patch.object(installer, "run"), self.assertRaisesRegex(ValueError, "配套手机标识"):
+                installer.build(self.devices[2:], "profile", "ABCDE12345")
+
+    def test_release_widget_in_debug_bundle_stops_before_install(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.make_apple_artifacts(root)
+            plist = root / "build/ios/iphoneos/Runner.app/Watch/AILinkWatch.app/PlugIns/AILinkWatchWidgets.appex/Info.plist"
+            plist.write_bytes(plistlib.dumps({"CFBundleIdentifier": "com.maxhall.ailink.watchkitapp.widgets"}))
+            with patch.object(installer, "ROOT", root), patch.object(installer, "run"), self.assertRaisesRegex(ValueError, "开发版"):
                 installer.build(self.devices[2:], "profile", "ABCDE12345")
 
     def test_cli_installs_only_selected_devices_after_build(self):

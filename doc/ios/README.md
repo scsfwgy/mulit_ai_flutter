@@ -1,6 +1,6 @@
 # AI Link iPhone 与 Apple Watch
 
-2026-10-06：已创建本机 Apple Distribution 证书，补齐手机与手表 Release 团队，并成功导出 `1.0.3 (48)` 的 App Store IPA。该旧包尚未接入用户选定的「7 天试用 + 永久买断」，未上传或提审；当前源码已接入 StoreKit 2，并完成本地测试，见 [购买实现](purchases.md)；商品草稿、签名验证及待办见 [当前发布进度](app-store-progress-2026-10-06.md)。Widgets 扩展仍保持暂关。 中文手机、iPad 与手表截图及图标已在本地准备，见 [商店素材](../app_store/README.md)。
+2026-10-06：已创建本机 Apple Distribution 证书，补齐手机与手表 Release 团队，并成功导出 `1.0.3 (48)` 的 App Store IPA。该旧包尚未接入用户选定的「7 天试用 + 永久买断」，未上传或提审；当前源码已接入 StoreKit 2，并完成本地测试，见 [购买实现](purchases.md)；商品草稿、签名验证及待办见 [当前发布进度](app-store-progress-2026-10-06.md)。该旧包未包含 Widgets 扩展；当前恢复情况见下文「复杂功能恢复记录」。 中文手机、iPad 与手表截图及图标已在本地准备，见 [商店素材](../app_store/README.md)。
 
 2026-10-07：`./release.sh` 增加 `--push-ios`，可构建正式签名 IPA 并自动上传 App Store Connect，见下文「正式发布与上传 App Store Connect」。上传只把构建送达 TestFlight，提交审核仍需人工完成。
 
@@ -13,6 +13,8 @@
 1. App Store Connect → 用户和访问 → 集成 → App Store Connect API → 团队密钥 → 生成密钥，角色至少需要 App Manager；记下密钥 ID，以及同一页面顶部显示的 Issuer ID。
 2. 私钥 `AuthKey_<密钥 ID>.p8` 只能在生成时下载一次，请放到 `localConfig/` 并离线备份。
 3. 复制 `scripts/appstore_connect.env.example` 为 `localConfig/appstore-connect.env`，填写 `ASC_KEY_ID` 与 `ASC_ISSUER_ID`；`ASC_KEY_PATH` 可省略，省略时按 `localConfig/AuthKey_<ASC_KEY_ID>.p8` 查找。同名环境变量优先于文件。`localConfig/` 已被 `.gitignore` 忽略，私钥不入库。
+
+本机可将本地证书与手机、手表、复杂功能的分发描述文件映射保存在 `localConfig/ios-export-options.plist`。未显式传导出选项时，`scripts/apple_release.py` 默认读取此文件；目录已忽略，不入库。此配置支持 Xcode 未登录账号时使用已有本地证书导出；换机器、团队或证书后需重新准备配置，也可通过 `--ios-export-options` / `IOS_EXPORT_OPTIONS_PLIST` 覆盖。
 
 ### 常用命令
 
@@ -49,11 +51,11 @@
 ## 已接入的代码
 
 - iPhone 沿用 Flutter 的同一套聊天、服务配置、语音和本地 SQLite；`ios/Runner/AppleWatchBridge.swift` 在后台 Flutter engine 中复用 `WatchChatProcessor`。
-- Xcode 工程增加 `AILinkWatch` SwiftUI watchOS target，并嵌入 iPhone Runner；bundle ID 为 `com.maxhall.ailink.watchkitapp`，配套 iPhone ID 为 `com.maxhall.ailink`，最低 watchOS 10。Debug 的 iPhone ID 为 `com.maxhall.ailink.debug`，watchOS ID 为 `com.maxhall.ailink.debug.watchkitapp`，名称均为「AI Link Debug」，与 Release 使用独立标识；Debug 已通过完整 Xcode 构建与配对模拟器启动；Release 签名与真机验证仍待完成。
+- Xcode 工程增加 `AILinkWatch` SwiftUI watchOS target，并嵌入 iPhone Runner；bundle ID 为 `com.maxhall.ailink.watchkitapp`，配套 iPhone ID 为 `com.maxhall.ailink`，最低 watchOS 10。Debug 的 iPhone ID 为 `com.maxhall.ailink.debug`，watchOS ID 为 `com.maxhall.ailink.debug.watchkitapp`，名称均为「AI Link Debug」，与 Release 使用独立标识；Debug 已通过完整 Xcode 构建与配对模拟器启动；Release 签名归档已有本地验证，配对真机验证仍待完成。
 - Apple Watch 按住录制 16 kHz、16 位、单声道 WAV，原位松手转写并发送，左上滑取消，右上滑转文字并等待确认。识别/聊天/合成分别优先由 `WatchNetworkClient` 使用 URLSession 请求，手表网络明确不可用且手机可达时再通过 iPhone 无落库接口处理。文字支持 OpenAI 兼容 Chat Completions 与 Claude Messages；语音支持 OpenAI、MiMo 和豆包。
 - 选定服务的完整配置经 WatchConnectivity applicationContext 同步，API Key 仅保存在手表 Keychain（AfterFirstUnlockThisDeviceOnly、不同步 iCloud）；手机 UserDefaults 只缓存不含密钥的显示摘要。手表保留最近 50 条问答及最多 100 条未确认同步记录，后者不随显示历史裁剪。每条问答具有会话 UUID、turn UUID 和序号，手机 SQLite 事务保存并确认后，手表才删除待同步记录。录音/合成音频使用临时文件。界面语言跟随手机 App，外观跟随手表系统。
-- `AILinkWatchWidgets` 的 WidgetKit 复杂功能源码已实现，**2026-10-03 按用户要求暂时关闭默认构建和嵌入**，等待 Apple Developer 账号与扩展签名准备完成。`Runner` → `AILinkWatch` 的默认构建链不再包含此扩展，普通手机/手表调试无需为新扩展生成描述文件；暂勿单独运行 `AILinkWatchWidgets` Scheme。
-- 扩展最低 watchOS 10，支持圆形、矩形与行内复杂功能；矩形样式也支持智能叠放。启用后点击通过本地 URL 打开聊天页，即使 App 停在设置页也会返回聊天；首次使用保留操作引导。入口只显示麦克风图标与「AI Link」，不读取设置、聊天、音频或密钥，不请求网络、不自动录音，无需 App Groups。Debug/Profile 使用 `com.maxhall.ailink.debug.watchkitapp.widgets` 与 `ailink-watch-debug://chat`；Release 使用 `com.maxhall.ailink.watchkitapp.widgets` 与 `ailink-watch://chat`，开发版和正式版入口分开。
+- `AILinkWatchWidgets` 的 WidgetKit 复杂功能已恢复默认构建与嵌入（2026-10-07）。`Runner` → `AILinkWatch` → `AILinkWatchWidgets` 在同一次构建中生成，手机、手表、扩展须使用同一签名团队。
+- 扩展最低 watchOS 10，支持圆形、矩形与行内复杂功能；矩形样式也支持智能叠放。点击通过本地 URL 打开聊天页，即使 App 停在设置页也会返回聊天；首次使用保留操作引导。入口只显示麦克风图标与「AI Link」，不读取设置、聊天、音频或密钥，不请求网络、不自动录音，无需 App Groups。Debug/Profile 使用 `com.maxhall.ailink.debug.watchkitapp.widgets` 与 `ailink-watch-debug://chat`；Release 使用 `com.maxhall.ailink.watchkitapp.widgets` 与 `ailink-watch://chat`，开发版和正式版入口分开。
 
 - 界面沿用两页聊天与设置：长按屏幕录音、双击进入设置、滑动阅读；右上滑转写后等待确认。自动播报可在手表单独设置。离开录音页或前台取消录音，实际录音不足 0.6 秒静默忽略。设置提供需明确确认的「清除手表配置和问答」，同时删除 Keychain、最近问答及待同步记录；清除后屏蔽缓存配置，直到用户手动同步。
 
@@ -62,27 +64,19 @@
 - URLSession 在 watchOS 上自行选择 iPhone 代理、Wi-Fi 或蜂窝，应用不使用不受支持的低层接口强制选网。独立请求为前台任务，系统挂起或终止应用可能导致失败；手机后台 Flutter 处理同样受运行时间限制。超时状态不明时不换路、不自动重发。语音接口只有明确的 DNS/拒绝连接错误才允许换路，普通 HTTP 客户端异常按状态不明处理。
 - 2026-10-03 已在 Xcode 27.0 构建 iOS/watchOS Debug，安装到配对的 iPhone 17 与 Apple Watch Ultra 4 模拟器，并验证页面导航、连接与配置摘要同步。真实语音服务、后台长请求、音频播放及配对真机尚未验证。Apple 官方说明模拟器不支持 `transferFile(_:metadata:)`，录音与合成音频的文件传输需用配对真机验证。
 - Apple 版公开发布前需核对并更新线上隐私政策：配对通道同步所选密钥、Apple Watch Keychain、安全存储和第三方直连、手表问答与确认同步、两端分别清理。应用内数据与隐私已更新；此次不修改或部署官网。
-- watchOS App 与复杂功能扩展当前版本号固定为 `1.0.0 (1)`；每次 iPhone 版本提升时应一并更新两者的 `MARKETING_VERSION` 与 `CURRENT_PROJECT_VERSION`。Debug/Profile 已配置本机开发团队，Release 签名与 App Store Connect 仍待配置。
+- 开发构建的 watchOS App 与扩展使用相同版本号；正式发布由 `scripts/apple_release.py` 的临时 xcconfig 统一手机、手表与扩展版本，并校验三个签名包的标识和版本。安装脚本也校验扩展标识，防止把正式扩展混入开发包。
 
-## 后续重新启用复杂功能
+## 复杂功能恢复记录
 
-关闭原因：本机 Xcode 尚无可用开发者账号，新扩展缺少描述文件，会导致 `./install-dev.sh --platform ios` 的 Profile 真机签名失败。功能源码、扩展 target、编译配置与嵌入对象均保留；此前尝试的 App Groups 能力已经完全移除。
+2026-10-03：因本机尚未完成账号及新扩展描述文件配置，按用户要求临时移除 Watch target 的扩展依赖与嵌入；源码和 target 保留，并移除 App Groups。关闭后 Profile 手机/手表签名构建通过，安装包不包含 `.appex`。
 
-关闭后验证（2026-10-03）：`flutter build ios --profile` 已使用现有开发签名完成手机与手表构建，`codesign --verify --deep --strict` 通过；最终安装包不含复杂功能 `.appex`。iOS 配对模拟器构建也通过。此次未安装到真机；该结果证明原有签名构建恢复，不代表新扩展签名已解决。
+2026-10-07：用户确认开发者账号已申请，恢复 `AILinkWatch` 的 `Embed App Extensions`（`AA2200000000000000000025`）及 `PBXTargetDependency`（`AA2200000000000000000027`），并为手机/手表 Profile 及扩展 Release 配置同一团队。两处引用须一起保留，确保先构建签名扩展，再将它嵌入手表 App。
 
-账号准备好后，先完成下文「新扩展的真机签名」，再在 `ios/Runner.xcodeproj/project.pbxproj` 中恢复 `AILinkWatch` target 的两处引用（位置已有“复杂功能暂关”注释）：
+本机 Xcode 账号登录仍不可用；使用已有 App Store Connect API 凭据完成自动签名并生成开发描述文件，扩展独立 Profile 构建通过。私钥及配置保持在忽略的 `localConfig/` 内，不加入源码。最终扩展路径为 `Runner.app/Watch/AILinkWatch.app/PlugIns/AILinkWatchWidgets.appex`。完整 `flutter build ios --profile` 构建通过，手机包确实包含手表和扩展，三者团队一致，`codesign --verify --deep --strict` 通过，无 App Groups entitlement。原生 Watch + Widget 模拟器构建通过，覆盖安装并启动到首次引导页；Mac 锁屏阻止了本次表盘/智能叠放添加与点击验收。配对 iPhone 真机当前不可用，未更新真机。安装脚本 17 项及发布脚本 16 项测试通过；正式包校验也能拒绝混入开发标识的扩展。
 
-```text
-buildPhases 中加入：
-AA2200000000000000000025 /* Embed App Extensions */,
+正式构建验证：完整 Release 归档及 App Store IPA `1.0.6 (2)` 本地导出通过，手机、手表、扩展的正式标识和版本一致，解包后的三者签名校验通过。因 Xcode 未登录且 API 无云签名权限，自动导出曾失败；最终为三个标识准备同一本机已有分发证书的描述文件，使用忽略的本地导出配置完成签名。不增加云签名权限，不上传商店。最后通过 `scripts/apple_release.py` 的默认导出流程复验，成功归档到 `build/complication-release-verification/`。
 
-dependencies 中加入：
-AA2200000000000000000027 /* PBXTargetDependency */,
-```
-
-两项必须一起恢复：前者把 `.appex` 嵌入手表 App，后者确保先构建并签名扩展。重新构建后检查 `Runner.app/Watch/AILinkWatch.app/PlugIns/AILinkWatchWidgets.appex`，并在配对真机测试表盘添加、智能叠放与点击跳转；通过后更新本文件、README 和 TODO 中的暂关备注。首次模拟器验证已看到矩形小组件正确渲染；表盘圆形/行内显示、点击回到聊天及真机签名尚未完成验证。
-
-## 添加表盘快捷入口（重新启用后）
+## 添加表盘快捷入口
 
 1. 安装包含 `AILinkWatchWidgets.appex` 的新版手表 App；Debug/Profile 在系统应用列表中显示为「AI Link Debug」。
 2. 选用支持复杂功能的表盘，长按表盘 →「编辑」→ 向左滑到「复杂功能」→ 点击圆形、矩形或行内位置 → 选择「AI Link」。按表冠保存，点击入口进入聊天页。可用位置取决于表盘；并非每个表盘都支持这些样式。
@@ -97,7 +91,7 @@ AA2200000000000000000027 /* PBXTargetDependency */,
 2. 打开 `ios/Runner.xcworkspace`，为 `Runner`、`AILinkWatch`、`AILinkWatchWidgets` 三个目标选择同一 Team，启用 Automatically manage signing。使用其他团队时，安装脚本也要传 `--team <TeamID>`。
 3. 在 Xcode 选择配对的真机组合，用 Profile 配置构建一次，让 Xcode 为新的扩展标识生成并下载开发描述文件，再运行 `./install-dev.sh --platform ios`。
 
-当前实现无需 App Groups；如果仍提示旧 App Groups entitlement 不匹配，确认使用最新工程并在 Xcode 执行 Product → Clean Build Folder 后重建，这不会清空设备应用数据。账号登录和真机签名尚未通过本次模拟器验证确认。
+当前实现无需 App Groups；如果仍提示旧 App Groups entitlement 不匹配，确认使用最新工程并在 Xcode 执行 Product → Clean Build Folder 后重建，这不会清空设备应用数据。本机已通过 API 凭据生成并缓存开发描述文件；更换团队、证书或电脑时仍需重新完成自动签名。
 
 ## 真机开发安装脚本
 
@@ -105,12 +99,12 @@ AA2200000000000000000027 /* PBXTargetDependency */,
 
 默认构建 Profile 版，手机可脱离调试器从桌面启动。Profile 与 Debug 共用开发标识 `com.maxhall.ailink.debug` / `com.maxhall.ailink.debug.watchkitapp`、名称「AI Link Debug」与同一开发团队，覆盖安装保留应用数据；Release 仍使用正式标识。需要 Flutter 断点或热重载时传 `--ios-mode debug`，再通过 `flutter run` 或 Xcode 启动手机应用。
 
-脚本读取 Xcode Debug 配置的开发团队，也可用 `--team <TeamID>` 或 `IOS_DEVELOPMENT_TEAM` 指定；通过临时 xcconfig 对手机与手表统一签名，不改写项目中的团队设置。两端由同一次 Flutter iOS 构建生成，脚本校验标识、配套关系与签名后分别覆盖安装。只安装手表时也会准备配套 iPhone 的构建依赖，避免直接构建 Watch Scheme 时缺少 Flutter framework。
+脚本读取 Xcode Debug 配置的开发团队，也可用 `--team <TeamID>` 或 `IOS_DEVELOPMENT_TEAM` 指定；通过临时 xcconfig 对手机、手表与复杂功能扩展统一签名，不改写项目中的团队设置。两端由同一次 Flutter iOS 构建生成，脚本校验标识、配套关系与签名后分别覆盖安装。只安装手表时也会准备配套 iPhone 的构建依赖，避免直接构建 Watch Scheme 时缺少 Flutter framework。
 
 ## 在具备完整 Xcode 的机器验证
 
 1. 安装完整 Xcode，确认 `xcode-select -p` 指向其 `Contents/Developer`，安装 iOS/watchOS SDK 和 Flutter 所需的插件依赖工具。
-2. 运行 `flutter pub get`、`flutter analyze`、`flutter test`，再在 Xcode 中打开 `ios/Runner.xcworkspace`。为 Runner 和 AILinkWatch 选择同一 Apple Developer Team；重新启用复杂功能时，还需为 AILinkWatchWidgets 设置相同 Team，检查自动签名及对应 bundle ID。
+2. 运行 `flutter pub get`、`flutter analyze`、`flutter test`，再在 Xcode 中打开 `ios/Runner.xcworkspace`。为 Runner、AILinkWatch 与 AILinkWatchWidgets 选择同一 Apple Developer Team，检查自动签名及对应 bundle ID。
 3. 选择已配对的 iPhone + Apple Watch 模拟器组合运行 Runner 检查界面与即时消息；文件传输和完整语音链路使用配对实机。确认 Watch 应用可从 iPhone 的 Watch 应用安装，且两端 `WCSession` 激活。
 4. iPhone 配置文字模型、语音识别及可选朗读；Apple Watch 分别测试授权麦克风、按住录音、上滑取消、自动发送、确认发送、长文本滚动、自动播报、后台唤醒与断连。检查 iPhone 会话入库及手表标记；不要清除已有用户数据来测试。
 5. 对真实语音服务与多个供应商分别验证 WAV 兼容性、模型权限、TTS 格式和响应时限。重点核验后台 30 秒以上请求的系统行为，以及 watchOS 10 播放路由。
@@ -135,7 +129,7 @@ AA2200000000000000000027 /* PBXTargetDependency */,
 
 ## Firebase Analytics（2026-10-04）
 
-- 下载的正式配置已放到 `ios/Runner/GoogleService-Info.plist` 并加入 Runner 的资源阶段，Bundle ID 为 `com.maxhall.ailink`。不把配置加入 Watch 或暂时关闭的 Widgets target。
+- 下载的正式配置已放到 `ios/Runner/GoogleService-Info.plist` 并加入 Runner 的资源阶段，Bundle ID 为 `com.maxhall.ailink`。不把配置加入 Watch 或 Widgets target。
 - Runner 通过 Swift Package Manager 使用 Firebase Apple SDK 12.19.2，依赖 `FirebaseCore` 和 `FirebaseAnalyticsCore`。该版本中，旧的 `FirebaseAnalyticsWithoutAdId` 已由 Core 产品替代；不选择 `FirebaseAnalyticsIdentitySupport` 或完整的 `FirebaseAnalytics` 产品，以避免引入广告 ID 支持。
 - 沿用 Flutter `AppDelegate` 与现有引擎、手表桥接。仅正式 Bundle ID 执行 `FirebaseApp.configure()` 与 `Analytics.setAnalyticsCollectionEnabled(true)`；Info.plist 默认关闭统计，Debug/Profile 不初始化。下载文件中的 `IS_ANALYTICS_ENABLED` 保持原样，收集开关由 AppDelegate 的正式包分支明确设置。
 - 当前仅 SDK 自动应用事件，没有 Flutter 页面路由或聊天内容埋点。未安装到真机并在 Firebase DebugView/报告验证之前，只能声明依赖和构建验证结果。

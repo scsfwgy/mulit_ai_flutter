@@ -194,7 +194,7 @@ def development_team(explicit):
         ], capture=True))["objects"]
         teams = set()
         for target in project.values():
-            if target.get("isa") != "PBXNativeTarget" or target.get("name") not in ("Runner", "AILinkWatch"):
+            if target.get("isa") != "PBXNativeTarget" or target.get("name") not in ("Runner", "AILinkWatch", "AILinkWatchWidgets"):
                 continue
             configs = project[target["buildConfigurationList"]]["buildConfigurations"]
             for config_id in configs:
@@ -204,7 +204,7 @@ def development_team(explicit):
                     if value:
                         teams.add(value)
         if len(teams) > 1:
-            raise ValueError("手机与手表签名团队不同，请用 --team 指定同一个 Apple Team ID。")
+            raise ValueError("手机、手表与复杂功能签名团队不同，请用 --team 指定同一个 Apple Team ID。")
         team = next(iter(teams), None)
     if not team or not re.fullmatch(r"[A-Z0-9]{10}", team):
         raise ValueError("请先在 Xcode 配置开发团队，或传 --team <10位TeamID> / IOS_DEVELOPMENT_TEAM。")
@@ -238,7 +238,8 @@ def build(selected, ios_mode, team, macos_mode="debug"):
             })
         phone = ROOT / "build/ios/iphoneos/Runner.app"
         watch = phone / "Watch/AILinkWatch.app"
-        for path, expected in ((phone, PHONE_ID), (watch, WATCH_ID)):
+        widget = watch / "PlugIns/AILinkWatchWidgets.appex"
+        for path, expected in ((phone, PHONE_ID), (watch, WATCH_ID), (widget, WATCH_ID + ".widgets")):
             with (path / "Info.plist").open("rb") as stream:
                 info = plistlib.load(stream)
             if info.get("CFBundleIdentifier") != expected:

@@ -104,7 +104,7 @@
 - `android/wear/`：独立 Wear OS APK，负责录音、路由选择、手表独立请求、展示回复和音频播放；`WatchPhoneRelay.kt` 处理手机网络路径，`WatchNetworkSelector.kt` 指定手表 Wi-Fi/蜂窝网络，所选密钥用 Android Keystore 加密保存。
 - `ios/AILinkWatch/`：SwiftUI Apple Watch 配套应用，长按录音、松手发送、左上滑取消、右上滑转文字后确认，显示最近问答和可选的模型语音播放；语言跟随手机 App，外观跟随手表系统。经 WatchConnectivity 同步所选服务配置，密钥仅在手表 Keychain 保存；优先使用 URLSession 直接请求，手表网络明确不可用且手机可达时复用配对 iPhone 无落库接口。`WatchNetworkClient.swift` 适配文字与语音协议，`WatchPhoneRelay.swift` 关联请求阶段，`WatchNetworkConfiguration.swift` 管理安全配置、路由与确认同步；真实服务及 Wi-Fi/蜂窝待真机验证。
 - `ios/Runner/AppleWatchBridge.swift`：iPhone 端 WatchConnectivity 与后台 Flutter worker 桥接；沿用 `WatchChatProcessor` 云端识别、聊天、可选合成及 SQLite 入库。Apple 平台待 Xcode 编译、后台唤醒和配对设备验证，不能仅凭 Swift 语法检查声明可运行。
-- `ios/AILinkWatchWidgets/` 与 `ios/AILinkWatchShared/`：表盘复杂功能和智能叠放入口源码。2026-10-03 因开发者账号及扩展签名未就绪，按用户要求暂时关闭 `AILinkWatch` 对扩展的构建依赖和嵌入阶段；默认真机调试不构建该扩展。源码和 target 保留，不使用 App Groups。用户确认账号准备好并要求开启后，再按 `doc/ios/README.md` 恢复两处引用并验证签名与点击跳转；不要在普通调试修复中自动重新开启。
+- `ios/AILinkWatchWidgets/` 与 `ios/AILinkWatchShared/`：表盘复杂功能和智能叠放入口。2026-10-03 曾因账号及扩展签名未就绪暂关；2026-10-07 用户确认开发者账号已申请后，恢复 `AILinkWatch` 对扩展的构建依赖和嵌入阶段。使用同一团队为手机、手表和扩展签名，不使用 App Groups；签名及设备验证范围见 `doc/ios/README.md`。
 - 手表应用是手机应用的功能子集，界面语言跟随手机 App，支持中文和英文。手机选“跟随系统”时，同步手机实际使用的语言，不能改为跟随手表系统语言；手机切换语言、冷启动和恢复前台时发送最新设置。Wear OS 用持久化 DataItem，Apple Watch 用 applicationContext；手表离线保留最后收到的语言，重连补同步。外观仍跟随手表自身日夜模式。手机端的繁體中文不在手表支持范围内，`_syncWatchLanguage` 会按「非英文即中文」上报为 `zh`，手表显示简体中文；新增手表语言需同步改这里与两端原生资源。
 - 手表按住录音时使用全屏浮层中的圆形录音弹窗，显示实时音量波形、计时和松开提示；左上滑时变红并在松手后取消，右上滑时显示转文字状态并在转写后等待确认，原位松手直接转写并发送。浮层只负责显示，不抢占聊天区域的长按手势。
 - 两端手表设置提供本地保存的「新手模式 / 简洁模式」，默认新手模式。新手录音界面保留方向提示、波形、计时与松开提示，避免重复说明；简洁录音界面仅显示一个大语音图标及音量呼吸环，取消变红、转文字变绿。两种模式只改变录音反馈，长按、滑动、松手、0.6 秒误触过滤和转写确认行为完全相同。
