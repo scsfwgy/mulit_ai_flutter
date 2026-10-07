@@ -3,9 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mulit_ai_flutter/api_client.dart';
-import 'package:mulit_ai_flutter/data.dart';
-import 'package:mulit_ai_flutter/search_service.dart';
+import 'package:mulit_ai_flutter/api/api_client.dart';
+import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/search/search_service.dart';
 
 SearchProviderConfig config(HttpServer server, SearchService service) =>
     SearchProviderConfig(

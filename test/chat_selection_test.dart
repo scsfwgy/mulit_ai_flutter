@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mulit_ai_flutter/data.dart';
+import 'package:mulit_ai_flutter/core/data.dart';
 
 void main() {
   const providers = [

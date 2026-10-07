@@ -5,13 +5,13 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:mulit_ai_flutter/data.dart';
-import 'package:mulit_ai_flutter/desktop_chat.dart';
+import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/chat/desktop_chat.dart';
 import 'package:mulit_ai_flutter/main.dart' as app;
-import 'package:mulit_ai_flutter/message_copy.dart';
-import 'package:mulit_ai_flutter/settings_screen.dart';
-import 'package:mulit_ai_flutter/provider_screen.dart';
-import 'package:mulit_ai_flutter/topic_screen.dart';
+import 'package:mulit_ai_flutter/chat/message_copy.dart';
+import 'package:mulit_ai_flutter/settings/settings_screen.dart';
+import 'package:mulit_ai_flutter/provider/provider_screen.dart';
+import 'package:mulit_ai_flutter/chat/topic_screen.dart';
 
 /// Run on macOS with real SQLite, Keychain, network and clipboard plugins.
 /// Only the provider/topics created here are removed; existing data is kept.

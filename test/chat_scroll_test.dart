@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mulit_ai_flutter/chat_scroll.dart';
+import 'package:mulit_ai_flutter/chat/chat_scroll.dart';
 
 void main() {
   testWidgets('streaming follows the bottom until the user scrolls away', (

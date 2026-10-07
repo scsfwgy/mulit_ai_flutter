@@ -3,8 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mulit_ai_flutter/api_client.dart';
-import 'package:mulit_ai_flutter/data.dart';
+import 'package:mulit_ai_flutter/api/api_client.dart';
+import 'package:mulit_ai_flutter/core/data.dart';
 
 void main() {
   test('generated titles keep one short plain-text line', () {

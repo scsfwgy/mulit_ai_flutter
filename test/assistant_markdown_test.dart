@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mulit_ai_flutter/assistant_markdown.dart';
+import 'package:mulit_ai_flutter/chat/assistant_markdown.dart';
 
 void main() {
   testWidgets('assistant reply renders Markdown and keeps links interactive', (

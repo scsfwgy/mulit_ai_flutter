@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mulit_ai_flutter/data.dart';
+import 'package:mulit_ai_flutter/core/data.dart';
 import 'package:sqflite/sqflite.dart';
 
 void main() {

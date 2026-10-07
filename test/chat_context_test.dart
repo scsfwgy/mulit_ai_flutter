@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mulit_ai_flutter/chat_context.dart';
+import 'package:mulit_ai_flutter/chat/chat_context.dart';
 
 Map<String, String> message(String role, String content) => {
   'role': role,

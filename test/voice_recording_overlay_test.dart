@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mulit_ai_flutter/voice_recording_overlay.dart';
+import 'package:mulit_ai_flutter/voice/voice_recording_overlay.dart';
 
 void main() {
   test('horizontal release action follows current position including returning to center', () {

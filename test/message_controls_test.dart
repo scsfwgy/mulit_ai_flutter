@@ -2,9 +2,9 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mulit_ai_flutter/app_preferences.dart';
-import 'package:mulit_ai_flutter/chat_message_meta.dart';
-import 'package:mulit_ai_flutter/provider_badge.dart';
+import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/chat/chat_message_meta.dart';
+import 'package:mulit_ai_flutter/provider/provider_badge.dart';
 import 'package:sqflite/sqflite.dart';
 
 void main() {

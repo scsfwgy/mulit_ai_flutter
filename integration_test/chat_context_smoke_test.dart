@@ -5,9 +5,9 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:mulit_ai_flutter/chat_context.dart';
-import 'package:mulit_ai_flutter/chat_context_screen.dart';
-import 'package:mulit_ai_flutter/data.dart';
+import 'package:mulit_ai_flutter/chat/chat_context.dart';
+import 'package:mulit_ai_flutter/chat/chat_context_screen.dart';
+import 'package:mulit_ai_flutter/core/data.dart';
 import 'package:mulit_ai_flutter/main.dart' as app;
 
 /// Real SQLite and secure-storage integration against a local HTTP fixture.

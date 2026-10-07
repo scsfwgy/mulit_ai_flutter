@@ -4,8 +4,8 @@ import 'package:analyzer/dart/analysis/utilities.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mulit_ai_flutter/app_preferences.dart';
-import 'package:mulit_ai_flutter/chat_context.dart';
+import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/chat/chat_context.dart';
 
 /// Parse Dart rather than matching source text: comments, adjacent strings,
 /// switch/conditional choices and indirectly translated iOS labels are covered.

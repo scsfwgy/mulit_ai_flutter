@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mulit_ai_flutter/startup_screen.dart';
+import 'package:mulit_ai_flutter/settings/startup_screen.dart';
 
 void main() {
   testWidgets('launch stays visible until preferences and chat are ready', (

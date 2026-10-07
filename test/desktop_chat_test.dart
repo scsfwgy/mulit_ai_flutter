@@ -2,11 +2,11 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mulit_ai_flutter/app_platform.dart';
-import 'package:mulit_ai_flutter/app_preferences.dart';
-import 'package:mulit_ai_flutter/desktop_chat.dart';
-import 'package:mulit_ai_flutter/ios_style.dart';
-import 'package:mulit_ai_flutter/settings_screen.dart';
+import 'package:mulit_ai_flutter/core/app_platform.dart';
+import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/chat/desktop_chat.dart';
+import 'package:mulit_ai_flutter/ui/ios_style.dart';
+import 'package:mulit_ai_flutter/settings/settings_screen.dart';
 
 void main() {
   testWidgets('desktop pages open and close without slide transitions', (

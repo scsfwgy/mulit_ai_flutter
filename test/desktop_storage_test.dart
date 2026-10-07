@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mulit_ai_flutter/app_preferences.dart';
-import 'package:mulit_ai_flutter/data.dart';
+import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/core/data.dart';
 
 void main() {
   const channel = MethodChannel('plugins.it_nomads.com/flutter_secure_storage');

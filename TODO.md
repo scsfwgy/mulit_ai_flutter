@@ -40,5 +40,5 @@
 ## 参考与现状
 
 - [RikkaHub 中文 README](https://github.com/rikkahub/rikkahub/blob/master/README_ZH_CN.md)：以上参考功能来自其“功能特色”章节，核对日期为 2026-09-28；这是公开功能声明，并非逐项实测。
-- 本项目现状以 [AGENTS.md](AGENTS.md)、[协议适配](lib/api_client.dart)、[Markdown 渲染](lib/assistant_markdown.dart) 和 [扫码导入](lib/provider_qr_scanner.dart) 为准。当前已支持两类聊天协议、文字流式回复、基本 Markdown、服务配置扫码导入、同一会话历史上下文、全局及单模型提示词；上述待办不重复这些基础能力。
+- 本项目现状以 [AGENTS.md](AGENTS.md)、[协议适配](lib/api/api_client.dart)、[Markdown 渲染](lib/chat/assistant_markdown.dart) 和 [扫码导入](lib/provider/provider_qr_scanner.dart) 为准。当前已支持两类聊天协议、文字流式回复、基本 Markdown、服务配置扫码导入、同一会话历史上下文、全局及单模型提示词；上述待办不重复这些基础能力。
 - 语音第一版已接入云端识别与合成；仍需用真实服务账户和 Android 实机核验各服务的权限、音色和录音体验，尤其豆包资源 ID 的实际开通情况。

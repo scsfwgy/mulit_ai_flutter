@@ -2,12 +2,12 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mulit_ai_flutter/app_preferences.dart';
-import 'package:mulit_ai_flutter/search_service.dart';
-import 'package:mulit_ai_flutter/search_settings_screen.dart';
-import 'package:mulit_ai_flutter/search_sources.dart';
-import 'package:mulit_ai_flutter/settings_screen.dart';
-import 'package:mulit_ai_flutter/ios_style.dart';
+import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/search/search_service.dart';
+import 'package:mulit_ai_flutter/search/search_settings_screen.dart';
+import 'package:mulit_ai_flutter/search/search_sources.dart';
+import 'package:mulit_ai_flutter/settings/settings_screen.dart';
+import 'package:mulit_ai_flutter/ui/ios_style.dart';
 
 import 'dart:convert';
 

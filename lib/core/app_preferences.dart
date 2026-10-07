@@ -1,0 +1,832 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/core/app_platform.dart';
+import 'package:mulit_ai_flutter/chat/chat_context.dart';
+
+enum AppLanguage { system, zh, en }
+
+enum AppAppearance { system, light, dark }
+
+enum ChatInfoField {
+  modelId('模型 ID'),
+  firstFrame('首帧耗时'),
+  totalTime('总耗时'),
+  tokens('Token 用量'),
+  characters('字数'),
+  copy('复制按钮'),
+  speech('语音按钮');
+
+  const ChatInfoField(this.label);
+  final String label;
+}
+
+enum AppSkin {
+  blue('blue', '经典蓝', Color(0xFF007AFF)),
+  teal('teal', '海蓝绿', Color(0xFF008C83)),
+  wechat('wechat', '微信绿', Color(0xFF07C160)),
+  violet('violet', '紫罗兰', Color(0xFF7654D6));
+
+  const AppSkin(this.value, this.label, this.accent);
+  final String value;
+  final String label;
+  final Color accent;
+}
+
+class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
+  AppPreferences._() {
+    WidgetsBinding.instance.addObserver(this);
+  }
+  static final instance = AppPreferences._();
+  static const _companion = MethodChannel('between_models/companion_install');
+
+  bool autoReadReplies = false;
+  bool simpleMessageInfo = false;
+  int contextWindowTokens = ChatContext.defaultWindowTokens;
+
+  AppLanguage language = AppLanguage.zh;
+  AppSkin skin = AppSkin.blue;
+  AppAppearance appearance = AppAppearance.system;
+  final Map<ChatInfoField, bool> _chatInfoVisible = {
+    for (final field in ChatInfoField.values) field: true,
+  };
+
+  bool showChatInfo(ChatInfoField field) =>
+      !simpleMessageInfo && (_chatInfoVisible[field] ?? true);
+
+  bool get dark => switch (appearance) {
+    AppAppearance.light => false,
+    AppAppearance.dark => true,
+    AppAppearance.system =>
+      PlatformDispatcher.instance.platformBrightness == Brightness.dark,
+  };
+
+  ThemeMode get themeMode => switch (appearance) {
+    AppAppearance.system => ThemeMode.system,
+    AppAppearance.light => ThemeMode.light,
+    AppAppearance.dark => ThemeMode.dark,
+  };
+
+  @override
+  void didChangePlatformBrightness() {
+    _syncSystemBars();
+    notifyListeners();
+  }
+
+  @override
+  void didChangeLocales(List<Locale>? locales) {
+    if (language != AppLanguage.system) return;
+    notifyListeners();
+    unawaited(_syncWatchLanguage());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_syncWatchLanguage());
+  }
+
+  Future<void> _syncWatchLanguage() async {
+    if (!supportsWatchCompanion) return;
+    try {
+      await _companion.invokeMethod<void>('syncPreferences', {
+        'language': english ? 'en' : 'zh',
+      });
+    } on MissingPluginException {
+      // Desktop, tests, and older phone builds may not expose this channel.
+    } on PlatformException {
+      // Retry on the next foreground entry; phone language remains saved.
+    }
+  }
+
+  void _syncSystemBars() => SystemChrome.setSystemUIOverlayStyle(
+    SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: dark ? Brightness.light : Brightness.dark,
+      systemNavigationBarColor: dark ? Colors.black : const Color(0xFFF2F2F7),
+      systemNavigationBarIconBrightness: dark
+          ? Brightness.light
+          : Brightness.dark,
+      systemNavigationBarContrastEnforced: false,
+    ),
+  );
+
+  bool get english => switch (language) {
+    AppLanguage.en => true,
+    AppLanguage.zh => false,
+    AppLanguage.system =>
+      PlatformDispatcher.instance.locale.languageCode.toLowerCase() == 'en',
+  };
+
+  Locale? get locale => switch (language) {
+    AppLanguage.system => null,
+    AppLanguage.zh => const Locale('zh'),
+    AppLanguage.en => const Locale('en'),
+  };
+
+  Future<void> load() async {
+    contextWindowTokens = ChatContext.parseWindow(
+      await ChatStore.instance.setting(ChatContext.settingKey),
+    );
+    simpleMessageInfo =
+        await ChatStore.instance.setting('chat_info_simple') == '1';
+    autoReadReplies =
+        await ChatStore.instance.setting('voice_auto_read') == '1';
+    final savedLanguage = await ChatStore.instance.setting('app_language');
+    final savedSkin = await ChatStore.instance.setting('app_skin');
+    final savedAppearance = await ChatStore.instance.setting('app_appearance');
+    language = AppLanguage.values.firstWhere(
+      (item) => item.name == savedLanguage,
+      orElse: () => AppLanguage.zh,
+    );
+    skin = AppSkin.values.firstWhere(
+      (item) => item.value == savedSkin,
+      orElse: () => AppSkin.blue,
+    );
+    appearance = AppAppearance.values.firstWhere(
+      (item) => item.name == savedAppearance,
+      orElse: () => AppAppearance.system,
+    );
+    for (final field in ChatInfoField.values) {
+      _chatInfoVisible[field] =
+          await ChatStore.instance.setting('chat_info_${field.name}') != '0';
+    }
+    _syncSystemBars();
+    notifyListeners();
+    unawaited(_syncWatchLanguage());
+  }
+
+  Future<void> setSimpleMessageInfo(bool value) async {
+    await ChatStore.instance.saveSetting('chat_info_simple', value ? '1' : '0');
+    simpleMessageInfo = value;
+    notifyListeners();
+  }
+
+  Future<void> setContextWindowTokens(int value) async {
+    if (!ChatContext.windowOptions.contains(value)) {
+      throw ArgumentError.value(value, 'value');
+    }
+    await ChatStore.instance.saveSetting(ChatContext.settingKey, '$value');
+    contextWindowTokens = value;
+    notifyListeners();
+  }
+
+  Future<void> setAutoReadReplies(bool value) async {
+    await ChatStore.instance.saveSetting('voice_auto_read', value ? '1' : '0');
+    autoReadReplies = value;
+    notifyListeners();
+  }
+
+  Future<void> setLanguage(AppLanguage value) async {
+    await ChatStore.instance.saveSetting('app_language', value.name);
+    language = value;
+    notifyListeners();
+    unawaited(_syncWatchLanguage());
+  }
+
+  Future<void> setSkin(AppSkin value) async {
+    await ChatStore.instance.saveSetting('app_skin', value.value);
+    skin = value;
+    notifyListeners();
+  }
+
+  Future<void> setAppearance(AppAppearance value) async {
+    await ChatStore.instance.saveSetting('app_appearance', value.name);
+    appearance = value;
+    _syncSystemBars();
+    notifyListeners();
+  }
+
+  Future<void> setChatInfoVisible(ChatInfoField field, bool visible) async {
+    await ChatStore.instance.saveSetting(
+      'chat_info_${field.name}',
+      visible ? '1' : '0',
+    );
+    _chatInfoVisible[field] = visible;
+    notifyListeners();
+  }
+}
+
+String tr(String chinese) {
+  if (!AppPreferences.instance.english) return chinese;
+  final direct = _english[chinese];
+  if (direct != null) return direct;
+  final searchHttp = RegExp(r'^搜索请求失败（HTTP (\d+)），').firstMatch(chinese);
+  if (searchHttp != null) {
+    return 'Search request failed (HTTP ${searchHttp.group(1)}). Check the key, quota and endpoint.';
+  }
+  final voiceHttp = RegExp(r'^(语音服务|语音识别|语音朗读)请求失败（HTTP (\d+)），(.+)$')
+      .firstMatch(chinese);
+  if (voiceHttp != null) {
+    final operation = switch (voiceHttp.group(1)) {
+      '语音识别' => 'Transcription',
+      '语音朗读' => 'Speech synthesis',
+      _ => 'Voice service',
+    };
+    final status = int.parse(voiceHttp.group(2)!);
+    final reason = switch (status) {
+      401 || 403 => 'Check the key and permissions',
+      429 => 'Rate limit or quota reached. Try again later',
+      >= 500 => 'Server processing failed. Try again later',
+      400 || 404 || 422 => 'Check the model, endpoint and audio format',
+      >= 300 && < 400 => 'Redirect blocked. Check the endpoint',
+      _ => 'Check the service settings and try again',
+    };
+    final code = RegExp(r'（([a-zA-Z0-9_.-]{1,64})）$').firstMatch(chinese);
+    return '$operation failed (HTTP $status). $reason'
+        '${code == null ? '' : ' (${code.group(1)})'}';
+  }
+  final voiceCatalogHttp = RegExp(r'^获取模型列表失败（HTTP (\d+)）$')
+      .firstMatch(chinese);
+  if (voiceCatalogHttp != null) {
+    return 'Could not fetch models (HTTP ${voiceCatalogHttp.group(1)})';
+  }
+  final doubaoCode = RegExp(r'^豆包语音(识别|合成)失败（状态码 ([^）]+)）').firstMatch(chinese);
+  if (doubaoCode != null) {
+    final action = doubaoCode.group(1) == '识别' ? 'transcription' : 'speech';
+    return 'Doubao $action failed (status ${doubaoCode.group(2)}). Check resource permissions';
+  }
+  for (final (prefix, translated) in _englishPrefixes) {
+    if (chinese.startsWith(prefix)) {
+      return '$translated${chinese.substring(prefix.length)}';
+    }
+  }
+  return chinese;
+}
+
+const _englishPrefixes = <(String, String)>[
+  ('发送失败：', 'Send failed: '),
+  ('重试失败：', 'Retry failed: '),
+  ('无法打开本地数据：', 'Could not open local data: '),
+  ('网络连接失败：', 'Network connection failed: '),
+  ('服务错误：', 'Service error: '),
+  ('请求失败 (', 'Request failed ('),
+  ('获取模型失败 (', 'Model fetch failed ('),
+  ('获取模型列表失败：', 'Could not fetch models: '),
+];
+
+const _english = <String, String>{
+  '确定': 'Confirm',
+  '手表会话数据无效': 'Invalid watch conversation data',
+  '手表请求无效': 'Invalid watch request',
+  '录音无效或超过大小限制': 'Invalid recording or recording exceeds the size limit',
+  '请先在手机端配置语音识别服务': 'Configure transcription on your phone first',
+  '手机端语音识别密钥未配置': 'No transcription key configured on your phone',
+  '手表会话上下文无效': 'Invalid watch conversation context',
+  '手机端模型服务已变更，请同步手表配置':
+      'The phone model service changed. Sync your watch settings.',
+  '手机端文字模型密钥未配置': 'No text model key configured on your phone',
+  '模型回复过长': 'The model reply is too long',
+  '模型没有返回文字': 'The model did not return text',
+  '朗读文字无效或过长': 'Speech text is invalid or too long',
+  '请先在手机端配置朗读服务': 'Configure speech synthesis on your phone first',
+  '手机端朗读服务密钥未配置': 'No speech synthesis key configured on your phone',
+  '请先在手机端配置联网搜索并同步手表':
+      'Configure web search on your phone and sync your watch first',
+  '手表会话格式无效': 'Invalid watch conversation format',
+  '请先在手机端配置文字模型和语音识别服务及密钥':
+      'Configure text and transcription services and keys on your phone first',
+  '请先在手机端配置文字模型服务、模型和密钥':
+      'Configure a text service, model and key on your phone first',
+  '请先在手机端配置语音识别服务、识别模型和密钥':
+      'Configure a transcription service, model and key on your phone first',
+  '请先在手机端配置文字模型服务': 'Configure a text model service on your phone first',
+  '模型回复未完整结束，请稍后检查再重试':
+      'The model reply did not finish. Check it before retrying later.',
+  '已按预算省略较早消息，本机历史保留。':
+      'Earlier messages were omitted to fit the budget. Local history is kept.',
+  '上下文设置': 'Context settings',
+  '上下文预算': 'Context budget',
+  '调整上下文': 'Adjust context',
+  '保留最近完整轮次': 'Keep recent complete turns',
+  '预算包含提示词、历史消息与搜索内容，默认预留 4K Token 用于回复。Token 数为本机估算，请按模型实际限制调整。': 'The budget includes prompts, history and search evidence, with 4K tokens reserved for replies by default. Token counts are local estimates. Adjust this budget to your model’s actual limit.',
+  '超出预算时，发送最近的完整对话轮次，不删除本机历史。当前消息、提示词与搜索内容不会被静默截断。此设置适用于手机与桌面聊天。': 'When over budget, send recent complete turns without deleting local history. The current message, prompts and search evidence are never silently truncated. This setting applies to phone and desktop chats.',
+  '无法保存上下文设置，请重试。': 'Could not save context settings. Please try again.',
+  ChatContext.limitMessage: 'The current message, prompts or search evidence exceed the context budget. Shorten the content or adjust the budget in Context settings.',
+  ChatContext.serverLimitMessage: 'The model’s context limit was exceeded. Lower the budget in Context settings and retry, or start a new chat. Shorten the message if a single message is too long.',
+  '服务长时间未返回数据，连接已停止。已收到的回复会保留，请检查网络或稍后重试。': 'The service stopped sending data, so the connection was closed. Any received reply is kept. Check your network or try again later.',
+  '试用与永久解锁': 'Trial & Permanent Unlock',
+  '已永久解锁': 'Permanently unlocked',
+  '正在检查购买记录': 'Checking purchases',
+  '7 天试用中': '7-day trial active',
+  '先试用，再决定': 'Try it, then decide',
+  '试用已结束': 'Trial has ended',
+  '等待联网验证试用': 'Connect to verify your trial',
+  '一次买断，永久使用 iPhone、iPad 与配对 Apple Watch 功能。': 'One purchase permanently unlocks iPhone, iPad, and paired Apple Watch features.',
+  '试用截止时间': 'Trial ends',
+  '文字、语音与联网搜索': 'Text, voice, and web search',
+  '自选模型、自备 API Key，保留本机聊天与配置。': 'Choose your models and use your own API keys. Chats and settings stay on your device.',
+  '7 天全部功能试用': '7-day full-feature trial',
+  '主动领取后开始，不自动续费、不自动扣款。':
+      'Starts when you claim it. No automatic renewal or charges.',
+  '第三方服务费用另计': 'Third-party usage costs extra',
+  '买断价格不包含模型、语音或搜索服务的用量。':
+      'The unlock price does not include model, voice, or search usage.',
+  '免费领取 7 天试用': 'Start Free 7-Day Trial',
+  '永久解锁（价格加载中）': 'Permanent Unlock (Loading Price)',
+  '永久解锁': 'Permanent Unlock',
+  '恢复购买': 'Restore Purchases',
+  '刷新商店': 'Refresh Store',
+  '试用到期后，仍可阅读历史、管理配置及恢复购买。继续发起聊天、语音和搜索请求需要永久解锁。': 'After the trial, you can still read history, manage settings, and restore purchases. Permanent unlock is required for new chat, voice, and search requests.',
+  '请联网校准试用时间后重试。': 'Connect to the internet to verify trial time, then retry.',
+  '购买记录验证失败，请联网重试或恢复购买。': 'Purchases could not be verified. Connect and retry or restore purchases.',
+  '商店商品暂不可用，请稍后刷新。': 'Store products are unavailable. Refresh later.',
+  '购买未完成，请重试。': 'Purchase was not completed. Try again.',
+  '恢复购买未完成，请联网重试。': 'Restore was not completed. Connect and try again.',
+  '购买正在等待批准，批准后会自动解锁。': 'Purchase is awaiting approval. Access will update automatically after approval.',
+  '此 Apple 账户已领取过试用，恢复购买不会重新开始试用。': 'This Apple Account has already claimed a trial. Restoring does not restart it.',
+  '没有可恢复的有效权益；已领取的试用不会重新开始。': 'No active access was restored. A previously claimed trial does not restart.',
+  '购买记录已恢复。': 'Purchases restored.',
+  '7 天试用，一次买断': '7-day trial, one-time unlock',
+  '购买与试用': 'Purchases and Trial',
+  '请在 iPhone 领取试用或永久解锁，再刷新手表权益':
+      'Start a trial or unlock on iPhone, then refresh watch purchases',
+  'Apple 购买由 App Store 处理，应用仅使用经 Apple 验证的商品和交易记录判断试用及永久权益，不接触付款卡资料。手机与手表分别验证同一 Apple 账户的权益。试用冷启动时向 www.apple.com 发起 HTTPS 校时请求，不携带聊天、API Key 或录音；联网失败时保留历史读取及恢复入口，验证后可继续试用。': 'App Store handles Apple purchases. The app uses Apple-verified products and transactions to determine trial and permanent access, without accessing payment card information. Phone and watch independently verify access for the same Apple Account. A trial cold start makes an HTTPS time-check request to www.apple.com without chats, API keys, or recordings. If offline, history and restore remain available; trial use resumes after verification.',
+
+  '聊天': 'Chat',
+  '无法访问 macOS 钥匙串。请解锁登录钥匙串，并在系统授权弹窗中允许 AI Link 访问密钥。若曾拒绝，请重新打开应用后再试，或重新填写并保存密钥。': 'Cannot access the macOS Keychain. Unlock your login Keychain and allow AI Link to access its keys in the system prompt. If access was denied, reopen the app and try again, or enter and save the key again.',
+  '发送消息，Shift+Enter 换行': 'Message, Shift+Enter for a new line',
+  '密钥保存在本机安全存储中，不写入聊天数据库。我们不设中转服务器，请求会直达你配置的 API 服务商。': 'Keys stay in secure local storage, outside the chat database. We do not operate a relay server; requests go directly to your configured API provider.',
+  '按住录音，左滑取消，右滑转文字后确认，直接松手发送。朗读声音由 AI 生成。': 'Hold to record, slide left to cancel, slide right to transcribe and confirm, or release to send. Read-aloud voices are AI generated.',
+  '识别内容仅用于填写或导入配置。密钥保存在本机安全存储中。': 'Scanned content is only used to fill in or import configuration. Keys stay in secure local storage.',
+  '本机的话题、聊天记录、服务配置、API Key 和提示词会被删除。其他设备的数据不会被删除。此操作无法撤销。': 'Topics, messages, service settings, API keys, and prompts on this computer will be deleted. Data on other devices will remain. This cannot be undone.',
+  '开启联网搜索后，当前问题与搜索密钥直接发送到所选搜索服务，网页资料随后发送给文本模型。回复的来源资料保存在本机明文数据库中。': 'When web search is enabled, your question and search key go directly to the selected search provider. Web material is then sent to the text model. Reply sources are stored in the unencrypted local database.',
+  'macOS 版未接入 Firebase Analytics 使用统计。':
+      'The macOS app does not use Firebase Analytics.',
+  '联网搜索': 'Web search',
+  '联网搜索已开启': 'Web search enabled',
+  '正在搜索网页…': 'Searching the web…',
+  '默认搜索服务': 'Default search service',
+  '搜索服务': 'Search services',
+  '添加搜索服务': 'Add search service',
+  '编辑搜索服务': 'Edit search service',
+  '搜索服务类型': 'Search provider',
+  '搜索接口地址': 'Search endpoint',
+  '搜索选项': 'Search options',
+  '申请与费用': 'API key & pricing',
+  '申请 API Key': 'Get an API key',
+  '获取 API Key': 'Get an API key',
+  'API Key 获取教程': 'API key guide',
+  '查看价格与免费额度': 'Pricing & free credits',
+  '按量付费': 'Pay as you go',
+  '有免费额度': 'Free credits available',
+  '按量计费，使用前需充值或领取可用赠送额度。免费额度视活动与账号而定，不保证每个账号都有。': 'Usage-based pricing. Add funds or claim available promotional credits before use. Free credits depend on promotions and your account; they are not guaranteed for every account.',
+  '每月 1,000 免费积分，无需绑定信用卡。普通搜索每次 1 积分，深入搜索每次 2 积分；更多用量需购买付费方案。': '1,000 free credits per month; no credit card required. Basic search uses 1 credit per request and detailed search uses 2. More usage requires a paid plan.',
+  '每月 10 美元免费额度，另有 10 美元新账户奖励，无需添加付款方式。额度按接口用量消耗，更多用量需开通按量付费。': r'US$10 in free credits per month, plus a US$10 onboarding bonus; no payment method required. Credits are consumed by API usage. More usage requires pay-as-you-go billing.',
+  '免费额度和价格可能调整，以官网及账号实际额度为准。搜索与文本模型分别计费。': 'Free credits and prices may change. Check the official site and your account balance. Search and text models are billed separately.',
+  '无法打开浏览器': 'Could not open a browser',
+  '复制网址': 'Copy URL',
+  '结果数量': 'Result count',
+  '时间范围': 'Time range',
+  '不限时间': 'Any time',
+  '最近一天': 'Past day',
+  '最近一周': 'Past week',
+  '最近一个月': 'Past month',
+  '最近一年': 'Past year',
+  '深入搜索': 'Detailed search',
+  '测试搜索': 'Test search',
+  '搜索成功，配置可用。': 'Search succeeded. The configuration works.',
+  '删除搜索服务': 'Delete search service',
+  '删除搜索服务？': 'Delete search service?',
+  '同时删除其密钥；历史消息中的搜索来源保留。':
+      'Its key will also be deleted. Sources in past messages are kept.',
+  '检查搜索配置': 'Check search settings',
+  '搜索来源': 'Search sources',
+  '开启联网后，先搜索网页，再由当前文本模型回答。联网设置会自动同步到配对手表。': 'When enabled, web search runs before the current text model answers. Search settings sync automatically to paired watches.',
+  '搜索服务只需独立 API Key，无需模型 ID。查询直接发送到所选搜索服务，检索资料随后发送给文本模型；搜索和模型请求可能分别计费。': 'Search services need their own API key, with no model ID. Queries go directly to the selected search provider; retrieved content then goes to the text model. Search and model requests may be billed separately.',
+  '接口地址自动填写；修改为代理地址时，请确认可信并重新填写密钥。': 'The endpoint is filled automatically. If you use a proxy, make sure you trust it and enter the key again.',
+  '更多结果和深入搜索可能增加费用与等待时间。':
+      'More results and detailed search may increase cost and waiting time.',
+  '测试会向搜索服务发送“Flutter”，可能产生搜索费用；不会保存配置。': 'Testing sends “Flutter” to the search provider and may incur a search charge. It does not save the configuration.',
+  '无法读取搜索配置，请重试。': 'Could not read search settings. Try again.',
+  '无法保存搜索配置，请重试。': 'Could not save search settings. Try again.',
+  '无法删除搜索服务，请重试。': 'Could not delete the search service. Try again.',
+  '请填写服务名称': 'Enter a service name',
+  '请填写服务名称，搜索结果数量须为 1 至 10':
+      'Enter a service name and choose 1 to 10 search results',
+  '请填写搜索服务 API Key；更换服务类型或地址时须重新填写。': 'Enter the search API key. Enter it again when changing the provider type or endpoint.',
+  'API Key 不能包含换行或控制字符':
+      'API keys cannot contain line breaks or control characters',
+  '测试搜索失败，请检查配置。': 'Search test failed. Check the settings.',
+  '联网搜索超时，请重试或关闭联网搜索。':
+      'Web search timed out. Try again or turn off web search.',
+  '无法连接搜索服务，请检查网络。':
+      'Could not connect to the search service. Check your network.',
+  '搜索服务 HTTPS 证书验证失败。':
+      'The search service HTTPS certificate could not be verified.',
+  '搜索服务返回格式无效，请检查服务类型和接口地址。':
+      'Invalid search response. Check the provider type and endpoint.',
+  '搜索接口地址必须使用 HTTPS；本机地址可用 HTTP。':
+      'Search endpoints require HTTPS. Local addresses may use HTTP.',
+  '请先配置搜索服务 API Key。': 'Configure a search service and its API key first.',
+  '搜索结果数量须为 1 至 10': 'Choose 1 to 10 search results',
+  '搜索内容不能为空': 'The search query cannot be empty',
+  '搜索响应过大，请减少结果数量。': 'Search response too large. Reduce the result count.',
+  '搜索服务返回错误，请检查密钥和额度。':
+      'The search service returned an error. Check the key and quota.',
+  '未找到可用网页资料，请修改问题或关闭联网搜索。': 'No usable web content was found. Change the question or turn off web search.',
+  '联网搜索已停止': 'Web search stopped',
+  '回复已停止': 'Reply stopped',
+  '开启联网搜索后，当前问题与搜索密钥直接发送到所选搜索服务，网页资料随后发送给文本模型。手机回复的来源资料保存在本机明文数据库中。联网开关、所选搜索服务及密钥经配对通道同步到手表；Wear OS 加密保存，Apple Watch 使用钥匙串。手表问答重连后同步到手机。': 'When web search is enabled, the current question and search key go directly to the selected search provider, then retrieved evidence goes to the text model. Phone reply sources are saved in the unencrypted local database. The search toggle, selected service and key sync over the paired connection; Wear OS encrypts them and Apple Watch uses Keychain. Watch chats sync to the phone after reconnecting.',
+  '手表': 'Watch',
+  '手表数据': 'Watch data',
+  '手表安全保存所选服务密钥和问答。Apple Watch 优先在手表请求，手表网络不可用时再尝试手机；Wear OS 优先通过手机请求，不可达时使用手表网络。Wear OS 使用加密存储，Apple Watch 使用钥匙串；问答重连后同步到手机。清空手机数据不会自动清除手表数据。': 'Watches securely store selected service keys and chats. Apple Watch uses its own requests first, then tries the phone when unavailable. Wear OS uses the phone first, then its own network. Wear OS uses encrypted storage; Apple Watch uses Keychain. Chats sync to the phone after reconnecting. Clearing phone data does not erase watch data.',
+  '手机上的话题、聊天记录、服务配置、API Key 和提示词会被删除。手表上的配置、密钥和问答不会自动清除；Wear OS 需卸载手表应用，Apple Watch 请在手表设置中清除配置和问答。此操作无法撤销。': 'Chats, service settings, API keys and prompts on the phone will be deleted. Watch settings, keys and chats remain. Uninstall the Wear OS app or use Clear watch settings and chats on Apple Watch. This cannot be undone.',
+  '手表使用的模型': 'Watch model',
+  '手表播报回复': 'Speak replies on watch',
+  '配套手表应用': 'Watch companion app',
+  '尚未配对 Apple Watch': 'No Apple Watch paired',
+  'Apple Watch 尚未安装 AI Link': 'AI Link is not installed on Apple Watch',
+  'Apple Watch 已连接': 'Apple Watch connected',
+  '手表应用已安装，等待连接': 'Watch app installed; waiting for connection',
+  '在 iPhone 的 Watch 应用中安装 AI Link 手表版。首次使用请先在手机端配置文字和语音服务；手表与手机配对并连接后，点上方状态重新检查。': 'Install AI Link for Apple Watch in the Watch app on iPhone. Configure text and voice services on iPhone first, then tap the status above after pairing and connecting.',
+  'Apple Watch 优先在手表请求语音和模型服务，手表网络不可用且手机可达时再交给 iPhone。所选密钥同步并保存在手表钥匙串；问答在手表保存，重连后同步到手机。明确且可安全重试的网络故障才换路，超时或已有部分回答时不重发。': 'Apple Watch requests voice and model services itself first, then uses a reachable iPhone if the watch network is unavailable. Selected keys sync to watch Keychain. Chats are saved on the watch and sync to the phone on reconnect. Only failures that are safe to retry switch routes; timeouts and partial replies are not resubmitted.',
+  '手表应用安装': 'Install watch app',
+  '在手表安装': 'Install on watch',
+  '正在检查已连接的手表…': 'Checking connected watches…',
+  '尚未建立 Wear OS 数据连接': 'Wear OS data connection is not established',
+  '有手表尚未安装应用': 'A connected watch needs the app',
+  '已连接的手表均已安装应用': 'App installed on all connected watches',
+  '无法检查手表连接': 'Could not check watch connection',
+  '无法检查手表数据连接，请稍后重试':
+      'Could not check the watch data connection. Try again later.',
+  '此设备不支持手表安装引导': 'Watch installation guidance is unavailable on this device',
+  '无法在手表打开安装页': 'Could not open the installation page on the watch',
+  '无法在手表打开安装页，请检查连接或手动安装': 'Could not open the installation page on the watch. Check the connection or install it manually.',
+  '已请求在手表打开安装页。若商店没有此应用，请从原安装渠道获取手表版。': 'Requested the installation page on the watch. If the store does not list this app, get the watch version from your original installation source.',
+  '蓝牙配对后，还需完成 Wear OS 配套应用的连接设置。模拟器请使用 Android Studio 的 Pair Wearable；完成后点上方状态重新检查。商店暂无本应用时，请从原安装渠道获取手表版。': 'After Bluetooth pairing, finish connecting through the Wear OS companion app. For emulators, use Pair Wearable in Android Studio, then tap the status above to check again. If the store does not list this app, use your original installation source.',
+  '请先配置模型服务': 'Configure a model provider first',
+  '已连接手机时优先使用手机网络，失败后尝试手表网络；未连接时先用手表 Wi-Fi 或蜂窝网络。仅明确的网络故障才自动换路，避免重复请求。配置与密钥由手机同步到手表。': 'Use the phone network first when connected, then try the watch network if it fails. Otherwise use watch Wi-Fi or cellular first. Only clear network failures trigger a switch to avoid duplicate requests. Settings and keys sync from the phone.',
+  '请先在语音服务中选择识别服务；开启播报时还需要选择朗读服务。手表问答保存在手机会话列表中。': 'Choose a transcription service in Voice services. Speaking also needs a speech service. Watch chats appear in the phone conversation list.',
+  '在语音服务中选择识别服务，并设置转写后是否自动发送；该开关同时适用于手机和手表。开启播报时还需选择朗读服务。': 'Choose a transcription service and automatic sending in Voice services. The sending switch applies to phone and watch. Speaking also needs a speech service.',
+  'OpenAI 兼容音频': 'OpenAI-compatible audio',
+  '小米 MiMo': 'Xiaomi MiMo',
+  '豆包语音': 'Doubao Speech',
+  '没有识别到可用文字，请重试': 'No usable speech was detected. Try again',
+  '识别文字过长，请分段录音': 'Transcript too long. Record shorter segments',
+  '语音服务返回内容过大': 'Voice service response is too large',
+  '语音服务返回格式无效': 'Invalid voice service response',
+  '录音为空或超过 12 MB，请缩短录音':
+      'Recording is empty or over 12 MB. Record a shorter clip',
+  '语音服务缺少 API Key': 'Voice service API key is missing',
+  '没有可朗读的文字': 'No text to read aloud',
+  '消息过长，请选择较短的内容朗读': 'Message too long. Choose shorter text to read aloud',
+  '语音服务没有返回音频': 'Voice service returned no audio',
+  '语音服务返回的音频无效': 'Voice service returned invalid audio',
+  '录音文件不存在，请重试': 'Recording file is missing. Try again',
+  '请先选择语音识别服务': 'Choose a transcription service first',
+  '请填写服务名称、模型 ID 与音色': 'Enter a service name, model IDs and voice ID',
+  '小米 MiMo 请使用官方接口地址': 'Use the official Xiaomi MiMo API address',
+  '豆包语音请使用官方接口地址': 'Use the official Doubao Speech API address',
+  '请填写语音服务 API Key': 'Enter the voice service API key',
+  '选中的文字服务缺少 API Key': 'The selected text provider has no API key',
+  '语音服务': 'Voice services',
+  '语音识别服务': 'Transcription service',
+  '语音朗读服务': 'Speech service',
+  '回复完成后自动朗读': 'Read replies aloud automatically',
+  '语音提供商': 'Voice providers',
+  '添加语音提供商': 'Add voice provider',
+  '编辑语音提供商': 'Edit voice provider',
+  '删除语音提供商': 'Delete voice provider',
+  '删除语音提供商？': 'Delete voice provider?',
+  '语音模型': 'Voice models',
+  '识别模型 ID / 资源 ID': 'ASR model / resource ID',
+  '合成模型 ID / 资源 ID': 'TTS model / resource ID',
+  '音色 ID': 'Voice ID',
+  '选择音色': 'Choose voice',
+  '默认': 'Default',
+  '中文女声': 'Chinese female voice',
+  '中文男声': 'Chinese male voice',
+  '英文女声': 'English female voice',
+  '英文男声': 'English male voice',
+  '录音识别极速版': 'Fast transcription',
+  '语音合成 2.0': 'Speech synthesis 2.0',
+  '甜美桃子': 'Sweet Peach',
+  '大壹': 'Da Yi',
+  '黑猫侦探社咪仔': 'Mizai',
+  '鸡汤女': 'Warm Narrator',
+  '魅力女友': 'Charming Girlfriend',
+  '流畅女声': 'Fluent Female Voice',
+  '儒雅逸辰': 'Yichen',
+  '手动输入 ID': 'Enter an ID manually',
+  '输入模型或音色 ID': 'Enter a model or voice ID',
+  '使用此 ID': 'Use this ID',
+  '选择': 'Choose',
+  '搜索 ID 或名称': 'Search ID or name',
+  '服务端返回': 'Returned by server',
+  '官方示例': 'Official examples',
+  '模型列表仅包含服务端返回的 ID，语音接口和账号权限仍需实际验证。': 'The server returned these IDs. Audio endpoints and account access still need testing.',
+  '此服务没有可用的 API Key 列表接口。示例不代表账号已开通；也可返回手动填写。': 'No API-key catalog is available for this service. Examples do not confirm access; you can also enter an ID manually.',
+  '示例来自官方文档，不代表当前账号已开通；也可返回手动填写。': 'Examples come from official docs and do not confirm account access. You can also enter an ID manually.',
+  '模型列表过大': 'Model list is too large',
+  '服务未提供模型列表': 'The service has no model list',
+  '无法获取模型列表，请检查网络或手动填写':
+      'Could not fetch models. Check the network or enter an ID manually',
+  '密钥来源': 'Key source',
+  '独立密钥': 'Separate key',
+  '复用文字服务': 'Reuse text provider',
+  '文字服务已删除': 'Text provider was deleted',
+  '不使用': 'None',
+  '未设置': 'Not set',
+  '正在生成语音': 'Generating speech',
+  '停止朗读': 'Stop reading aloud',
+  '简洁模式': 'Simple mode',
+  '复制按钮': 'Copy button',
+  '语音按钮': 'Speech button',
+  '录音采集失败，请重试': 'Audio capture failed. Try again',
+  '录音未完整结束，请重试': 'Recording did not finish. Try again',
+  '没有录到音频，请检查麦克风后重试': 'No audio captured. Check the microphone and try again',
+  '录音数据不完整，请重试': 'Incomplete audio data. Try again',
+  '录音没有有效音频数据，请重新录音': 'Recording contains no valid audio. Record again',
+  '朗读回复': 'Read reply aloud',
+  '语音输入': 'Voice input',
+  '切换到语音输入': 'Switch to voice input',
+  '切换到文字输入': 'Switch to text input',
+  '按住说话': 'Hold to talk',
+  '正在录音': 'Recording',
+  '松开发送': 'Release to send',
+  '松开转文字': 'Release to transcribe',
+  '识别后确认发送': 'Review the transcript before sending',
+  '左滑取消': 'Slide left to cancel',
+  '右滑转文字': 'Slide right to transcribe',
+  '按住说话，松开发送，左滑取消，右滑转文字': 'Hold to speak, release to send, slide left to cancel or right to review text',
+  '手机按住录音，左滑取消，右滑转文字后确认，直接松手发送。手表左上滑取消，右上滑确认。朗读声音由 AI 生成。': 'Hold to record on phone: slide left to cancel, right to review text, or release to send. On watch: slide up-left to cancel or up-right to review. Spoken replies are AI-generated.',
+  '松开取消': 'Release to cancel',
+  '松开转写 · 上滑取消': 'Release to transcribe · slide up to cancel',
+  '按住说话，松开识别': 'Hold to speak, release to transcribe',
+  '松开结束录音 · 上滑取消': 'Release to transcribe · slide up to cancel',
+  '松开取消录音': 'Release to cancel recording',
+  '转写后自动发送': 'Send automatically after transcription',
+  '结束录音并识别': 'Stop and transcribe',
+  '录音中': 'Recording',
+  '正在识别语音…': 'Transcribing…',
+  '取消录音': 'Cancel recording',
+  '按住录音，松开后转写。转写后是否直接发送同时适用于手机和手表；朗读声音由 AI 生成。': 'Hold to record and release to transcribe. Automatic sending applies to both phone and watch; spoken replies are AI-generated.',
+  '请允许麦克风权限后重试': 'Allow microphone access and try again',
+  '无法开始录音，请检查麦克风权限': 'Could not record. Check microphone access',
+  '语音识别失败，请重试': 'Transcription failed. Try again',
+  '语音朗读失败，请重试': 'Could not read aloud. Try again',
+  '请检查配置后重试': 'Check the configuration and try again',
+  'API Key（留空保留原密钥）': 'API key (blank keeps current key)',
+  '录音只发送给选定的语音识别服务；识别文字先填入输入框供你检查。朗读声音由 AI 生成，应用只播放返回的音频。': 'Recordings go directly to your chosen transcription service. Review the text before sending. Spoken replies are AI-generated; the app only plays the returned audio.',
+  '文字服务密钥仅在接口确实支持语音时可复用。豆包语音须单独填写豆包语音控制台的 API Key。': 'Reuse a text key only when its API supports audio. Doubao Speech needs its own API key.',
+  '模型与音色 ID 需要在对应服务开通。豆包语音的模型栏填写资源 ID。': 'Model and voice IDs must be available on the service. Use resource IDs for Doubao Speech.',
+  'AI Link': 'AI Link',
+  '连接你的 AI': 'Connect with your AI',
+  '更多': 'More',
+  '对话列表': 'Chats',
+  '新对话': 'New chat',
+  '切换模型': 'Switch model',
+  '模型服务': 'Model services',
+  '设置': 'Settings',
+  '通用设置': 'General',
+  '返回聊天': 'Back to chat',
+  '联系与反馈': 'Contact and feedback',
+  '邮箱已复制': 'Email address copied',
+  '取消': 'Cancel',
+  '选择模型': 'Choose model',
+  '模型列表': 'Models',
+  '其他模型': 'Other models',
+  '没有匹配的模型': 'No matching models',
+  '搜索模型 ID': 'Search model ID',
+  '接入模型服务': 'Add a model service',
+  '开始新对话': 'Start a new chat',
+  '一个地方，和不同模型继续对话。': 'Keep every model conversation in one place.',
+  '输入消息，开始讨论。': 'Type a message to begin.',
+  '请先停止当前回复，再切换模型': 'Stop the current response before switching models',
+  '无法打开这个链接': 'Unable to open this link',
+  '检查密钥': 'Check key',
+  '检查服务配置': 'Check service settings',
+  '重试回复': 'Retry response',
+  '外观': 'Appearance',
+  '主题色': 'Accent color',
+  '换肤': 'Appearance',
+  '模式': 'Mode',
+  '白天': 'Light',
+  '黑夜': 'Dark',
+  '模型设置': 'Model settings',
+  '消息设置': 'Message settings',
+  '首帧耗时': 'Time to first text',
+  '首帧': 'First text',
+  '总耗时': 'Total time',
+  '耗时': 'Time',
+  '加载中': 'Loading',
+  'Token 用量': 'Token usage',
+  '输入': 'Input',
+  '输出': 'Output',
+  '字数': 'Characters',
+  '字': 'chars',
+  '用户消息显示模型与字数；耗时和 Token 属于整次回复请求。旧消息缺少的统计不显示；服务未提供用量时显示 Token —。': 'Your messages show the model and character count. Timing and tokens cover the whole reply request. Missing statistics in old messages stay hidden; providers without usage data show Token —.',
+  '复制消息': 'Copy message',
+  '复制 Markdown 原文': 'Copy Markdown source',
+  '复制格式化文本': 'Copy formatted text',
+  '复制失败': 'Could not copy',
+  '首轮回复后，会额外请求当前模型生成会话标题，可能产生少量用量。': 'After the first reply, the current model receives one extra short request to name the chat. This may use a few tokens.',
+  '语言': 'Language',
+  '跟随系统': 'Follow system',
+  '简体中文': 'Simplified Chinese',
+  '关于': 'About',
+  '版本': 'Version',
+  '版本 Code': 'Version Code',
+  '应用信息': 'App information',
+  '数据与隐私': 'Data & privacy',
+  '使用统计': 'Usage analytics',
+  'Android 和 iOS 正式版使用 Firebase Analytics 记录应用使用事件、应用实例标识与设备信息，不收集广告标识符。不会主动上传聊天内容、API Key、录音或服务地址。调试和测试版停用统计；手表暂未接入。': 'Android and iOS production builds use Firebase Analytics for app usage events, app instance identifiers and device information, without advertising IDs. Chats, API keys, recordings and provider URLs are not intentionally uploaded. Analytics is disabled in debug and test builds; watch apps are not integrated yet.',
+  '完整隐私政策': 'Full privacy policy',
+  '隐私协议': 'Privacy policy',
+  '官方网站': 'Official website',
+  '提示词': 'Prompts',
+  '全局和单模型提示词': 'Global and model prompts',
+  '服务与数据': 'Services & data',
+  '经典蓝': 'Classic blue',
+  '海蓝绿': 'Teal',
+  '微信绿': 'WeChat green',
+  '紫罗兰': 'Violet',
+  '开源许可': 'Open source licenses',
+  '我的服务': 'My services',
+  '对话设置': 'Chat settings',
+  '隐私与数据': 'Privacy & data',
+  '国内服务': 'China providers',
+  '国际服务': 'International providers',
+  '聚合与推理平台': 'Aggregators & inference',
+  '自定义 API / JSON 导入': 'Custom API / JSON import',
+  '扫码导入配置': 'Scan to import',
+  '扫描完整配置 JSON 二维码': 'Scan a full JSON configuration QR code',
+  '查看存储方式与清空本地数据': 'Review storage and clear local data',
+  '最近': 'Recent',
+  '最近使用': 'Recently used',
+  '模型 ID': 'Model ID',
+  '手动输入模型 ID': 'Enter a model ID',
+  '从服务端获取模型列表': 'Fetch models from server',
+  '查看模型列表': 'View model list',
+  '优先显示本地缓存，可在列表中刷新。获取失败时仍可手动填写模型 ID。': 'Shows the local cache first. Refresh in the list, or enter a model ID if fetching fails.',
+  '服务端模型': 'Server models',
+  '使用此模型': 'Use this model',
+  '选择服务': 'Choose service',
+  '服务名称': 'Service name',
+  '接口协议': 'API protocol',
+  'API 根地址': 'API base URL',
+  '默认模型': 'Default model',
+  '模型': 'Models',
+  '连接设置': 'Connection',
+  '编辑服务配置': 'Edit service',
+  '保存并接入': 'Save and connect',
+  '保存': 'Save',
+  '删除服务': 'Delete service',
+  '扫码填写 API Key': 'Scan API key',
+  '扫码填写密钥': 'Scan key',
+  '粘贴密钥': 'Paste key',
+  '留空则保留原密钥': 'Leave blank to keep current key',
+  '表单': 'Form',
+  '完整配置 JSON': 'Full JSON configuration',
+  '全局提示词': 'Global prompt',
+  '模型提示词': 'Model prompts',
+  '单模型': 'Per model',
+  '新增模型提示词': 'Add model prompt',
+  '适用模型': 'Applies to',
+  '系统提示词': 'System prompt',
+  '保存提示词': 'Save prompt',
+  '尚未设置': 'Not set',
+  '话题名称': 'Chat title',
+  '重命名话题': 'Rename chat',
+  '重命名': 'Rename',
+  '删除话题': 'Delete chat',
+  '还没有对话': 'No chats yet',
+  '开始新的对话': 'Start a new chat',
+  '数据存放': 'Storage',
+  '聊天与配置': 'Chats & settings',
+  '模型请求': 'Model requests',
+  '本地数据管理': 'Local data',
+  '单独删除': 'Delete individually',
+  '清空所有本地数据': 'Clear all local data',
+  '清空本地数据？': 'Clear local data?',
+  '清空': 'Clear',
+  '请稍候…': 'Please wait…',
+  '正在清空…': 'Clearing…',
+  '正在保存…': 'Saving…',
+  '配置有误': 'Invalid configuration',
+  '无法导入': 'Unable to import',
+  '无法保存': 'Unable to save',
+  '已复制': 'Copied',
+  '好': 'OK',
+  '请选择': 'Choose',
+  '删除': 'Delete',
+  '编辑配置': 'Edit configuration',
+  '继续扫码': 'Scan again',
+  '扫码导入服务': 'Scan service',
+  '模型服务已删除': 'Model service deleted',
+  '服务已删除': 'Service deleted',
+  'OpenAI 兼容': 'OpenAI compatible',
+  '先接入模型服务': 'Add a model service first',
+  '发送消息': 'Message',
+  '删除服务配置？': 'Delete service?',
+  '删除模型提示词？': 'Delete model prompt?',
+  '写下模型应遵循的规则、角色或输出格式':
+      'Describe the rules, role, or output format for this model',
+  '请先停止生成': 'Stop the response first',
+  '停止当前回复后即可删除这个话题。': 'Stop the current response before deleting this chat.',
+  '删除这个话题？': 'Delete this chat?',
+  '本地聊天记录会一并删除，无法恢复。':
+      'Its local messages will be deleted and cannot be recovered.',
+  '正在获取模型列表…': 'Fetching models…',
+  '刷新': 'Refresh',
+  '刷新模型列表': 'Refresh model list',
+  '刷新失败，已保留当前列表。': 'Refresh failed. The current list is still available.',
+  '输入模型 ID': 'Enter model ID',
+  '例如：我的 OpenAI': 'For example: My OpenAI',
+  '新建模型服务': 'Add model service',
+  '扫一扫': 'Scan',
+  '密钥保存在手机安全存储中；选作手表服务时会经配对通道同步到手表，Wear OS 加密保存，Apple Watch 保存在钥匙串。我们不设中转服务器，请求会直达你配置的 API 服务商。': 'Keys stay in secure phone storage. Selected watch service keys sync over the paired connection, using encrypted storage on Wear OS and Keychain on Apple Watch. We run no relay server; requests go directly to your configured API provider.',
+  '还没有接入服务。选择下方平台，填写密钥即可开始。':
+      'No services yet. Choose a provider below and enter your key.',
+  '已填入 API 地址和示例模型；账号可用模型以服务端为准。': 'API URLs and example models are prefilled. Available models depend on your account.',
+  '在所有模型的每次请求中生效。': 'Applied to every model request.',
+  '按服务和模型 ID 区分；发送时接在全局提示词之后。留空的模型只使用全局提示词。': 'Set per service and model ID. It follows the global prompt. Models without one use only the global prompt.',
+  '接入模型服务后，即可为指定模型设置提示词。':
+      'Add a model service to set prompts for individual models.',
+  '仅对上方服务与模型 ID 的请求生效，不会显示在聊天记录中。': 'Applied only to this service and model ID. It does not appear in chat history.',
+  '清空并保存即可关闭全局提示词。': 'Clear and save to disable the global prompt.',
+  '已保存的服务和模型 ID 固定；需要更换时请新增一条。': 'The saved service and model ID are fixed. Add a new entry to change them.',
+  '可以使用未出现在服务端列表中的模型。':
+      'You can use a model that is missing from the server list.',
+  '获取失败时仍可手动填写模型 ID。密钥不会写入聊天数据库。': 'You can enter a model ID if fetching fails. The key is never stored in the chat database.',
+  '填写 API 根地址，应用会自动拼接 /chat/completions 或 /messages。':
+      'Enter the API base URL. The app appends /chat/completions or /messages.',
+  '扫描仅包含 API Key 字符串的二维码，识别后自动填入。':
+      'Scan a QR code containing only the API key to fill it in.',
+  '扫描包含完整服务配置 JSON 的二维码，识别成功后自动导入。': 'Scan a QR code containing a full service configuration JSON to import it.',
+  '话题、消息、提示词和非密钥配置保存在本机数据库中，数据库内容未加密。': 'Chats, messages, prompts, and settings are stored in an unencrypted local database.',
+  '保存在设备的安全存储中，不写入聊天数据库。':
+      'Stored in the device secure storage, never in the chat database.',
+  '对话内容、提示词和 API Key 从设备直接发送到你选择的服务地址，由该服务处理。': 'Chats, prompts, and API keys go directly from your device to the chosen service.',
+  '清空后无法在应用内恢复聊天记录。已经发送给第三方模型服务的内容不受此操作影响。': 'Cleared chats cannot be recovered in the app. Data already sent to a provider is unaffected.',
+  '可在话题列表删除某个话题，在模型服务页删除某项服务及其密钥。': 'Delete individual chats in Chats, or a service and its key in Model services.',
+  '所有话题、聊天记录、服务配置、API Key 和提示词都会从本应用中删除。此操作无法撤销。': 'All chats, service settings, API keys, and prompts will be deleted from this app. This cannot be undone.',
+  '请先停止正在生成的回复，再清空数据。': 'Stop the current response before clearing data.',
+  '请先停止回复或等待标题生成完成，再清空数据。': 'Stop the reply or wait for the chat title to finish before clearing data.',
+  '本地保存': 'Stored locally',
+  '话题和消息保存在设备的 SQLite 数据库中。API Key 保存在系统安全存储中。': 'Chats and messages are stored in SQLite on this device. API keys are stored in secure storage.',
+  '请求直连': 'Direct requests',
+  '请求从设备直接发送到你配置的模型服务商。': 'Requests go directly from your device to the model service you configure.',
+  '按模型 ID 的服务或家族前缀分组；搜索可查找全部模型。':
+      'Grouped by service or model family. Search covers every model.',
+  '仅显示前 100 个结果，可搜索更多模型。': 'Showing the first 100 results. Search for more.',
+  '本组仅显示前 100 个模型，可搜索更多。':
+      'Showing the first 100 in this group. Search for more.',
+  '对话': 'Chats',
+  '其他': 'Other',
+  '名称和模型不能为空': 'Service name and model cannot be empty',
+  '字段：name、protocol、baseUrl、model、apiKey。编辑时 apiKey 留空表示保留原密钥；JSON 编辑框会明文显示新填入的密钥。': 'Fields: name, protocol, baseUrl, model, apiKey. Leave apiKey blank when editing to keep the current key. A newly entered key is visible in the JSON editor.',
+  '支持 OpenAI 兼容 Chat Completions 与 Claude Messages 协议。':
+      'Supports OpenAI compatible Chat Completions and Claude Messages.',
+  '服务没有返回可用模型': 'The service returned no usable models',
+  '请先修正配置 JSON，再扫码填写密钥': 'Fix the configuration JSON before scanning a key',
+  '请先填写 API Key': 'Enter an API key first',
+  '复用密钥时，API 根地址须与文字服务一致':
+      'When reusing a key, the API base URL must match the text provider',
+  '请先填写有效的配置 JSON': 'Enter valid configuration JSON',
+  '请填写 API Key': 'Enter an API key',
+  '服务配置已删除，请重新选择模型。': 'The service was deleted. Choose a model again.',
+  '此服务尚未配置 API Key。': 'This service has no API key.',
+  '此话题原来的服务已删除，请重新选择模型。':
+      'The service for this chat was deleted. Choose a model again.',
+  '请先在服务设置中填写 API Key': 'Enter an API key in service settings first',
+  '服务没有返回可用模型，可手动输入模型 ID。':
+      'The service returned no usable models. You can enter a model ID.',
+  '请输入模型 ID': 'Enter a model ID',
+  '全局': 'Global',
+  '已删除的服务': 'Deleted service',
+  '模型 ID 可以手动填写，例如当前服务的默认模型。': 'You can enter a model ID manually, such as this service’s default model.',
+  '请选择服务，并填写模型 ID 和提示词': 'Choose a service, then enter a model ID and prompt',
+  '清理未完成，请重试。': 'Could not finish clearing data. Try again.',
+  'API 地址必须使用 HTTPS；模拟器本机地址可用 HTTP':
+      'The API URL must use HTTPS. Local emulator addresses may use HTTP.',
+  '不支持的协议': 'Unsupported protocol',
+  '二维码中没有有效的 API Key': 'The QR code has no valid API key',
+  '二维码缺少 API Key': 'The QR code is missing an API key',
+  '二维码配置字段格式不正确': 'Invalid configuration fields in the QR code',
+  '请扫描仅包含 API Key 字符串的二维码': 'Scan a QR code containing only an API key',
+  '请输入有效的 API 根地址': 'Enter a valid API base URL',
+  '配置必须是 JSON 对象': 'The configuration must be a JSON object',
+  'HTTPS 证书验证失败': 'HTTPS certificate verification failed',
+  '服务未返回文本，请检查模型和接口协议':
+      'The service returned no text. Check the model and protocol.',
+  '服务返回的数据格式不正确，请检查接口协议':
+      'The service returned invalid data. Check the protocol.',
+  '模型列表格式不正确，请手动输入模型 ID': 'Invalid model list. Enter the model ID manually.',
+  '此服务未提供兼容的模型列表': 'This service does not provide a compatible model list',
+  '获取模型超时': 'Fetching models timed out',
+  '请求超时，请检查网络和 API 地址': 'Request timed out. Check the network and API URL.',
+  '连接中断，请检查 API 地址或稍后重试':
+      'Connection interrupted. Check the API URL or try again later.',
+  '导入失败，请重试': 'Import failed. Try again.',
+  '请在系统设置中允许相机权限后返回重试':
+      'Allow camera access in system settings, then try again.',
+  '相机暂不可用，请检查设备相机后重试':
+      'The camera is unavailable. Check the device camera and try again.',
+  '扫码后请检查密钥并保存服务。密钥保存在设备安全存储中；选作手表服务时会经配对通道同步，Wear OS 加密保存，Apple Watch 使用钥匙串。': 'Check the scanned key before saving. It stays in secure device storage. Selected watch keys sync over the paired connection; Wear OS uses encrypted storage and Apple Watch uses Keychain.',
+  '二维码需包含 name、protocol、baseUrl、model、apiKey。\n密钥保存在设备安全存储中；选作手表服务时会经配对通道同步，Wear OS 加密保存，Apple Watch 使用钥匙串。': 'The QR code must contain name, protocol, baseUrl, model, and apiKey.\nThe key stays in secure device storage. Selected watch keys sync over the paired connection; Wear OS uses encrypted storage and Apple Watch uses Keychain.',
+};

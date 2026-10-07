@@ -12,37 +12,83 @@
 
 ## 代码地图
 
-- `lib/main.dart`：应用入口、聊天状态、发送与流式回复、聊天页。
-- `lib/chat_more_menu.dart`：聊天页右上角“更多”操作表，包含新对话、切换模型和模型服务。
-- `lib/chat_model_title.dart`：聊天页顶部当前服务与模型标题，可点按切换模型。
-- `lib/topic_screen.dart`：左侧会话抽屉，以及话题重命名、删除；底部设置入口。
+`lib/` 按功能域分目录，每个目录内聚一个功能：`core/` 基础设施与共享模型、`api/` 网络与协议、`chat/` 聊天主流程、`provider/` 服务配置、`voice/` 语音链路、`search/` 联网搜索、`watch/` 手表联动、`settings/` 设置与其它页面、`ui/` 通用 UI 基元。`lib/main.dart` 只保留入口与应用外壳。新增文件放进对应功能域；只有跨功能域复用才放 `ui/` 或 `core/`。`lib/` 内部导入统一写 `package:mulit_ai_flutter/<路径>.dart`，不用相对路径。
+
+### 入口与外壳
+
+- `lib/main.dart`：`main()`、手表后台入口 `watchBackgroundMain()` 与 `MaterialApp` 外壳；必须留在 `lib/` 根目录（`FLUTTER_TARGET`）。
+- `lib/core/app_platform.dart`：`isDesktopApp`、`supportsApplePurchases`、`supportsWatchCompanion` 等平台能力判断；UI 不用 `Platform.isAndroid/isIOS` 分支。
+
+### 聊天（chat/）
+
+- `lib/chat/chat_home.dart`：聊天页 `ChatHome` 与状态机；持有会话列表、发送与流式回复、录音与朗读状态。
+- `lib/chat/widgets/chat_welcome.dart`：空会话欢迎页。
+- `lib/chat/widgets/chat_error_card.dart`：错误卡片与 `ChatErrorAction` 枚举。
+- `lib/chat/widgets/message_bubble.dart`：单条消息气泡，含正文、搜索来源与气泡下统计。
+- `lib/chat/widgets/chat_composer.dart`：底部输入区，语音/文字切换、按住说话与发送按钮。
+- `lib/chat/chat_more_menu.dart`：聊天页右上角“更多”操作表，包含新对话、切换模型和模型服务。
+- `lib/chat/chat_model_title.dart`：聊天页顶部当前服务与模型标题，可点按切换模型。
+- `lib/chat/topic_screen.dart`：左侧会话抽屉，以及话题重命名、删除；底部设置入口。
 - 手表参与过的话题通过本机 `settings` 中的手表会话映射识别，侧栏显示手表图标；设置入口贴在抽屉左下角。
-- `lib/chat_model_selector.dart`：聊天页统一的服务与模型选择，支持最近使用、服务端列表和手动 ID。
-- `lib/chat_scroll.dart`：流式回复时的底部跟随，用户滑离底部后保留阅读位置。
-- `lib/chat_streaming_reply.dart`：生成中气泡独立订阅文本更新，避免每段流式文本重建聊天页与历史列表。
-- `lib/chat_context.dart` 与 `lib/chat_context_screen.dart`：手机和桌面的上下文估算预算、最近完整轮次选择、超限提示与设置；不删除本机历史，规则和验证见 `doc/CHAT_CONTEXT.md`。
-- `lib/chat_message_meta.dart`：气泡下的模型、耗时、Token 与字数展示。
-- `lib/chat_loading_status.dart`：回复生成时的菊花与毫秒计时；计时器只更新状态行。
-- `lib/provider_badge.dart`：服务预设图标与自定义服务字母徽标，在服务列表、聊天标题和消息信息中复用。
-- `lib/message_copy.dart`：复制 Markdown 原文或包含 HTML 与纯文本的格式化内容；Android/iOS 原生剪贴板通道负责富文本。
-- `lib/model_picker.dart`：聊天与服务配置共用的可搜索模型列表；大列表按 `平台/模型` 或 `家族-型号` 前缀折叠分组。
-- `lib/settings_screen.dart`：模型设置、语言、换肤、关于及开源许可入口。
-- `lib/app_preferences.dart`：本地语言、白天/黑夜/跟随系统和主题色偏好、界面文案翻译。
-- `lib/provider_screen.dart`：服务预设、自定义服务、表单/JSON 编辑和模型列表。
-- `lib/api_key_help.dart`：文本和语音服务的官方密钥入口、三类教程链接及外部浏览器打开失败时的复制入口；自定义地址不冒用其他平台的密钥指引。
-- `lib/provider_qr_scanner.dart`：完整配置 JSON 二维码自动导入，以及纯 API Key 字符串扫码填入。
-- `lib/prompt_screen.dart`：全局与单模型提示词设置。
-- `lib/privacy_screen.dart`：本地数据与第三方请求说明、清空本地数据入口。
-- `lib/ios_style.dart`：跨平台共用的 iOS 风格颜色、导航栏、分组行、主按钮。
-- `lib/assistant_markdown.dart`：模型回复的 Markdown 展示。
-- `lib/data.dart`：服务配置、话题、消息模型；SQLite 和密钥存储。
+- `lib/chat/chat_model_selector.dart`：聊天页统一的服务与模型选择，支持最近使用、服务端列表和手动 ID。
+- `lib/chat/chat_scroll.dart`：流式回复时的底部跟随，用户滑离底部后保留阅读位置。
+- `lib/chat/chat_streaming_reply.dart`：生成中气泡独立订阅文本更新，避免每段流式文本重建聊天页与历史列表。
+- `lib/chat/chat_context.dart` 与 `lib/chat/chat_context_screen.dart`：手机和桌面的上下文估算预算、最近完整轮次选择、超限提示与设置；不删除本机历史，规则和验证见 `doc/CHAT_CONTEXT.md`。
+- `lib/chat/chat_message_meta.dart`：气泡下的模型、耗时、Token 与字数展示；同时定义 `SpeechPlaybackState`。
+- `lib/chat/chat_loading_status.dart`：回复生成时的菊花与毫秒计时；计时器只更新状态行。
+- `lib/chat/message_copy.dart`：复制 Markdown 原文或包含 HTML 与纯文本的格式化内容；Android/iOS 原生剪贴板通道负责富文本。
+- `lib/chat/model_picker.dart`：聊天与服务配置共用的可搜索模型列表；大列表按 `平台/模型` 或 `家族-型号` 前缀折叠分组。
+- `lib/chat/assistant_markdown.dart`：模型回复的 Markdown 展示。
+- `lib/chat/desktop_chat.dart`：macOS 桌面端的分栏布局与键盘快捷键外壳。
+
+### 核心数据（core/）
+
+- `lib/core/data.dart`：服务配置、话题、消息模型；SQLite 和密钥存储。
+- `lib/core/app_preferences.dart`：本地语言、白天/黑夜/跟随系统和主题色偏好、界面文案翻译。
+- `lib/core/apple_purchases.dart`：Apple 内购状态与刷新。
+
+### 网络与协议（api/）
+
+- `lib/api/api_client.dart`：HTTP 请求、SSE 解析和协议适配。
+
+### 服务配置（provider/）
+
+- `lib/provider/provider_screen.dart`：服务预设、自定义服务、表单/JSON 编辑和模型列表。
+- `lib/provider/provider_badge.dart`：服务预设图标与自定义服务字母徽标，在服务列表、聊天标题和消息信息中复用。
+- `lib/provider/api_key_help.dart`：文本和语音服务的官方密钥入口、三类教程链接及外部浏览器打开失败时的复制入口；自定义地址不冒用其他平台的密钥指引。
+- `lib/provider/provider_qr_scanner.dart`：完整配置 JSON 二维码自动导入，以及纯 API Key 字符串扫码填入。
+
+### 语音（voice/）
+
+- `lib/voice/voice_client.dart`：云端语音识别和合成的 OpenAI 兼容、MiMo、豆包语音协议适配；不得使用系统 ASR/TTS 代替。
+- `lib/voice/voice_settings_screen.dart`：独立语音提供商、文字服务密钥复用、识别/朗读选择和自动朗读设置；发送或确认由录音手势决定。
+- `lib/voice/voice_recording_overlay.dart`：手机按住录音时的全屏浮层、实时振幅波纹和计时。
+- `lib/voice/voice_catalog.dart` 与 `lib/voice/voice_catalog_picker.dart`：语音模型/音色候选、兼容服务 `/models` 查询和选择界面；候选不表示账号权限。
+
+### 联网搜索（search/）
+
+- `lib/search/search_service.dart`：搜索请求与 `SearchSource` 模型。
+- `lib/search/search_sources.dart`：气泡下的来源列表展示。
+- `lib/search/search_settings_screen.dart`：搜索服务、开关与密钥设置。
+
+### 手表联动（watch/）
+
+- `lib/watch/watch_chat.dart`：手机后台 Flutter 入口，把所选服务配置发给手表，为 Wear OS 手机优先、Apple Watch 网络兜底执行无落库语音/模型/朗读请求，并将手表离线问答同步进手机会话库；保留旧版手表的手机处理路径。原生按顶层函数名 `watchBackgroundMain` 唤起后台 isolate，与文件路径无关，移动本文件不影响该入口。
+- `lib/watch/watch_settings_screen.dart`：手机端的手表模型与播报开关。
+
+### 设置与其它页面（settings/）
+
+- `lib/settings/settings_screen.dart`：模型设置、语言、换肤、关于及开源许可入口。
+- `lib/settings/prompt_screen.dart`：全局与单模型提示词设置。
+- `lib/settings/privacy_screen.dart`：本地数据与第三方请求说明、清空本地数据入口。
+- `lib/settings/purchase_screen.dart`：内购页面。
+- `lib/settings/startup_screen.dart`：共用 Flutter 动画启动页。
+
+### 通用 UI（ui/）
+
+- `lib/ui/ios_style.dart`：跨平台共用的 iOS 风格颜色、导航栏、分组行、主按钮。
+
 - `assets/provider_icons/`：本地服务图标及 Lobe Icons 的许可文件。
-- `lib/api_client.dart`：HTTP 请求、SSE 解析和协议适配。
-- `lib/voice_client.dart`：云端语音识别和合成的 OpenAI 兼容、MiMo、豆包语音协议适配；不得使用系统 ASR/TTS 代替。
-- `lib/voice_settings_screen.dart`：独立语音提供商、文字服务密钥复用、识别/朗读选择和自动朗读设置；发送或确认由录音手势决定。
-- `lib/voice_recording_overlay.dart`：手机按住录音时的全屏浮层、实时振幅波纹和计时。
-- `lib/watch_settings_screen.dart`：手机端的手表模型与播报开关。
-- `lib/watch_chat.dart`：手机后台 Flutter 入口，把所选服务配置发给手表，为 Wear OS 手机优先、Apple Watch 网络兜底执行无落库语音/模型/朗读请求，并将手表离线问答同步进手机会话库；保留旧版手表的手机处理路径。
 - `android/wear/`：独立 Wear OS APK，负责录音、路由选择、手表独立请求、展示回复和音频播放；`WatchPhoneRelay.kt` 处理手机网络路径，`WatchNetworkSelector.kt` 指定手表 Wi-Fi/蜂窝网络，所选密钥用 Android Keystore 加密保存。
 - `ios/AILinkWatch/`：SwiftUI Apple Watch 配套应用，长按录音、松手发送、左上滑取消、右上滑转文字后确认，显示最近问答和可选的模型语音播放；语言跟随手机 App，外观跟随手表系统。经 WatchConnectivity 同步所选服务配置，密钥仅在手表 Keychain 保存；优先使用 URLSession 直接请求，手表网络明确不可用且手机可达时复用配对 iPhone 无落库接口。`WatchNetworkClient.swift` 适配文字与语音协议，`WatchPhoneRelay.swift` 关联请求阶段，`WatchNetworkConfiguration.swift` 管理安全配置、路由与确认同步；真实服务及 Wi-Fi/蜂窝待真机验证。
 - `ios/Runner/AppleWatchBridge.swift`：iPhone 端 WatchConnectivity 与后台 Flutter worker 桥接；沿用 `WatchChatProcessor` 云端识别、聊天、可选合成及 SQLite 入库。Apple 平台待 Xcode 编译、后台唤醒和配对设备验证，不能仅凭 Swift 语法检查声明可运行。
@@ -54,8 +100,7 @@
 - 手机（Android/iOS）和手表（Wear OS/Apple Watch）录音不足 0.6 秒视为误触：松开后静默忽略、清理临时录音并恢复输入状态，不显示录音太短提示、不请求转写或模型；达到 0.6 秒才进入正常流程。时长从实际开始录音计算，不包含权限弹窗或启动录音的等待。
 - `android/app/.../MainActivity.kt` 与 `android/wear/.../WatchActivity.kt`：手机和手表通过静态 capability 检查另一端安装状态，并向缺失设备发送商店安装页跳转；未上架的测试包仍需分别安装。
 - `android/app/src/main/kotlin/com/maxhall/ailink/WatchRequestListener.kt` 与 `WatchRequestWorker.kt`：Data Layer 处理手表配置请求、手机网络路径与问答同步；兼容旧版录音请求。
-- `lib/voice_catalog.dart` 与 `lib/voice_catalog_picker.dart`：语音模型/音色候选、兼容服务 `/models` 查询和选择界面；候选不表示账号权限。
-- `test/`：协议、配置、Markdown 和界面行为测试。
+- `test/`：协议、配置、Markdown 和界面行为测试。测试全部用 `package:mulit_ai_flutter/<路径>.dart` 导入，因此 `lib/` 目录调整后测试也会一并编译校验。
 - `test/translation_coverage_test.dart`：基于 Dart AST 的静态中文 UI 和错误文案英文覆盖守卫；变量引用和插值文案需另补测试。
 - `android/app/src/main/AndroidManifest.xml` 与 `res/xml/network_security_config.xml`：网络权限与明文连接范围。
 - `release.sh`、`android/key.properties.example`、`android/key.test.properties`、`localConfig/ai-link-test.jks`、`doc/google_play/`：本地正式/测试签名打包和 Google Play 上架资料。测试签名及配置允许入库，其密码视为公开信息；正式 `android/key.properties`、`localConfig/ai-link-upload.jks`、正式密码和构建产物绝对不得提交。正式手机和手表使用包名 `com.maxhall.ailink`；普通 Debug 与 `--test` 包使用 `com.maxhall.ailink.debug`、名称「AI Link Debug」和同一测试签名，可与正式包并存；同一套手机与手表包必须共用包名和签名；`./release.sh` 出正式 AAB，`./release.sh --test` 出测试 APK。
@@ -63,7 +108,7 @@
 
 ## UI 约定
 
-- 手机启动时先显示与品牌图标一致的原生启动画面，再显示 `lib/startup_screen.dart` 的共用 Flutter 动画页；设置读取与聊天初始加载在此期间执行，完成后淡出进入聊天。遵循本地外观偏好与系统减少动画设置，不在恢复前台时重复显示闪屏。
+- 手机启动时先显示与品牌图标一致的原生启动画面，再显示 `lib/settings/startup_screen.dart` 的共用 Flutter 动画页；设置读取与聊天初始加载在此期间执行，完成后淡出进入聊天。遵循本地外观偏好与系统减少动画设置，不在恢复前台时重复显示闪屏。
 - 页面布局、导航、操作表和输入控件统一沿用 `ios_style.dart` 与 `Cupertino` 组件；`MaterialApp` 提供应用基础设施和 Markdown 所需的 Material 环境。避免在单个页面重新引入默认 Material 抽屉、列表项、浮动按钮或弹窗。
 - 聊天页新对话先作为内存中的草稿显示；发送第一条消息时再将话题和消息一起写入 SQLite。切换草稿模型不应生成空白话题。网络失败后的“重试回复”只重新请求回复，不重复写入用户消息。
 - 上次选中的文字服务 ID 和完整模型 ID 保存在本机 `settings` 表；冷启动恢复为新会话草稿，不自动创建话题。服务已删除时，从最近仍可用的话题或现有服务默认模型回退；手动输入的模型 ID 不依赖服务端列表验证。

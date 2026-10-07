@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:mulit_ai_flutter/data.dart';
-import 'package:mulit_ai_flutter/voice_catalog.dart';
-import 'package:mulit_ai_flutter/voice_catalog_picker.dart';
+import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/voice/voice_catalog.dart';
+import 'package:mulit_ai_flutter/voice/voice_catalog_picker.dart';
 
 void main() {
   test(

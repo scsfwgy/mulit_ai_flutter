@@ -4,11 +4,11 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mulit_ai_flutter/data.dart';
-import 'package:mulit_ai_flutter/api_client.dart';
-import 'package:mulit_ai_flutter/voice_recording.dart';
-import 'package:mulit_ai_flutter/watch_chat.dart';
-import 'package:mulit_ai_flutter/search_service.dart';
+import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/api/api_client.dart';
+import 'package:mulit_ai_flutter/voice/voice_recording.dart';
+import 'package:mulit_ai_flutter/watch/watch_chat.dart';
+import 'package:mulit_ai_flutter/search/search_service.dart';
 
 class _Store extends Fake implements ChatStore {
   final values = <String, String>{};

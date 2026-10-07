@@ -5,10 +5,10 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:mulit_ai_flutter/data.dart';
-import 'package:mulit_ai_flutter/voice_client.dart';
-import 'package:mulit_ai_flutter/voice_recording.dart';
-import 'package:mulit_ai_flutter/voice_request_diagnostics.dart';
+import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/voice/voice_client.dart';
+import 'package:mulit_ai_flutter/voice/voice_recording.dart';
+import 'package:mulit_ai_flutter/voice/voice_request_diagnostics.dart';
 
 void main() {
   test(

@@ -5,19 +5,19 @@ import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:mulit_ai_flutter/api_client.dart';
-import 'package:mulit_ai_flutter/app_preferences.dart';
-import 'package:mulit_ai_flutter/chat_more_menu.dart';
-import 'package:mulit_ai_flutter/chat_loading_status.dart';
-import 'package:mulit_ai_flutter/chat_message_meta.dart';
-import 'package:mulit_ai_flutter/chat_model_selector.dart';
-import 'package:mulit_ai_flutter/chat_model_title.dart';
-import 'package:mulit_ai_flutter/data.dart';
-import 'package:mulit_ai_flutter/ios_style.dart';
-import 'package:mulit_ai_flutter/model_picker.dart';
-import 'package:mulit_ai_flutter/provider_screen.dart';
-import 'package:mulit_ai_flutter/privacy_screen.dart';
-import 'package:mulit_ai_flutter/settings_screen.dart';
+import 'package:mulit_ai_flutter/api/api_client.dart';
+import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/chat/chat_more_menu.dart';
+import 'package:mulit_ai_flutter/chat/chat_loading_status.dart';
+import 'package:mulit_ai_flutter/chat/chat_message_meta.dart';
+import 'package:mulit_ai_flutter/chat/chat_model_selector.dart';
+import 'package:mulit_ai_flutter/chat/chat_model_title.dart';
+import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/ui/ios_style.dart';
+import 'package:mulit_ai_flutter/chat/model_picker.dart';
+import 'package:mulit_ai_flutter/provider/provider_screen.dart';
+import 'package:mulit_ai_flutter/settings/privacy_screen.dart';
+import 'package:mulit_ai_flutter/settings/settings_screen.dart';
 
 void main() {
   testWidgets('message details settings exposes each display switch', (

@@ -2,8 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mulit_ai_flutter/apple_purchases.dart';
-import 'package:mulit_ai_flutter/purchase_screen.dart';
+import 'package:mulit_ai_flutter/core/apple_purchases.dart';
+import 'package:mulit_ai_flutter/settings/purchase_screen.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

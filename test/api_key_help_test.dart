@@ -4,10 +4,10 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mulit_ai_flutter/api_key_help.dart';
-import 'package:mulit_ai_flutter/data.dart';
-import 'package:mulit_ai_flutter/provider_screen.dart';
-import 'package:mulit_ai_flutter/settings_screen.dart';
+import 'package:mulit_ai_flutter/provider/api_key_help.dart';
+import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/provider/provider_screen.dart';
+import 'package:mulit_ai_flutter/settings/settings_screen.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mulit_ai_flutter/message_copy.dart';
+import 'package:mulit_ai_flutter/chat/message_copy.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

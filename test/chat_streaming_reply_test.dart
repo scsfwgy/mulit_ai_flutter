@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mulit_ai_flutter/assistant_markdown.dart';
-import 'package:mulit_ai_flutter/chat_streaming_reply.dart';
+import 'package:mulit_ai_flutter/chat/assistant_markdown.dart';
+import 'package:mulit_ai_flutter/chat/chat_streaming_reply.dart';
 
 class _BuildCounter extends StatelessWidget {
   const _BuildCounter(this.onBuild);
