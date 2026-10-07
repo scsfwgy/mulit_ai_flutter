@@ -12,9 +12,9 @@ class ReleaseScriptTest(unittest.TestCase):
     def test_bash_syntax(self):
         subprocess.run(["/bin/bash", "-n", str(RELEASE_SCRIPT)], check=True)
 
-    def test_detected_play_proxy_does_not_leak_into_flutter(self):
+    def test_detected_publish_proxy_does_not_leak_into_flutter(self):
         source = RELEASE_SCRIPT.read_text()
-        preflight = source[source.index('play_env=(env)'):source.index('normalize_fingerprint()')]
+        preflight = source[source.index('publish_env=(env)'):source.index('normalize_fingerprint()')]
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             runtime = root / "scripts" / ".venv"
@@ -47,6 +47,7 @@ class ReleaseScriptTest(unittest.TestCase):
                 json_key=str(key),
                 push_release="1",
                 push_website="1",
+                push_ios="0",
                 play_track="internal",
                 wear_track="wear:internal",
             )
@@ -75,6 +76,7 @@ class ReleaseScriptTest(unittest.TestCase):
             env = os.environ.copy()
             env.update(
                 push_release="1",
+                push_ios="0",
                 play_track="internal",
                 wear_track=wear_track,
                 output=directory,
@@ -89,7 +91,7 @@ class ReleaseScriptTest(unittest.TestCase):
                 ["/bin/bash", "-Eeuo", "pipefail", "-c",
                  'print_summary() { :; }\n'
                  'fail() { echo "$1" >&2; exit 1; }\n'
-                 'play_env=(env http_proxy=http://127.0.0.1:7897 https_proxy=http://127.0.0.1:7897)\n' + upload_step],
+                 'publish_env=(env http_proxy=http://127.0.0.1:7897 https_proxy=http://127.0.0.1:7897)\n' + upload_step],
                 env=env, capture_output=True, text=True, errors="replace",
             )
             info = output / "release-info.txt"
@@ -102,7 +104,8 @@ class ReleaseScriptTest(unittest.TestCase):
         self.assertIn("--track\ninternal\n", result.stdout)
         self.assertIn("--wear-version-code\n1000001\n", result.stdout)
         self.assertIn("proxy=http://127.0.0.1:7897|http://127.0.0.1:7897", result.stdout)
-        self.assertEqual(info, "playStatus=COMMITTED|edit-test\n")
+        self.assertIn("playStatus=COMMITTED|edit-test", info)
+        self.assertIn("appstoreStatus=NOT_UPLOADED", info)
 
     def test_upload_failure_is_recorded(self):
         result, info = self.run_upload_step(succeeds=False)
@@ -124,7 +127,8 @@ class ReleaseScriptTest(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
             self.assertIn("--wear-track 必须", result.stderr)
 
-    def mock_release_root(self, directory, flags, website_failure=False, ios_signing=True):
+    def mock_release_root(self, directory, flags, website_failure=False, ios_signing=True,
+                          appstore_failure=False):
         # Repo skeleton whose external commands are stubs, so release.sh runs its
         # real branch structure without building or touching the network.
         root = Path(directory)
@@ -137,6 +141,7 @@ class ReleaseScriptTest(unittest.TestCase):
                 "storeFile=../test.jks\nstorePassword=test\nkeyAlias=test\nkeyPassword=test\n")
         (root / "localConfig").mkdir()
         (root / "localConfig/google-play-service-account.json").touch()
+        (root / "localConfig/appstore-connect.env").touch()
         runtime = root / "scripts/.venv/bin"
         runtime.mkdir(parents=True)
         commands = root / "commands"
@@ -206,10 +211,15 @@ for suffix in (['ipa'] if args.platform == 'ios' else ['dmg', 'zip']):
         if [[ "$*" == *play_upload.py* && "$*" != *--check-tracks* ]]; then
           echo 'PLAY_UPLOAD_STATUS=COMMITTED|test-edit'
         fi
+        if [[ "$*" == *appstore_upload.py* && "$*" != *--check* ]]; then
+          if [[ "$APPSTORE_FAILURE" == 1 ]]; then exit 1; fi
+          echo 'APPSTORE_UPLOAD_STATUS=UPLOADED|com.maxhall.ailink|1.0.1|10|test-delivery'
+        fi
         ''')
         env = {k: v for k, v in os.environ.items() if k.lower() not in {"http_proxy", "https_proxy"}}
         env.update(PATH=f'{commands}:{env["PATH"]}', CALLS=str(root / "calls"),
                    WEBSITE_FAILURE=str(int(website_failure)),
+                   APPSTORE_FAILURE=str(int(appstore_failure)),
                    SECURITY_IDENTITIES=('  1) ABCD "Apple Distribution: Test (T94W2V3B6M)"'
                                         if ios_signing else ""))
         return root, env
@@ -254,6 +264,70 @@ for suffix in (['ipa'] if args.platform == 'ios' else ['dmg', 'zip']):
                 else:
                     self.assertNotIn("python ", calls)
 
+    def test_push_ios_uploads_ipa_without_android_or_macos(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, env = self.mock_release_root(directory, ["--push-ios"])
+            result = subprocess.run(["/bin/bash", "release.sh", "--push-ios"], cwd=root,
+                                    env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            calls = (root / "calls").read_text()
+            self.assertIn("apple ios 1.0.1+10", calls)
+            self.assertNotIn("apple macos", calls)
+            self.assertNotIn("gradle", calls)
+            self.assertIn("python scripts/appstore_upload.py --check-online", calls)
+            self.assertIn("python -u scripts/appstore_upload.py", calls)
+            self.assertIn("App Store Connect：成功", result.stdout)
+            info = next((root / "release-artifacts").rglob("release-info.txt"))
+            self.assertIn("appstoreStatus=UPLOADED|com.maxhall.ailink|1.0.1|10|test-delivery\n",
+                          info.read_text())
+            self.assertIn("playStatus=NOT_UPLOADED\n", info.read_text())
+            self.assertEqual(len(list(info.parent.glob("*.apk"))), 0)
+            self.assertEqual(len(list(info.parent.glob("*.aab"))), 0)
+
+    def test_push_release_with_push_ios_builds_android_and_ios_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, env = self.mock_release_root(directory, ["--push-release", "--push-ios"])
+            result = subprocess.run(["/bin/bash", "release.sh", "--push-release", "--push-ios"],
+                                    cwd=root, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            calls = (root / "calls").read_text()
+            self.assertIn("apple ios 1.0.1+10", calls)
+            self.assertNotIn("apple macos", calls)
+            self.assertIn("python -u scripts/play_upload.py", calls)
+            self.assertIn("python -u scripts/appstore_upload.py", calls)
+            info = next((root / "release-artifacts").rglob("release-info.txt"))
+            self.assertIn("websiteStatus=CONFIRMED\n", info.read_text())
+            self.assertIn("playStatus=COMMITTED|test-edit\n", info.read_text())
+            self.assertIn("appstoreStatus=UPLOADED|", info.read_text())
+            self.assertEqual(len(list(info.parent.glob("*.apk"))), 2)
+            self.assertEqual(len(list(info.parent.glob("*.aab"))), 2)
+
+    def test_ios_upload_failure_is_recorded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, env = self.mock_release_root(directory, ["--push-ios"], appstore_failure=True)
+            result = subprocess.run(["/bin/bash", "release.sh", "--push-ios"], cwd=root,
+                                    env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn("App Store Connect 上传未完成", result.stderr)
+            self.assertIn("失败原因：App Store Connect 上传未完成", result.stdout)
+            info = next((root / "release-artifacts").rglob("release-info.txt")).read_text()
+            self.assertIn("appstoreStatus=FAILED\n", info)
+
+    def test_push_ios_requires_ios_platform(self):
+        result = subprocess.run(["/bin/bash", str(RELEASE_SCRIPT), "--platform", "android",
+                                 "--push-ios"], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("App Store Connect 上传需要构建 iOS", result.stderr)
+
+    def test_push_ios_stops_when_ios_is_skipped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, env = self.mock_release_root(directory, ["--platform", "all", "--push-ios"],
+                                               ios_signing=False)
+            result = subprocess.run(["/bin/bash", "release.sh", "--platform", "all", "--push-ios"],
+                                    cwd=root, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("无法上传 App Store Connect", result.stderr)
+
     def test_ios_is_skipped_when_no_distribution_certificate(self):
         with tempfile.TemporaryDirectory() as directory:
             root, env = self.mock_release_root(directory, [], ios_signing=False)
@@ -279,17 +353,19 @@ for suffix in (['ipa'] if args.platform == 'ios' else ['dmg', 'zip']):
 
     def test_invalid_platform_and_incompatible_modes_stop_before_build(self):
         for flags in (["--platform", "windows"], ["--test", "--platform", "all"],
-                      ["--platform", "ios", "--push-release"]):
+                      ["--platform", "ios", "--push-release"],
+                      ["--platform", "android", "--push-ios"],
+                      ["--platform", "macos", "--push-ios"]):
             result = subprocess.run(["/bin/bash", str(RELEASE_SCRIPT), *flags],
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 2, result.stderr)
 
     def test_test_packages_cannot_be_published(self):
-        for flag in ("--push-release", "--push-website"):
+        for flag in ("--push-release", "--push-website", "--push-ios"):
             result = subprocess.run(["/bin/bash", str(RELEASE_SCRIPT), "--test", flag],
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 2)
-            self.assertIn("测试签名 APK 不可发布", result.stderr)
+            self.assertIn("不可发布", result.stderr)
 
 
 if __name__ == "__main__":

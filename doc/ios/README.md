@@ -2,6 +2,42 @@
 
 2026-10-06：已创建本机 Apple Distribution 证书，补齐手机与手表 Release 团队，并成功导出 `1.0.3 (48)` 的 App Store IPA。该旧包尚未接入用户选定的「7 天试用 + 永久买断」，未上传或提审；当前源码已接入 StoreKit 2，并完成本地测试，见 [购买实现](purchases.md)；商品草稿、签名验证及待办见 [当前发布进度](app-store-progress-2026-10-06.md)。Widgets 扩展仍保持暂关。 中文手机、iPad 与手表截图及图标已在本地准备，见 [商店素材](../app_store/README.md)。
 
+2026-10-07：`./release.sh` 增加 `--push-ios`，可构建正式签名 IPA 并自动上传 App Store Connect，见下文「正式发布与上传 App Store Connect」。上传只把构建送达 TestFlight，提交审核仍需人工完成。
+
+## 正式发布与上传 App Store Connect
+
+`./release.sh --push-ios` 构建正式签名的 iPhone/Apple Watch IPA 并上传到 App Store Connect，构建随后出现在 TestFlight；**不自动提交审核**。上传由 `scripts/appstore_upload.py` 通过 Xcode 自带的 `altool` 完成，构建与本地归档仍由 `scripts/apple_release.py` 负责，两者职责不重叠。
+
+### 一次性配置
+
+1. App Store Connect → 用户和访问 → 集成 → App Store Connect API → 团队密钥 → 生成密钥，角色至少需要 App Manager；记下密钥 ID，以及同一页面顶部显示的 Issuer ID。
+2. 私钥 `AuthKey_<密钥 ID>.p8` 只能在生成时下载一次，请放到 `localConfig/` 并离线备份。
+3. 复制 `scripts/appstore_connect.env.example` 为 `localConfig/appstore-connect.env`，填写 `ASC_KEY_ID` 与 `ASC_ISSUER_ID`；`ASC_KEY_PATH` 可省略，省略时按 `localConfig/AuthKey_<ASC_KEY_ID>.p8` 查找。同名环境变量优先于文件。`localConfig/` 已被 `.gitignore` 忽略，私钥不入库。
+
+### 常用命令
+
+| 命令 | 作用 |
+| --- | --- |
+| `python3 scripts/appstore_upload.py --check` | 只检查本地配置、私钥与 altool，不联网 |
+| `python3 scripts/appstore_upload.py --check-online` | 检查配置，并向 Apple 校验凭据与 App 记录（联网） |
+| `./release.sh --push-ios` | 只构建 iOS 并上传（未指定 `--platform` 时按开关推导为 iOS） |
+| `./release.sh --push-release --push-ios` | 官网 + Google Play + App Store Connect 一起发布，不构建 macOS |
+| `./release.sh --platform all --push-ios` | 显式构建全部平台，但只上传 iOS |
+
+`--push-ios` 会在构建前先做联网预检：凭据文件缺失、私钥与密钥 ID 不配对、Issuer ID 无效或网络不通时直接退出，不会白跑一次 iOS 构建。上传前还会解包 IPA，核对手机 `com.maxhall.ailink` 与手表 `com.maxhall.ailink.watchkitapp` 的 Bundle ID、`CFBundleShortVersionString` 与 `CFBundleVersion` 都与本次构建一致，避免上传上一次的产物。结果写入归档目录的 `release-info.txt`（`appstoreStatus=...`），失败时保留完整日志 `appstore-upload.log`。
+
+### 上传后仍需人工完成
+
+- 构建处理需要数分钟到数十分钟；处理完成后在 App Store Connect → TestFlight 查看，并附加到对应的 App 版本。
+- 提交审核、审核备注、内购与付费协议都在后台处理，脚本不代替这些步骤。自动提审（App Store Connect API 的 `appStoreVersionSubmissions`）当前刻意未实现：付费 App 协议未生效时提交只会再次被拒，见 [内购拒审排查](app-store-rejection-2026-10-07.md)。
+
+### 限制与注意
+
+- 同一个 `CFBundleVersion` 只能上传一次；重复上传需先提升 `pubspec.yaml` 的 `version: x.y.z+build` 构建号。
+- 上传失败不自动重试，避免产生重复或半成品构建；重跑整条命令即可。
+- `altool` 走系统网络设置，不读取 `http_proxy`/`https_proxy` 环境变量；`release.sh` 里探测到的代理只作用于 Google Play 与 OSS 链路。
+- 本机没有 iOS Distribution 证书和 App Store 描述文件时会跳过 iOS；此时 `--push-ios` 直接报错退出，而不是构建出不可上传的包。
+
 ## 已接入的代码
 
 - iPhone 沿用 Flutter 的同一套聊天、服务配置、语音和本地 SQLite；`ios/Runner/AppleWatchBridge.swift` 在后台 Flutter engine 中复用 `WatchChatProcessor`。

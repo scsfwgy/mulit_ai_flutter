@@ -1,5 +1,26 @@
 #!/usr/bin/env bash
-# 无参数构建所有支持平台的正式包；显式开关才发布 Android 到官网或 Google Play。
+# 无参数构建所有支持平台的正式包，只做本地归档；显式开关才把包发布到官网、Google Play 或 App Store Connect。
+#
+# 发布开关（可组合；未指定 --platform 时按开关推导需要构建的平台）：
+#   --push-website   APK 同步 AI Link 官网（OSS + HomeTools 发布接口）              需要 Android
+#   --push-release   官网 + Google Play：APK 到官网，手机与 Wear OS 两个 AAB 到 Play  需要 Android
+#   --push-ios       IPA 上传 App Store Connect（TestFlight，不自动提审）            需要 iOS
+#
+# 常用组合：
+#   ./release.sh                             全平台构建并本地归档，不上传
+#   ./release.sh --test                      测试签名 APK（仅 Android 手机与 Wear OS）
+#   ./release.sh --push-release              Android：官网 + Google Play
+#   ./release.sh --push-ios                  iOS：构建并上传 App Store Connect
+#   ./release.sh --push-release --push-ios   Android 与 iOS 一起发布（不含 macOS）
+#   ./release.sh --platform macos            只构建 macOS
+#
+# 凭据都放在已被 .gitignore 忽略的 localConfig/ 下，脚本只读取、不写入：
+#   Android 签名   android/key.properties（正式）与 android/key.test.properties（--test）
+#   Google Play    localConfig/google-play-service-account.json，可用 PLAY_SERVICE_ACCOUNT_JSON 覆盖
+#   官网与 OSS     localConfig/.env.local，模板 scripts/website_release.env.example
+#   App Store      localConfig/appstore-connect.env，模板 scripts/appstore_connect.env.example
+#
+# 上传结果同时写入归档目录的 release-info.txt，结束时统一打印汇总。
 set -Eeuo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,18 +31,22 @@ platform=""
 ios_export_options="${IOS_EXPORT_OPTIONS_PLIST:-}"
 push_release=0
 push_website=0
+push_ios=0
 play_track="internal"
 wear_track=""
 json_key="${PLAY_SERVICE_ACCOUNT_JSON:-$repo_root/localConfig/google-play-service-account.json}"
 
 usage() {
-  echo "用法：./release.sh [--platform all|android|ios|macos] [--test] [--push-release|--push-website] [--ios-export-options 路径] [--play-track internal|alpha|beta|production] [--wear-track wear:轨道名] [--json-key 路径]"
+  echo "用法：./release.sh [--platform all|mobile|android|ios|macos] [--test] [--push-release|--push-website|--push-ios] [--ios-export-options 路径] [--play-track internal|alpha|beta|production] [--wear-track wear:轨道名] [--json-key 路径]"
   echo "  （无参数）        构建 Android/Wear OS APK/AAB、iOS/Apple Watch IPA 与归档、macOS APP/DMG/ZIP；仅本地归档"
-  echo "  --platform      只构建所选平台；all 包含所有支持平台，Apple 平台需 Mac/Xcode；本机无 iOS 分发证书时自动跳过 iOS"
+  echo "  --platform      只构建所选平台；all 为全部，mobile 为 Android + iOS（不含 macOS）；Apple 平台需 Mac/Xcode，本机无 iOS 分发证书时自动跳过 iOS"
+  echo "                  不指定时按发布开关推导：--push-release/--push-website 取 Android，--push-ios 取 iOS，两者同时给出则取 mobile"
   echo "  --ios-export-options  iOS 本地 IPA 导出 plist；也可设 IOS_EXPORT_OPTIONS_PLIST"
   echo "  --test          构建本地测试签名的手机和 Wear OS APK；不上传"
   echo "  --push-release  默认只构建 Android；APK 同步官网，同时上传两个 AAB 到 Google Play"
   echo "  --push-website  默认只构建 Android；APK 同步 AI Link 官网；不上传 Google Play"
+  echo "  --push-ios      默认只构建 iOS；把正式签名 IPA 上传到 App Store Connect（TestFlight）；不自动提交审核"
+  echo "                  凭据见 localConfig/appstore-connect.env，模板 scripts/appstore_connect.env.example"
   echo "  --play-track    手机轨道；Wear OS 自动使用 wear:<轨道>"
   echo "  --wear-track    指定已有手表轨道，可与手机轨道名称不同"
   echo "  --json-key      服务账号 JSON 路径；也可设 PLAY_SERVICE_ACCOUNT_JSON"
@@ -38,6 +63,7 @@ while [[ $# -gt 0 ]]; do
     --test) profile="test"; shift ;;
     --push-release) push_release=1; push_website=1; shift ;;
     --push-website) push_website=1; shift ;;
+    --push-ios) push_ios=1; shift ;;
     --play-track)
       [[ $# -ge 2 ]] || { echo "--play-track 缺少轨道" >&2; exit 2; }
       play_track="$2"; shift 2 ;;
@@ -61,20 +87,30 @@ if [[ "$wear_track" != wear:* || -z "${wear_track#wear:}" || "${wear_track#wear:
   echo "--wear-track 必须使用完整的 wear:<轨道名>" >&2
   exit 2
 fi
-if (( push_release || push_website )) && [[ "$profile" == "test" ]]; then
-  echo "测试签名 APK 不可发布到官网或 Google Play；请去掉 --test。" >&2
+if (( push_release || push_website || push_ios )) && [[ "$profile" == "test" ]]; then
+  echo "测试签名的调试包不可发布到官网、Google Play 或 App Store Connect；请去掉 --test。" >&2
   exit 2
 fi
-# Preserve Android-only test/upload commands while making local Release default all.
+# 未指定 --platform 时按发布开关推导要构建的平台：官网/Google Play 需要 Android，App Store Connect 需要 iOS。
+# 两者同时发布只构建 Android 与 iOS，不额外构建 macOS；macOS 请显式用 --platform macos|all。
 if [[ -z "$platform" ]]; then
-  platform="all"
-  if [[ "$profile" == "test" ]] || (( push_release || push_website )); then platform="android"; fi
+  if (( push_ios )) && (( push_release || push_website )); then
+    platform="mobile"
+  elif (( push_ios )); then
+    platform="ios"
+  elif (( push_release || push_website )); then
+    platform="android"
+  else
+    platform="all"
+  fi
+  if [[ "$profile" == "test" ]]; then platform="android"; fi
 fi
 build_android=0
 build_ios=0
 build_macos=0
 case "$platform" in
   all) build_android=1; build_ios=1; build_macos=1 ;;
+  mobile) build_android=1; build_ios=1 ;;
   android) build_android=1 ;;
   ios) build_ios=1 ;;
   macos) build_macos=1 ;;
@@ -85,7 +121,11 @@ if [[ "$profile" == "test" && "$platform" != "android" ]]; then
   exit 2
 fi
 if (( (push_release || push_website) && ! build_android )); then
-  echo "官网/Google Play 上传需要 --platform android 或 all。" >&2
+  echo "官网/Google Play 上传需要构建 Android：请用 --platform android|mobile|all。" >&2
+  exit 2
+fi
+if (( push_ios && ! build_ios )); then
+  echo "App Store Connect 上传需要构建 iOS：请用 --platform ios|mobile|all。" >&2
   exit 2
 fi
 
@@ -117,6 +157,10 @@ if (( build_ios )) && ! ios_signing_available; then
   ios_skip_reason="本机没有 iOS Distribution 证书和 App Store 描述文件"
   build_ios=0
   echo "跳过 iOS：${ios_skip_reason}。"
+fi
+if (( push_ios )) && (( ! build_ios )); then
+  echo "iOS 未构建，无法上传 App Store Connect：${ios_skip_reason:-iOS 未参与本次构建}。" >&2
+  exit 2
 fi
 export AI_LINK_SIGNING_PROFILE="$profile"
 
@@ -170,20 +214,25 @@ fi
 channel="google_play"
 if [[ "$profile" == "test" ]]; then channel="unknown"; fi
 
-# Keep the Play proxy scoped to Python commands so local Flutter HTTP tests
+# Keep the proxy scoped to publishing commands so local Flutter HTTP tests
 # continue to connect directly to their loopback servers.
-play_env=(env)
+publish_env=(env)
 python_bin="$repo_root/scripts/.venv/bin/python"
-ensure_publish_dependencies() {
+asc_config="$repo_root/localConfig/appstore-connect.env"
+ensure_python_runtime() {
   if [[ ! -x "$python_bin" ]]; then
     python3 -m venv "$repo_root/scripts/.venv"
   fi
+}
+ensure_publish_dependencies() {
+  ensure_python_runtime
   if ! "$python_bin" -c 'import oss2, googleapiclient, google.oauth2, google_auth_httplib2, httplib2' >/dev/null 2>&1; then
-    "${play_env[@]}" "$python_bin" -m pip install -r "$repo_root/scripts/requirements.txt"
+    "${publish_env[@]}" "$python_bin" -m pip install -r "$repo_root/scripts/requirements.txt"
   fi
   "$python_bin" scripts/website_release.py --check
 }
-if (( push_release )); then
+# Google Play 与 App Store Connect 都在境外，共用同一份 HTTP 代理设置。
+if (( push_release || push_ios )); then
   resolve_http_proxy() {
     local configured="${http_proxy:-${HTTP_PROXY:-${https_proxy:-${HTTPS_PROXY:-}}}}" candidate
     if [[ -n "$configured" ]]; then printf '%s' "$configured"; return; fi
@@ -204,18 +253,29 @@ if (( push_release )); then
   }
   proxy="$(resolve_http_proxy)"
   if [[ -n "$proxy" ]]; then
-    play_env+=("http_proxy=$proxy" "https_proxy=$proxy")
-    echo "已为 Google Play API 配置 HTTP 代理。"
+    publish_env+=("http_proxy=$proxy" "https_proxy=$proxy")
+    echo "已为发布接口配置 HTTP 代理。"
   fi
+fi
+if (( push_release )); then
   [[ -f "$json_key" ]] || { echo "服务账号密钥不存在：$json_key" >&2; exit 2; }
   if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
     echo "警告：工作区有未提交文件，本次上传产物可能无法由 HEAD 精确复现。" >&2
   fi
   ensure_publish_dependencies
-  "${play_env[@]}" "$python_bin" scripts/play_upload.py \
+  "${publish_env[@]}" "$python_bin" scripts/play_upload.py \
     --json-key "$json_key" --track "$play_track" --wear-track "$wear_track" --check-tracks
 fi
 if (( push_website && ! push_release )); then ensure_publish_dependencies; fi
+# 先校验 App Store Connect 凭据与 App 记录，避免 iOS 构建完成后才发现凭据或 Issuer ID 有误。
+if (( push_ios )); then
+  [[ -f "$asc_config" ]] || {
+    echo "App Store Connect 凭据不存在：${asc_config}；模板见 scripts/appstore_connect.env.example" >&2
+    exit 2
+  }
+  ensure_python_runtime
+  "${publish_env[@]}" "$python_bin" scripts/appstore_upload.py --check-online
+fi
 
 normalize_fingerprint() {
   tr -d ':[:space:]' | tr '[:lower:]' '[:upper:]'
@@ -268,6 +328,7 @@ macos_status="未构建"
 ios_status="未构建"
 website_status="未执行"
 play_status="未执行"
+appstore_status="未执行"
 failure_reason=""
 failed_command=""
 summary_printed=0
@@ -297,6 +358,7 @@ print_summary() {
   echo "上传结果"
   echo "  官网：$website_status"
   echo "  Google Play：$play_status"
+  echo "  App Store Connect：$appstore_status"
   if [[ -n "$failure_reason" ]]; then
     echo
     echo "失败原因：$failure_reason"
@@ -419,6 +481,7 @@ if (( build_ios )); then
     --version "$base_name" --build-number "$code")
   if [[ -n "$ios_export_options" ]]; then ios_command+=(--export-options-plist "$ios_export_options"); fi
   "${ios_command[@]}"
+  ios_ipa="$output/ios/AI-Link-$base_name+$code.ipa"
   artifacts+=("ios/AI-Link-$base_name+$code.ipa")
   echo "iosWatchStatus=COMPLETE" >> "$output/release-info.txt"
   ios_status="成功"
@@ -449,7 +512,7 @@ fi
 if (( push_release )); then
   echo "上传手机到 ${play_track}，Wear OS 到 ${wear_track} ..."
   upload_log="$output/play-upload.log"
-  if ! "${play_env[@]}" "$python_bin" -u scripts/play_upload.py \
+  if ! "${publish_env[@]}" "$python_bin" -u scripts/play_upload.py \
     --json-key "$json_key" \
     --phone-aab "$phone" --wear-aab "$wear" \
     --phone-version-code "$code" --wear-version-code "$watch_code" \
@@ -469,6 +532,28 @@ if (( push_release )); then
   echo "手机和 Wear OS 版本已提交；审核及上线状态以 Play Console 为准。"
 else
   echo "playStatus=NOT_UPLOADED" >> "$output/release-info.txt"
+fi
+
+if (( push_ios )); then
+  echo "上传 iOS IPA 到 App Store Connect ..."
+  upload_log="$output/appstore-upload.log"
+  if ! "${publish_env[@]}" "$python_bin" -u scripts/appstore_upload.py \
+    --ipa "$ios_ipa" --version "$base_name" --build-number "$code" 2>&1 | tee "$upload_log"; then
+    echo "appstoreStatus=FAILED" >> "$output/release-info.txt"
+    appstore_status="失败"
+    fail "App Store Connect 上传未完成，详情见 $upload_log"
+  fi
+  status_line="$(sed -n 's/^APPSTORE_UPLOAD_STATUS=//p' "$upload_log" | tail -1)"
+  if [[ "$status_line" != UPLOADED\|* ]]; then
+    echo "appstoreStatus=UNKNOWN" >> "$output/release-info.txt"
+    appstore_status="状态未知"
+    fail "App Store Connect 未返回确认状态，请到 App Store Connect 核对。"
+  fi
+  echo "appstoreStatus=$status_line" >> "$output/release-info.txt"
+  appstore_status="成功"
+  echo "构建已送达 App Store Connect；等待处理完成后，在后台附加到 App 版本再提交审核。"
+else
+  echo "appstoreStatus=NOT_UPLOADED" >> "$output/release-info.txt"
 fi
 
 print_summary
