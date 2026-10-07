@@ -31,6 +31,14 @@
 - 构建处理需要数分钟到数十分钟；处理完成后在 App Store Connect → TestFlight 查看，并附加到对应的 App 版本。
 - 提交审核、审核备注、内购与付费协议都在后台处理，脚本不代替这些步骤。自动提审（App Store Connect API 的 `appStoreVersionSubmissions`）当前刻意未实现：付费 App 协议未生效时提交只会再次被拒，见 [内购拒审排查](app-store-rejection-2026-10-07.md)。
 
+### 出口合规声明
+
+2026-10-07：用户在 App Store Connect 的加密问卷中选择「不属于上述的任意一种算法」，完成本次构建声明。按该声明，在 `ios/Runner/Info.plist`、`ios/AILinkWatch/Info.plist` 和 `macos/Runner/Info.plist` 中固定设置 Boolean 类型的 `ITSAppUsesNonExemptEncryption=false`。该字段表示没有使用非豁免加密，不会关闭 HTTPS/TLS 或 Keychain；此配置记录的是开发者声明，不代表 Apple 已审查并确认加密分类。
+
+重新构建并上传的新包会携带此声明，从而避免同一加密状态下每次手动回答问卷；源码修改不会补写到已上传的构建。当前不填写 `ITSEncryptionExportComplianceCode`，也不使用占位代码。如果加密实现、第三方 SDK 或豁免状态变化，需要重新核对；若 Apple 要求文稿，提交并获批后改为 `ITSAppUsesNonExemptEncryption=true`，并填写 Apple 提供的实际合规代码。
+
+依据：[Apple 的声明字段说明](https://developer.apple.com/documentation/bundleresources/information-property-list/itsappusesnonexemptencryption)。
+
 ### 限制与注意
 
 - 同一个 `CFBundleVersion` 只能上传一次；重复上传需先提升 `pubspec.yaml` 的 `version: x.y.z+build` 构建号。

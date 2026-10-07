@@ -7,14 +7,19 @@ import 'package:mulit_ai_flutter/core/app_platform.dart';
 
 /// The native StoreKit bridge is the authority. No entitlement is saved in SQLite.
 class ApplePurchases extends ChangeNotifier {
-  ApplePurchases({MethodChannel? channel})
-    : _channel =
-          channel ?? const MethodChannel('between_models/apple_purchases');
+  ApplePurchases({
+    MethodChannel? channel,
+    this.queryTimeout = const Duration(seconds: 30),
+    this.restoreTimeout = const Duration(seconds: 45),
+  }) : _channel =
+           channel ?? const MethodChannel('between_models/apple_purchases');
 
   static final instance = ApplePurchases();
   static const permanentId = 'com.maxhall.ailink.permanent_unlock';
   static const trialId = 'com.maxhall.ailink.trial_7_days';
   final MethodChannel _channel;
+  final Duration queryTimeout;
+  final Duration restoreTimeout;
   bool enabled = supportsApplePurchases;
   bool ready = false;
   bool canUse = !supportsApplePurchases;
@@ -26,6 +31,10 @@ class ApplePurchases extends ChangeNotifier {
   DateTime? trialEnd;
   String error = '';
   String outcome = '';
+  String _operationError = '';
+  String _pendingPurchaseId = '';
+  int _revision = -1;
+  bool _disposed = false;
   Timer? _timer;
   bool _started = false;
 
@@ -33,7 +42,7 @@ class ApplePurchases extends ChangeNotifier {
     if (_started || !supportsApplePurchases) return;
     _started = true;
     _channel.setMethodCallHandler((call) async {
-      if (call.method == 'changed') _apply(call.arguments);
+      if (call.method == 'changed' && !_disposed) _apply(call.arguments);
     });
     // Native time advances monotonically. Poll so an open screen updates at expiry.
     _timer = Timer.periodic(
@@ -44,7 +53,13 @@ class ApplePurchases extends ChangeNotifier {
   }
 
   void _apply(Object? raw) {
+    if (_disposed) return;
     if (raw is! Map) throw const FormatException('Invalid purchase state');
+    final revision = raw['revision'];
+    if (revision is num) {
+      if (revision.toInt() < _revision) return;
+      _revision = revision.toInt();
+    }
     enabled = raw['enabled'] == true;
     ready = raw['ready'] == true;
     canUse = !enabled || (ready && raw['canUse'] == true);
@@ -56,7 +71,19 @@ class ApplePurchases extends ChangeNotifier {
     trialEnd = end is num
         ? DateTime.fromMillisecondsSinceEpoch(end.toInt())
         : null;
-    error = raw['error'] as String? ?? '';
+    // Background StoreKit notifications must not erase a failed restore's
+    // feedback. A later verified entitlement can complete a timed-out restore.
+    if (_operationError == 'restoreTimedOut' && canUse) {
+      _operationError = '';
+      outcome = 'restored';
+    }
+    if (outcome == 'purchaseSyncPending' &&
+        (_pendingPurchaseId == permanentId ? permanent : canUse)) {
+      outcome = 'success';
+    }
+    error = _operationError.isNotEmpty
+        ? _operationError
+        : raw['error'] as String? ?? '';
     notifyListeners();
   }
 
@@ -64,14 +91,25 @@ class ApplePurchases extends ChangeNotifier {
     if (!supportsApplePurchases) return true;
     try {
       _apply(
-        await _channel.invokeMethod<Object?>('refresh', {'products': products}),
+        await _channel
+            .invokeMethod<Object?>('refresh', {'products': products})
+            .timeout(queryTimeout),
       );
+    } on TimeoutException {
+      if (_disposed) return canUse;
+      // A timeout is not a signed revocation of the last verified snapshot.
+      error = _operationError.isNotEmpty ? _operationError : 'queryTimedOut';
+      notifyListeners();
     } catch (_) {
+      if (_disposed) return false;
       // A missing/broken bridge on an Apple production app must never unlock it.
       enabled = true;
       ready = false;
       canUse = false;
-      error = 'verificationFailed';
+      permanent = false;
+      error = _operationError.isNotEmpty
+          ? _operationError
+          : 'verificationFailed';
       notifyListeners();
     }
     return canUse;
@@ -81,19 +119,26 @@ class ApplePurchases extends ChangeNotifier {
     if (busy) return;
     busy = true;
     outcome = '';
+    _pendingPurchaseId = id;
+    _operationError = '';
+    error = '';
     notifyListeners();
     try {
       final reply = await _channel.invokeMapMethod<String, Object?>(
         'purchase',
         id,
       );
+      if (_disposed) return;
       _apply(reply?['state']);
       outcome = reply?['outcome'] as String? ?? '';
+      if (outcome == 'success' && !(id == permanentId ? permanent : canUse)) {
+        outcome = 'purchaseSyncPending';
+      }
     } catch (_) {
-      error = 'purchaseFailed';
+      _operationError = error = 'purchaseFailed';
     } finally {
       busy = false;
-      notifyListeners();
+      if (!_disposed) notifyListeners();
     }
   }
 
@@ -101,20 +146,30 @@ class ApplePurchases extends ChangeNotifier {
     if (busy) return;
     busy = true;
     outcome = '';
+    _pendingPurchaseId = '';
+    _operationError = '';
+    error = '';
     notifyListeners();
     try {
-      _apply(await _channel.invokeMethod<Object?>('restore'));
+      final reply = await _channel
+          .invokeMethod<Object?>('restore')
+          .timeout(restoreTimeout);
+      if (_disposed) return;
+      _apply(reply);
       outcome = canUse ? 'restored' : 'nothingToRestore';
+    } on TimeoutException {
+      _operationError = error = 'restoreTimedOut';
     } catch (_) {
-      error = 'restoreFailed';
+      _operationError = error = 'restoreFailed';
     } finally {
       busy = false;
-      notifyListeners();
+      if (!_disposed) notifyListeners();
     }
   }
 
   @override
   void dispose() {
+    _disposed = true;
     _timer?.cancel();
     _channel.setMethodCallHandler(null);
     super.dispose();

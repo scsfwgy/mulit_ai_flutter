@@ -24,8 +24,12 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   String get status {
     if (store.permanent) return T('i18n.permanently_unlocked');
     if (!store.ready) return T('i18n.checking_purchases');
-    if (store.canUse && store.trialEnd != null) return T('i18n.7_day_trial_active');
-    if (store.error == 'clockUnavailable') return T('i18n.connect_to_verify_your_trial');
+    if (store.canUse && store.trialEnd != null) {
+      return T('i18n.7_day_trial_active');
+    }
+    if (store.error == 'clockUnavailable') {
+      return T('i18n.connect_to_verify_your_trial');
+    }
     if (store.hadTrial) return T('i18n.trial_has_ended');
     return T('i18n.try_it_then_decide');
   }
@@ -36,7 +40,11 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     'productsUnavailable' => 'i18n.store_products_are_unavailable_refresh',
     'purchaseFailed' => 'i18n.purchase_was_not_completed_try',
     'restoreFailed' => 'i18n.restore_was_not_completed_connect',
+    'restoreTimedOut' => 'i18n.restore_timed_out',
+    'queryTimedOut' => 'i18n.store_query_timed_out',
     _ => switch (store.outcome) {
+      'success' => store.canUse ? 'i18n.purchase_access_unlocked' : '',
+      'purchaseSyncPending' => 'i18n.purchase_access_sync_pending',
       'pending' => 'i18n.purchase_is_awaiting_approval_access',
       'alreadyClaimed' => 'i18n.this_apple_account_has_already',
       'nothingToRestore' => 'i18n.no_active_access_was_restored',
@@ -77,6 +85,18 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               textAlign: TextAlign.center,
               style: TextStyle(color: IosColors.secondary, height: 1.5),
             ),
+            if (feedback.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Semantics(
+                  liveRegion: true,
+                  child: Text(
+                    feedback,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: IosColors.label, height: 1.5),
+                  ),
+                ),
+              ),
             if (store.trialEnd case final end?) ...[
               const SizedBox(height: 10),
               Text(
@@ -135,15 +155,6 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               child: Text(T('i18n.refresh_store')),
             ),
             if (store.busy) const CupertinoActivityIndicator(),
-            if (feedback.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  feedback,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: IosColors.secondary, height: 1.5),
-                ),
-              ),
             const SizedBox(height: 16),
             Text(
               T('i18n.after_the_trial_you_can'),

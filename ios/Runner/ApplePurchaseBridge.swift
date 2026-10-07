@@ -22,7 +22,8 @@ final class ApplePurchaseBridge {
             result(store.snapshot)
           case "purchase":
             guard let id = call.arguments as? String else { throw PurchaseFailure.invalidProduct }
-            result(["outcome": try await store.purchase(id), "state": store.snapshot])
+            let outcome = try await store.purchase(id)
+            result(["outcome": outcome, "state": store.snapshot])
           case "restore":
             try await store.restore()
             result(store.snapshot)
