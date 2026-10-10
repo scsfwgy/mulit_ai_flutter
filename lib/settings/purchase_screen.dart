@@ -24,6 +24,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   String get status {
     if (store.permanent) return T('i18n.permanently_unlocked');
     if (!store.ready) return T('i18n.checking_purchases');
+    if (store.permanentFree) return T('i18n.free_permanent_offer_title');
     if (store.canUse && store.trialEnd != null) {
       return T('i18n.7_day_trial_active');
     }
@@ -49,6 +50,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       'alreadyClaimed' => 'i18n.this_apple_account_has_already',
       'nothingToRestore' => 'i18n.no_active_access_was_restored',
       'restored' => 'i18n.purchases_restored',
+      'offerUnavailable' => 'i18n.free_permanent_offer_unavailable',
       _ => '',
     },
   });
@@ -81,7 +83,11 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              T('i18n.one_purchase_permanently_unlocks_iphone'),
+              T(
+                store.permanentFree && !store.permanent
+                    ? 'i18n.free_permanent_offer_description'
+                    : 'i18n.one_purchase_permanently_unlocks_iphone',
+              ),
               textAlign: TextAlign.center,
               style: TextStyle(color: IosColors.secondary, height: 1.5),
             ),
@@ -97,14 +103,15 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                   ),
                 ),
               ),
-            if (store.trialEnd case final end?) ...[
-              const SizedBox(height: 10),
-              Text(
-                '${T('i18n.trial_ends')}：${end.year}-${end.month.toString().padLeft(2, '0')}-${end.day.toString().padLeft(2, '0')} ${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: IosColors.secondary),
-              ),
-            ],
+            if (!store.permanent && !store.permanentFree)
+              if (store.trialEnd case final end?) ...[
+                const SizedBox(height: 10),
+                Text(
+                  '${T('i18n.trial_ends')}：${end.year}-${end.month.toString().padLeft(2, '0')}-${end.day.toString().padLeft(2, '0')} ${end.hour.toString().padLeft(2, '0')}:${end.minute.toString().padLeft(2, '0')}',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: IosColors.secondary),
+                ),
+              ],
             const SizedBox(height: 24),
             IosSection(
               children: [
@@ -113,11 +120,12 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                   subtitle: T('i18n.choose_your_models_and_use'),
                   chevron: false,
                 ),
-                IosRow(
-                  title: T('i18n.7_day_full_feature_trial'),
-                  subtitle: T('i18n.starts_when_you_claim'),
-                  chevron: false,
-                ),
+                if (!store.permanentFree)
+                  IosRow(
+                    title: T('i18n.7_day_full_feature_trial'),
+                    subtitle: T('i18n.starts_when_you_claim'),
+                    chevron: false,
+                  ),
                 IosRow(
                   title: T('i18n.third_party_usage_costs_extra'),
                   subtitle: T('i18n.the_unlock_price_does'),
@@ -127,7 +135,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
             ),
             const SizedBox(height: 18),
             if (!store.permanent) ...[
-              if (!store.hadTrial)
+              if (!store.hadTrial && !store.permanentFree)
                 IosPrimaryButton(
                   label: T('i18n.start_free_7_day_trial'),
                   onPressed: store.busy || !store.trialAvailable
@@ -136,11 +144,15 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                 ),
               const SizedBox(height: 12),
               IosPrimaryButton(
-                label: store.price == null
+                label: store.permanentFree
+                    ? T('i18n.claim_free_permanent_unlock')
+                    : store.price == null
                     ? T('i18n.permanent_unlock_loading_price')
                     : '${T('i18n.permanent_unlock')} · ${store.price}',
                 onPressed: store.busy || store.price == null
                     ? null
+                    : store.permanentFree
+                    ? store.claimFreePermanent
                     : () => store.purchase(ApplePurchases.permanentId),
               ),
             ],
@@ -157,7 +169,11 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
             if (store.busy) const CupertinoActivityIndicator(),
             const SizedBox(height: 16),
             Text(
-              T('i18n.after_the_trial_you_can'),
+              T(
+                store.permanentFree && !store.permanent
+                    ? 'i18n.free_permanent_offer_footer'
+                    : 'i18n.after_the_trial_you_can',
+              ),
               style: TextStyle(
                 color: IosColors.secondary,
                 fontSize: 13,

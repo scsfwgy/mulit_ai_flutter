@@ -15,6 +15,7 @@ void main() {
   String outcome = 'pending';
   bool failed = false;
   bool disposed = false;
+  late List<String> purchaseMethods;
   setUp(() {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     purchases = ApplePurchases(channel: channel);
@@ -30,15 +31,67 @@ void main() {
     };
     outcome = 'pending';
     failed = false;
+    purchaseMethods = [];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
           if (failed) throw PlatformException(code: 'failed');
-          if (call.method == 'purchase') {
+          if (call.method == 'purchase' ||
+              call.method == 'claimFreePermanent') {
+            purchaseMethods.add(call.method);
             return {'outcome': outcome, 'state': state};
           }
           return state;
         });
   });
+
+  test(
+    'free price does not grant access without a verified permanent purchase',
+    () async {
+      state.addAll({'permanentPrice': '¥0.00', 'permanentFree': true});
+      await purchases.refresh();
+      expect(purchases.permanentFree, isTrue);
+      expect(purchases.canUse, isFalse);
+      for (final result in ['cancelled', 'pending']) {
+        outcome = result;
+        await purchases.claimFreePermanent();
+        expect(purchases.canUse, isFalse);
+      }
+      state.addAll({'canUse': true, 'hadTrial': true});
+      outcome = 'success';
+      await purchases.claimFreePermanent();
+      expect(purchases.outcome, 'purchaseSyncPending');
+      state['permanent'] = true;
+      await purchases.refresh();
+      expect(purchases.outcome, 'success');
+      expect(purchaseMethods, everyElement('claimFreePermanent'));
+    },
+  );
+
+  testWidgets(
+    'free claim uses the guarded native action; ended offer does not buy',
+    (tester) async {
+      state.addAll({'permanentPrice': '¥0.00', 'permanentFree': true});
+      await tester.pumpWidget(
+        MaterialApp(home: PurchaseScreen(purchases: purchases)),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('免费领取 7 天试用'), findsNothing);
+      expect(find.textContaining('11 月 10 日'), findsNothing);
+      state.addAll({'permanentPrice': '¥70.00', 'permanentFree': false});
+      outcome = 'offerUnavailable';
+      await tester.ensureVisible(find.text('免费领取永久解锁'));
+      await tester.tap(find.text('免费领取永久解锁'));
+      await tester.pumpAndSettle();
+      expect(purchaseMethods, ['claimFreePermanent']);
+      expect(purchases.permanent, isFalse);
+      expect(find.text('免费领取永久解锁'), findsNothing);
+      expect(find.text('永久解锁 · ¥70.00'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+      purchases.dispose();
+      disposed = true;
+      debugDefaultTargetPlatformOverride = null;
+    },
+  );
   tearDown(() {
     if (!disposed) purchases.dispose();
     debugDefaultTargetPlatformOverride = null;

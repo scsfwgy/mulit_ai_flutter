@@ -436,9 +436,19 @@ final class ApplePurchaseStore: ObservableObject {
     } catch { return nil }
   }
 
-  func purchase(_ id: String) async throws -> String {
+  func purchase(_ id: String, requireFree: Bool = false) async throws -> String {
     guard !acceptsCompanion else { throw PurchaseFailure.unavailable }
     guard [Self.permanentID, Self.trialID].contains(id) else { throw PurchaseFailure.invalidProduct }
+    if requireFree {
+      guard enabled, id == Self.permanentID else { throw PurchaseFailure.unavailable }
+      // Fetch a fresh Product for this tap. Never turn a free-claim action into
+      // a paid purchase when the promotion ends or an old catalog is cached.
+      guard let fresh = try await Product.products(for: [id]).first,
+            fresh.type == .nonConsumable else { throw PurchaseFailure.unavailable }
+      products[id] = fresh
+      publish()
+      guard fresh.price == 0 else { return "offerUnavailable" }
+    }
     if products[id] == nil { await refresh(loadProducts: true) }
     if permanent { return "alreadyOwned" }
     if id == Self.trialID && hadTrial { return "alreadyClaimed" }
@@ -491,7 +501,10 @@ final class ApplePurchaseStore: ObservableObject {
       "permanent": permanent, "hadTrial": hadTrial, "error": errorCode, "revision": revision,
       "trialAvailable": products[Self.trialID] != nil && !hadTrial && !permanent]
     if let end = trialEnd { value["trialEndMs"] = Int64(end.timeIntervalSince1970 * 1000) }
-    if let product = products[Self.permanentID] { value["permanentPrice"] = product.displayPrice }
+    if let product = products[Self.permanentID] {
+      value["permanentPrice"] = product.displayPrice
+      value["permanentFree"] = product.price == 0
+    }
     return value
   }
 }

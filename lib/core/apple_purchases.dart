@@ -24,6 +24,7 @@ class ApplePurchases extends ChangeNotifier {
   bool ready = false;
   bool canUse = !supportsApplePurchases;
   bool permanent = false;
+  bool permanentFree = false;
   bool hadTrial = false;
   bool trialAvailable = false;
   bool busy = false;
@@ -64,6 +65,7 @@ class ApplePurchases extends ChangeNotifier {
     ready = raw['ready'] == true;
     canUse = !enabled || (ready && raw['canUse'] == true);
     permanent = raw['permanent'] == true;
+    permanentFree = raw['permanentFree'] == true;
     hadTrial = raw['hadTrial'] == true;
     trialAvailable = raw['trialAvailable'] == true;
     price = raw['permanentPrice'] as String?;
@@ -115,7 +117,11 @@ class ApplePurchases extends ChangeNotifier {
     return canUse;
   }
 
-  Future<void> purchase(String id) async {
+  Future<void> purchase(String id) => _purchase(id);
+
+  Future<void> claimFreePermanent() => _purchase(permanentId, freeOnly: true);
+
+  Future<void> _purchase(String id, {bool freeOnly = false}) async {
     if (busy) return;
     busy = true;
     outcome = '';
@@ -125,7 +131,7 @@ class ApplePurchases extends ChangeNotifier {
     notifyListeners();
     try {
       final reply = await _channel.invokeMapMethod<String, Object?>(
-        'purchase',
+        freeOnly ? 'claimFreePermanent' : 'purchase',
         id,
       );
       if (_disposed) return;

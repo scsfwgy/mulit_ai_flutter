@@ -37,6 +37,53 @@ final class RunnerTests: XCTestCase {
   }
 
   @MainActor
+  func testFreeClaimCannotStartPaidPurchase() async throws {
+    let session = try SKTestSession(configurationFileNamed: "AI-Link")
+    session.resetToDefaultState()
+    session.disableDialogs = true
+    session.clearTransactions()
+    defer { session.clearTransactions(); session.resetToDefaultState() }
+    let store = makeStore(enabled: true)
+    await store.refresh(loadProducts: true)
+    XCTAssertEqual(store.snapshot["permanentFree"] as? Bool, false)
+    let outcome = try await store.purchase(ApplePurchaseStore.permanentID, requireFree: true)
+    XCTAssertEqual(outcome, "offerUnavailable")
+    XCTAssertTrue(session.allTransactions().isEmpty)
+    XCTAssertFalse(store.permanent)
+  }
+
+  @MainActor
+  func testFreePermanentClaimRestoresWithoutTrialClock() async throws {
+    let source = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "AI-Link", withExtension: "storekit"))
+    var configuration = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: source)) as? [String: Any])
+    var products = try XCTUnwrap(configuration["products"] as? [[String: Any]])
+    let index = try XCTUnwrap(products.firstIndex { $0["productID"] as? String == ApplePurchaseStore.permanentID })
+    products[index]["displayPrice"] = "0"
+    configuration["products"] = products
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent("free-\(UUID().uuidString).storekit")
+    try JSONSerialization.data(withJSONObject: configuration).write(to: file)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let session = try SKTestSession(contentsOf: file)
+    session.resetToDefaultState()
+    session.disableDialogs = true
+    session.clearTransactions()
+    defer { session.clearTransactions(); session.resetToDefaultState() }
+    let store = makeStore(enabled: true)
+    await store.refresh(loadProducts: true)
+    XCTAssertEqual(store.snapshot["permanentFree"] as? Bool, true)
+    XCTAssertFalse(store.permanent)
+    let outcome = try await store.purchase(ApplePurchaseStore.permanentID, requireFree: true)
+    XCTAssertEqual(outcome, "success")
+    XCTAssertTrue(store.permanent)
+    try await waitForStoreKitRecord(ApplePurchaseStore.permanentID)
+    // The entitlement is the signed non-consumable transaction, not today's price.
+    let restored = makeStore(enabled: true, clock: { nil })
+    await restored.refresh()
+    XCTAssertTrue(restored.permanent)
+    XCTAssertTrue(restored.canUse)
+  }
+
+  @MainActor
   func testTrialBoundaryAndClockRollback() {
     let start = Date(timeIntervalSince1970: 1_000_000)
     XCTAssertFalse(ApplePurchaseStore.trialValid(start: start, now: start.addingTimeInterval(-1)))

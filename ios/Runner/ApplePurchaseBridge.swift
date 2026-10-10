@@ -25,6 +25,9 @@ final class ApplePurchaseBridge {
             guard let id = call.arguments as? String else { throw PurchaseFailure.invalidProduct }
             let outcome = try await store.purchase(id)
             result(["outcome": outcome, "state": store.snapshot])
+          case "claimFreePermanent":
+            let outcome = try await store.purchase(ApplePurchaseStore.permanentID, requireFree: true)
+            result(["outcome": outcome, "state": store.snapshot])
           case "restore":
             try await store.restore()
             result(store.snapshot)
