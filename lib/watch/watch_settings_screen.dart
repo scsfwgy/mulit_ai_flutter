@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:mulit_ai_flutter/api/api_client.dart';
 import 'package:mulit_ai_flutter/chat/chat_model_selector.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/core/storefront_policy.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 import 'package:mulit_ai_flutter/voice/voice_settings_screen.dart';
@@ -36,14 +37,20 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    StorefrontPolicy.instance.addListener(_storefrontChanged);
     _load();
     _checkWatches();
   }
 
   @override
   void dispose() {
+    StorefrontPolicy.instance.removeListener(_storefrontChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _storefrontChanged() {
+    if (mounted) _load();
   }
 
   @override
@@ -140,7 +147,9 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
 
   Future<void> _load() async {
     final store = ChatStore.instance;
-    final providers = await store.providers();
+    final providers = (await store.providers()).where(
+      (p) => !StorefrontPolicy.instance.blocks(p.baseUrl, presetId: p.presetId, model: p.model),
+    ).toList();
     final selection = await loadWatchChatSelection(store);
     final selected =
         providers.where((p) => p.id == selection?.providerId).firstOrNull ??

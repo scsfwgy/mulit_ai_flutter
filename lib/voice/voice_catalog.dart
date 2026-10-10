@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'package:mulit_ai_flutter/core/storefront_policy.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 
@@ -126,7 +127,10 @@ class VoiceCatalogClient {
     if (protocol == VoiceProtocol.doubao || kind == VoiceCatalogKind.voice) {
       return const [];
     }
-    if (apiKey.trim().isEmpty) throw FormatException(T('i18n.enter_an_api_key_first'));
+    if (apiKey.trim().isEmpty) {
+      throw FormatException(T('i18n.enter_an_api_key_first'));
+    }
+    await StorefrontPolicy.instance.requireAllowed(baseUrl);
     final root = validateBaseUrl(baseUrl);
     final request = http.Request('GET', Uri.parse('$root/models'))
       ..followRedirects = false
@@ -171,7 +175,10 @@ class VoiceCatalogClient {
                   lower.contains('whisper') ||
                   lower.endsWith('-asr')
             : lower.contains('tts') || lower.contains('speech');
-        if (id.isNotEmpty && id.length <= 160 && matches) ids.add(id);
+        if (id.isNotEmpty && id.length <= 160 && matches &&
+            !(StorefrontPolicy.instance.restricted && StorefrontPolicy.isOpenAIModel(id))) {
+          ids.add(id);
+        }
       }
       return [for (final id in ids.toList()..sort()) VoiceCatalogOption(id)];
     } on FormatException {

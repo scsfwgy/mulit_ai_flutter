@@ -7,6 +7,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import 'package:mulit_ai_flutter/core/storefront_policy.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
 
@@ -21,9 +22,13 @@ enum ApiProtocol {
   openAi('openai_chat', 'i18n.openai_compatible'),
   anthropic('anthropic_messages', 'Claude Messages');
 
-  const ApiProtocol(this.value, this.label);
+  const ApiProtocol(this.value, this._label);
   final String value;
-  final String label;
+  final String _label;
+  String get label =>
+      this == ApiProtocol.openAi && StorefrontPolicy.instance.restricted
+      ? 'i18n.compatible_chat_protocol'
+      : _label;
 
   static ApiProtocol parse(String value) => ApiProtocol.values.firstWhere(
     (item) => item.value == value,
@@ -209,6 +214,14 @@ String validateScannedApiKey(String input) {
   }
   return key;
 }
+
+Iterable<ProviderPreset> get availableProviderPresets => providerPresets.where(
+  (p) => !StorefrontPolicy.instance.blocks(
+    p.baseUrl,
+    presetId: p.id,
+    model: p.model,
+  ),
+);
 
 class ProviderConfig {
   const ProviderConfig({
@@ -744,6 +757,11 @@ class ChatStore {
   )).map(ProviderConfig.fromMap).toList();
 
   Future<int> saveProvider(ProviderConfig config, {String? apiKey}) async {
+    await StorefrontPolicy.instance.requireAllowed(
+      config.baseUrl,
+      presetId: config.presetId,
+      model: config.model,
+    );
     final database = await db;
     if (config.id != 0 &&
         (apiKey?.isNotEmpty == true || await cachedModels(config) == null)) {
@@ -914,6 +932,14 @@ class ChatStore {
     VoiceProviderConfig config, {
     String? apiKey,
   }) async {
+    await StorefrontPolicy.instance.requireAllowed(
+      config.baseUrl,
+      model: config.asrModel,
+    );
+    await StorefrontPolicy.instance.requireAllowed(
+      config.baseUrl,
+      model: config.ttsModel,
+    );
     final items = await voiceProviders();
     items.removeWhere((item) => item.id == config.id);
     items.add(config);
@@ -1087,7 +1113,9 @@ class ChatStore {
   ) async {
     final database = await db;
     final normalizedModel = model.trim();
-    if (normalizedModel.isEmpty) throw FormatException(T('i18n.enter_model_id_prompt'));
+    if (normalizedModel.isEmpty) {
+      throw FormatException(T('i18n.enter_model_id_prompt'));
+    }
     if (prompt.trim().isEmpty) {
       await deleteModelPrompt(providerId, normalizedModel);
       return;

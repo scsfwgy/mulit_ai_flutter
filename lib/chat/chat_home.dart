@@ -13,6 +13,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:mulit_ai_flutter/core/storefront_policy.dart';
 import 'package:mulit_ai_flutter/api/api_client.dart';
 import 'package:mulit_ai_flutter/chat/chat_context_screen.dart';
 import 'package:mulit_ai_flutter/chat/chat_message_meta.dart';
@@ -159,6 +160,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   Timer? _recordTimer;
   final _chatScroll = ChatScrollController();
   List<ProviderConfig> _providers = [];
+  Set<int> _restrictedProviderIds = {};
   List<ChatTopic> _topics = [];
   List<ChatMessage> _messages = [];
   ChatTopic? _topic;
@@ -207,6 +209,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     ApplePurchases.instance.start();
     ApplePurchases.instance.addListener(_purchaseChanged);
+    StorefrontPolicy.instance.addListener(_storefrontChanged);
     if (supportsWatchCompanion) {
       _watchConfigSubscription = ChatStore.instance.watchConfigurationChanges
           .listen((_) {
@@ -255,6 +258,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     unawaited(_watchConfigSubscription?.cancel());
     WidgetsBinding.instance.removeObserver(this);
     ApplePurchases.instance.removeListener(_purchaseChanged);
+    StorefrontPolicy.instance.removeListener(_storefrontChanged);
     _recordTimer?.cancel();
     _hideVoiceOverlay();
     _recordElapsedMs.dispose();
@@ -300,6 +304,33 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       if (wasHolding && mounted) setState(() {});
       if (_recording) unawaited(_cancelRecording());
     }
+  }
+
+  void _storefrontChanged() {
+    if (!mounted) return;
+    if (_activeClient?.provider case final provider?) {
+      if (StorefrontPolicy.instance.blocks(
+        provider.baseUrl,
+        presetId: provider.presetId, model: provider.model
+      )) {
+        _activeClient?.cancel();
+      }
+    }
+    for (final client in _titleClients) {
+      if (StorefrontPolicy.instance.blocks(
+        client.provider.baseUrl,
+        presetId: client.provider.presetId,
+      )) {
+        client.cancel();
+      }
+    }
+    if (_speechClient case final client?) {
+      if (StorefrontPolicy.instance.blocks(client.config.baseUrl, model: client.config.ttsModel)) {
+        client.close();
+      }
+    }
+    unawaited(_load());
+    unawaited(_syncWatchConfiguration());
   }
 
   void _purchaseChanged() {
@@ -356,7 +387,15 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       } on MissingPluginException {
         // Wear OS integration is only installed in the Android phone app.
       }
-      final providers = await ChatStore.instance.providers();
+      final allProviders = await ChatStore.instance.providers();
+      final providers = allProviders
+          .where(
+            (p) => !StorefrontPolicy.instance.blocks(
+              p.baseUrl,
+              presetId: p.presetId, model: p.model
+            ),
+          )
+          .toList();
       final store = ChatStore.instance;
       final searchEnabled = await store.setting('search_enabled') == '1';
       final ttsId = await store.setting('voice_tts_id');
@@ -365,6 +404,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           .firstOrNull;
       final canSpeak =
           speechService != null &&
+          !StorefrontPolicy.instance.blocks(speechService.baseUrl, model: speechService.ttsModel) &&
           speechService.ttsModel.trim().isNotEmpty &&
           speechService.voice.trim().isNotEmpty &&
           (await store.voiceApiKey(speechService))?.trim().isNotEmpty == true;
@@ -381,6 +421,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       if (!mounted) return;
       setState(() {
         _providers = providers;
+        _restrictedProviderIds = allProviders.where((p) => StorefrontPolicy.instance.blocks(p.baseUrl, presetId: p.presetId, model: p.model)).map((p) => p.id).toSet();
         _searchEnabled = searchEnabled;
         _canSpeak = canSpeak;
         _watchProcessing = watchProcessing;
@@ -1018,7 +1059,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     final provider = _providers.where((p) => p.id == providerId).firstOrNull;
     if (provider == null) {
       setState(() {
-        _error = T('i18n.the_service_for_this_chat');
+        _error = T(_restrictedProviderIds.contains(providerId) ? 'i18n.openai_storefront_unavailable' : 'i18n.the_service_for_this_chat');
         _errorAction = ChatErrorAction.model;
       });
       return;
@@ -1097,7 +1138,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           .firstOrNull;
       if (provider == null) {
         setState(() {
-          _error = T('i18n.the_service_was_deleted_choose');
+          _error = T(_restrictedProviderIds.contains(topic.providerId) ? 'i18n.openai_storefront_unavailable' : 'i18n.the_service_was_deleted_choose');
           _errorAction = ChatErrorAction.model;
         });
         return;

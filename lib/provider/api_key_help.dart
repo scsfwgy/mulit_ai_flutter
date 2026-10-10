@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:mulit_ai_flutter/core/storefront_policy.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
@@ -36,6 +37,7 @@ const textApiKeyUrls = <String, String>{
 /// Compatibility describes the protocol, not who operates a custom endpoint.
 /// Only known official hosts get a provider-specific credential link.
 String? textApiKeyUrlForEndpoint(String endpoint) {
+  if (StorefrontPolicy.instance.blocks(endpoint)) return null;
   final uri = Uri.tryParse(endpoint.trim());
   if (uri == null || uri.scheme != 'https' || uri.userInfo.isNotEmpty) {
     return null;
@@ -49,6 +51,7 @@ String? textApiKeyUrlForEndpoint(String endpoint) {
 }
 
 String? voiceApiKeyUrlForEndpoint(VoiceProtocol protocol, String endpoint) {
+  if (StorefrontPolicy.instance.blocks(endpoint)) return null;
   final uri = Uri.tryParse(endpoint.trim());
   if (uri == null || uri.scheme != 'https' || uri.userInfo.isNotEmpty) {
     return null;
@@ -63,6 +66,7 @@ String? voiceApiKeyUrlForEndpoint(VoiceProtocol protocol, String endpoint) {
 }
 
 Future<void> openApiKeyHelp(BuildContext context, String url) async {
+  if (StorefrontPolicy.instance.blocks(url)) return;
   try {
     if (await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)) {
       return;

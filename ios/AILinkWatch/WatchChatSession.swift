@@ -98,6 +98,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
       turns = Array(saved.suffix(50))
     }
     configuration = configurationStore.load()
+    networkClient.openAIRestricted = configuration?.openAIRestricted != false
     textReady = configuration?.canChat ?? false
     asrReady = configuration?.canTranscribe ?? false
     for turn in independentHistory.snapshot.recent where !turns.contains(where: { $0.id == turn.id }) {
@@ -624,7 +625,36 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     setStatus("已清除手表配置和问答", "Watch settings and chats cleared")
   }
 
+  private func applyStorefrontRestriction(_ restricted: Bool) {
+    networkClient.openAIRestricted = restricted
+    if var config = configuration {
+      config.openAIRestricted = restricted
+      configuration = config
+      if let data = try? JSONEncoder().encode(config),
+         let snapshot = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+        _ = try? configurationStore.save(snapshot)
+      }
+      textReady = config.canChat
+      asrReady = config.canTranscribe
+    }
+    if restricted, let active = turnConfiguration,
+       WatchNetworkConfiguration.isOpenAI(active.baseUrl ?? "", presetID: active.providerPresetId, model: active.model)
+        || WatchNetworkConfiguration.isOpenAI(active.asr?.baseUrl ?? "", model: active.asr?.asrModel) {
+      processingTask?.cancel()
+      busy = false
+      awaitingConfirmation = false
+      setStatus("当前商店地区无法使用 OpenAI", "OpenAI is unavailable for this storefront")
+    }
+    if restricted, WatchNetworkConfiguration.isOpenAI((turnConfiguration ?? configuration)?.tts?.baseUrl ?? "", model: (turnConfiguration ?? configuration)?.tts?.ttsModel) {
+      stopPlayback()
+    }
+  }
+
   @MainActor private func apply(_ update: [String: Any], livePurchases: Bool = false) {
+    if let restricted = update["openAIRestricted"] as? Bool {
+      applyStorefrontRestriction(restricted)
+    }
+    if update["kind"] as? String == "storefront" { return }
     // Entitlement delivery must not depend on config request IDs, language,
     // service validity or the user having cleared watch service settings.
     if let purchases = update["purchases"] as? [String: Any] { applyPurchases(purchases, livePhoneTime: livePurchases) }
@@ -654,8 +684,9 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
         // A broken snapshot or storage failure leaves the previous cache usable.
         let saved = try configurationStore.save(snapshot)
         configuration = saved
-        textReady = saved.canChat
-        asrReady = saved.canTranscribe
+        applyStorefrontRestriction((update["openAIRestricted"] as? Bool ?? saved.openAIRestricted) != false)
+        textReady = configuration?.canChat ?? false
+        asrReady = configuration?.canTranscribe ?? false
       } catch {
         if updateID == settingsRequestID { finishSettingsRequest(success: false) }
         return

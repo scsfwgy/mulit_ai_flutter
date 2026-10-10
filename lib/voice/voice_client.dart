@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
+import 'package:mulit_ai_flutter/core/storefront_policy.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/voice/voice_request_diagnostics.dart';
@@ -29,7 +30,9 @@ String validateTranscript(String text) {
 class VoiceClient {
   VoiceClient(this.config, this.key, {http.Client? client})
     : _client = client ?? http.Client(),
-      _ownsClient = client == null;
+      _ownsClient = client == null {
+    StorefrontPolicy.instance.addListener(_storefrontChanged);
+  }
 
   final VoiceProviderConfig config;
   final String key;
@@ -57,7 +60,15 @@ class VoiceClient {
     debugPrint('[AI Link Voice][$id] $line');
   }
 
+  void _storefrontChanged() {
+    if (StorefrontPolicy.instance.blocks(config.baseUrl, model: config.asrModel) ||
+        StorefrontPolicy.instance.blocks(config.baseUrl, model: config.ttsModel)) {
+      close();
+    }
+  }
+
   void close() {
+    StorefrontPolicy.instance.removeListener(_storefrontChanged);
     if (_ownsClient) _client.close();
   }
 
@@ -73,6 +84,11 @@ class VoiceClient {
     int maxBytes = 2 * 1024 * 1024,
     String operation = 'i18n.voice_operation_service',
   }) async {
+    try {
+      await StorefrontPolicy.instance.requireAllowed(config.baseUrl, model: operation == 'i18n.voice_operation_transcription' ? config.asrModel : config.ttsModel);
+    } on StorefrontRestrictedException catch (error) {
+      throw VoiceException(error.message);
+    }
     request.followRedirects = false;
     request.headers.addAll(_auth);
     final traceId = const Uuid().v4();

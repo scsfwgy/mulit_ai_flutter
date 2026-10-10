@@ -43,13 +43,14 @@ struct WatchNetworkConfiguration: Codable {
   let asrReady: Bool
   let asr: WatchVoiceConfiguration?
   let tts: WatchVoiceConfiguration?
+  var openAIRestricted: Bool? = nil
   var searchEnabled: Bool? = nil
   var search: WatchSearchConfiguration? = nil
 
   enum CodingKeys: String, CodingKey {
     case protocolName = "protocol"
     case version, providerId, providerName, providerPresetId, baseUrl, apiKey
-    case model, systemPrompt, textReady, asrReady, asr, tts, searchEnabled, search
+    case model, systemPrompt, textReady, asrReady, asr, tts, openAIRestricted, searchEnabled, search
   }
 
   static func endpoint(_ base: String, _ suffix: String) throws -> URL {
@@ -61,8 +62,21 @@ struct WatchNetworkConfiguration: Codable {
     return result
   }
 
+  static func isOpenAI(_ endpoint: String, presetID: String? = nil, model: String? = nil) -> Bool {
+    let id = (model ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if id.hasPrefix("openai/") || id.hasPrefix("~openai/") { return true }
+    if presetID?.lowercased() == "openai" { return true }
+    let host = URLComponents(string: endpoint.trimmingCharacters(in: .whitespacesAndNewlines))?.host?
+      .lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".")) ?? ""
+    return host == "openai.com" || host.hasSuffix(".openai.com")
+  }
+
+  func blocks(_ endpoint: String, presetID: String? = nil, model: String? = nil) -> Bool {
+    openAIRestricted != false && Self.isOpenAI(endpoint, presetID: presetID, model: model)
+  }
+
   var canChat: Bool {
-    textReady && providerId != nil && !(apiKey ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    !blocks(baseUrl ?? "", presetID: providerPresetId, model: model) && textReady && providerId != nil && !(apiKey ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       && !model.isEmpty && model.utf16.count <= 500 && providerName.utf16.count <= 200
       && ["openai_chat", "anthropic_messages"].contains(protocolName ?? "")
       && (try? Self.endpoint(baseUrl ?? "", "/")) != nil
@@ -70,7 +84,7 @@ struct WatchNetworkConfiguration: Codable {
 
   var canTranscribe: Bool {
     guard asrReady, let voice = asr else { return false }
-    return !voice.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !voice.asrModel.isEmpty
+    return !blocks(voice.baseUrl, model: voice.asrModel) && !voice.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !voice.asrModel.isEmpty
       && ["openAi", "mimo", "doubao"].contains(voice.protocolName)
       && (try? Self.endpoint(voice.baseUrl, "/")) != nil
   }

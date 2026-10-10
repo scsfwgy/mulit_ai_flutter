@@ -568,5 +568,10 @@
   "i18n.yichen": "儒雅逸辰",
   "i18n.you_can_enter_a_model": "獲取失敗時仍可手動填寫模型 ID。金鑰不會寫入聊天資料庫。",
   "i18n.you_can_use_a_model": "可以使用未出現在服務端列表中的模型。",
-  "i18n.your_messages_show_the_model": "使用者訊息顯示模型與字數；耗時和 Token 屬於整次回覆請求。舊訊息缺少的統計不顯示；服務未提供用量時顯示 Token —。"
+  "i18n.your_messages_show_the_model": "使用者訊息顯示模型與字數；耗時和 Token 屬於整次回覆請求。舊訊息缺少的統計不顯示；服務未提供用量時顯示 Token —。",
+  "i18n.openai_storefront_unavailable": "目前 App Store 地區為中國大陸或尚未確認，暫不可使用 OpenAI 服務。請選擇其他服務。",
+  "i18n.compatible_voice_service": "相容語音服務",
+  "i18n.compatible_chat_protocol": "Chat Completions 相容",
+  "i18n.supports_compatible_chat_protocols": "支援相容的 Chat Completions 與 Claude Messages 協定。",
+  "i18n.for_example_my_model_service": "例如：我的模型服務"
 }

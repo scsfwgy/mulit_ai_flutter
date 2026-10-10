@@ -7,6 +7,7 @@ import WatchConnectivity
 final class AppleWatchBridge: NSObject, WCSessionDelegate {
   static let shared = AppleWatchBridge()
 
+  private var openAIRestricted = true
   private var pendingConfiguration: [String: Any]?
   private var workerEngine: FlutterEngine?
   private var workerChannel: FlutterMethodChannel?
@@ -113,9 +114,25 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
     preferences["kind"] = "preferences"
     preferences["language"] = language
     preferences["purchases"] = purchaseSnapshot
+    preferences["openAIRestricted"] = openAIRestricted
     try? session.updateApplicationContext(preferences)
     if session.isReachable {
       session.sendMessage(preferences, replyHandler: nil)
+    }
+  }
+
+  @MainActor
+  func syncStorefrontRestriction() {
+    let restricted = AppleStorefrontBridge.shared.restricted
+    openAIRestricted = restricted
+    guard WCSession.isSupported() else { return }
+    let session = WCSession.default
+    guard session.activationState == .activated, session.isPaired, session.isWatchAppInstalled else { return }
+    var context = session.applicationContext
+    context["openAIRestricted"] = restricted
+    try? session.updateApplicationContext(context)
+    if session.isReachable {
+      session.sendMessage(["kind": "storefront", "openAIRestricted": restricted], replyHandler: nil)
     }
   }
 
@@ -173,6 +190,7 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
     workerChannel = channel
     GeneratedPluginRegistrant.register(with: engine)
     ApplePurchaseBridge.shared.attach(messenger: engine.binaryMessenger)
+    AppleStorefrontBridge.shared.attach(messenger: engine.binaryMessenger)
     pluginsReady = true
     flushPending()
     return true
@@ -233,6 +251,7 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
       message = propertyList(message) as? [String: Any] ?? [:]
       message["language"] = UserDefaults.standard.string(forKey: "ai_link_watch_language") ?? "zh"
       message["purchases"] = purchaseSnapshot
+      message["openAIRestricted"] = openAIRestricted
       UserDefaults.standard.set(message.filter { $0.key != "id" && $0.key != "configuration" && $0.key != "purchases" }, forKey: "ai_link_watch_preferences")
       try? session.updateApplicationContext(message)
       if session.isReachable { session.sendMessage(message, replyHandler: nil) }
@@ -287,15 +306,15 @@ final class AppleWatchBridge: NSObject, WCSessionDelegate {
     _ session: WCSession, activationDidCompleteWith state: WCSessionActivationState,
     error: Error?
   ) {
-    DispatchQueue.main.async { self.sendPendingConfiguration(); self.syncPreferences(); self.syncPurchases() }
+    DispatchQueue.main.async { self.sendPendingConfiguration(); self.syncPreferences(); self.syncPurchases(); self.syncStorefrontRestriction() }
   }
 
   func sessionWatchStateDidChange(_ session: WCSession) {
-    DispatchQueue.main.async { self.sendPendingConfiguration(); self.syncPreferences(); self.syncPurchases() }
+    DispatchQueue.main.async { self.sendPendingConfiguration(); self.syncPreferences(); self.syncPurchases(); self.syncStorefrontRestriction() }
   }
 
   func sessionReachabilityDidChange(_ session: WCSession) {
-    DispatchQueue.main.async { self.sendPendingConfiguration(); self.syncPreferences(); self.syncPurchases() }
+    DispatchQueue.main.async { self.sendPendingConfiguration(); self.syncPreferences(); self.syncPurchases(); self.syncStorefrontRestriction() }
   }
 
   func sessionDidBecomeInactive(_ session: WCSession) {}

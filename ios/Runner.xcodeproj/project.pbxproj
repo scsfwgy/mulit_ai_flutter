@@ -36,6 +36,7 @@
 		AA5500000000000000000012 /* WatchMarkdownView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA5500000000000000000002 /* WatchMarkdownView.swift */; };
 		AA6600000000000000000011 /* ApplePurchaseStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6600000000000000000001 /* ApplePurchaseStore.swift */; };
 		AA6600000000000000000012 /* ApplePurchaseStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6600000000000000000001 /* ApplePurchaseStore.swift */; };
+		AA7700000000000000000013 /* AppleStorefrontBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA7700000000000000000002 /* AppleStorefrontBridge.swift */; };
 		AA6600000000000000000013 /* ApplePurchaseBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA6600000000000000000002 /* ApplePurchaseBridge.swift */; };
 		AA6600000000000000000014 /* AI-Link.storekit in Resources */ = {isa = PBXBuildFile; fileRef = AA6600000000000000000003 /* AI-Link.storekit */; };
 		AA7700000000000000000011 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AA7700000000000000000001 /* PrivacyInfo.xcprivacy */; };
@@ -123,6 +124,7 @@
 		AA5500000000000000000001 /* WatchMarkdownDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchMarkdownDocument.swift; sourceTree = "<group>"; };
 		AA5500000000000000000002 /* WatchMarkdownView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchMarkdownView.swift; sourceTree = "<group>"; };
 		AA6600000000000000000001 /* ApplePurchaseStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AILinkPurchases/ApplePurchaseStore.swift; sourceTree = SOURCE_ROOT; };
+		AA7700000000000000000002 /* AppleStorefrontBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleStorefrontBridge.swift; sourceTree = "<group>"; };
 		AA6600000000000000000002 /* ApplePurchaseBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplePurchaseBridge.swift; sourceTree = "<group>"; };
 		AA6600000000000000000003 /* AI-Link.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = AILinkPurchases/AI-Link.storekit; sourceTree = SOURCE_ROOT; };
 		AA7700000000000000000001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = AILinkPurchases/PrivacyInfo.xcprivacy; sourceTree = SOURCE_ROOT; };
@@ -210,6 +212,7 @@
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				AA6600000000000000000001 /* ApplePurchaseStore.swift */,
 				AA7700000000000000000001 /* PrivacyInfo.xcprivacy */,
+				AA7700000000000000000002 /* AppleStorefrontBridge.swift */,
 				AA6600000000000000000002 /* ApplePurchaseBridge.swift */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				AA1100000000000000000006 /* AppleWatchBridge.swift */,
@@ -461,6 +464,7 @@
 			files = (
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				AA6600000000000000000011 /* ApplePurchaseStore.swift in Sources */,
+				AA7700000000000000000013 /* AppleStorefrontBridge.swift in Sources */,
 				AA6600000000000000000013 /* ApplePurchaseBridge.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,

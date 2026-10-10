@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:mulit_ai_flutter/core/storefront_policy.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
@@ -67,17 +68,46 @@ class ModelApiClient {
     this.provider,
     this.apiKey, {
     this.bodyIdleTimeout = const Duration(seconds: 120),
-  });
+  }) {
+    StorefrontPolicy.instance.addListener(_storefrontChanged);
+  }
   final ProviderConfig provider;
   final String apiKey;
   final Duration bodyIdleTimeout;
+  bool _observingStorefront = true;
   bool _requestSent = false;
   bool _cancelled = false;
+  String? _requestedModel;
   SearchClient? _searchClient;
   final HttpClient _client = HttpClient()
     ..connectionTimeout = const Duration(seconds: 20);
 
+  Future<void> _requireService({String? model}) async {
+    try {
+      await StorefrontPolicy.instance.requireAllowed(
+        provider.baseUrl,
+        presetId: provider.presetId,
+        model: model,
+      );
+    } on StorefrontRestrictedException catch (error) {
+      throw ApiException(error.message);
+    }
+  }
+
+  void _storefrontChanged() {
+    if (StorefrontPolicy.instance.blocks(provider.baseUrl, presetId: provider.presetId, model: _requestedModel)) {
+      cancel();
+    }
+  }
+
+  void _detachStorefront() {
+    if (!_observingStorefront) return;
+    _observingStorefront = false;
+    StorefrontPolicy.instance.removeListener(_storefrontChanged);
+  }
+
   void cancel() {
+    _detachStorefront();
     _cancelled = true;
     _searchClient?.cancel();
     _client.close(force: true);
@@ -172,6 +202,8 @@ class ModelApiClient {
     void Function(List<SearchSource> sources)? onSearchResults,
   }) async* {
     try {
+      _requestedModel = model;
+      await _requireService(model: model);
       SearchResult? search;
       if (webSearch != null) {
         if (history.isEmpty || history.last.role != 'user') {
@@ -287,6 +319,7 @@ class ModelApiClient {
     } finally {
       _searchClient?.cancel();
       _client.close(force: true);
+      _detachStorefront();
     }
   }
 
@@ -300,6 +333,7 @@ class ModelApiClient {
     int contextWindowTokens,
     void Function(int omittedMessages)? onContextTrimmed,
   ) async {
+    await _requireService(model: model);
     if (_cancelled) throw ApiException(T('i18n.reply_stopped'));
     // Validate the mandatory newest turn before opening or sending a request.
     final body = _body(
@@ -426,6 +460,7 @@ class ModelApiClient {
 
   Future<List<String>> fetchModels() async {
     try {
+      await _requireService();
       final request = await _client
           .getUrl(Uri.parse('${provider.baseUrl}/models'))
           .timeout(const Duration(seconds: 15));
@@ -449,7 +484,7 @@ class ModelApiClient {
           .whereType<Map>()
           .map((item) => item['id'])
           .whereType<String>()
-          .where((id) => id.isNotEmpty)
+          .where((id) => id.isNotEmpty && !(StorefrontPolicy.instance.restricted && StorefrontPolicy.isOpenAIModel(id)))
           .toSet()
           .toList()
         ..sort();
@@ -459,6 +494,7 @@ class ModelApiClient {
       throw ApiException(T('i18n.fetching_models_timed_out'));
     } finally {
       _client.close(force: true);
+      _detachStorefront();
     }
   }
 

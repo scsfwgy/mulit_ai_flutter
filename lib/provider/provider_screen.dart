@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import 'package:mulit_ai_flutter/core/storefront_policy.dart';
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/core/app_platform.dart';
 
@@ -26,7 +27,7 @@ class ProviderScreen extends StatefulWidget {
   State<ProviderScreen> createState() => _ProviderScreenState();
 }
 
-class _ProviderScreenState extends State<ProviderScreen> {
+class _ProviderScreenState extends State<ProviderScreen> with StorefrontAware {
   List<ProviderConfig> _providers = [];
   bool _changed = false;
 
@@ -84,9 +85,7 @@ class _ProviderScreenState extends State<ProviderScreen> {
       context: context,
       builder: (context) => CupertinoAlertDialog(
         title: Text(T('i18n.delete_service_confirm')),
-        content: Text(
-          F('i18n.provider_delete_body', [provider.name]),
-        ),
+        content: Text(F('i18n.provider_delete_body', [provider.name])),
         actions: [
           CupertinoDialogAction(
             onPressed: () => Navigator.pop(context, false),
@@ -171,7 +170,13 @@ class _ProviderScreenState extends State<ProviderScreen> {
                       IosRow(
                         title: provider.name,
                         subtitle:
-                            '${provider.model} · ${T(provider.protocol.label)}',
+                            StorefrontPolicy.instance.blocks(
+                              provider.baseUrl,
+                              presetId: provider.presetId,
+                              model: provider.model,
+                            )
+                            ? T('i18n.openai_storefront_unavailable')
+                            : '${provider.model} · ${T(provider.protocol.label)}',
                         leading: ProviderBadge(
                           name: provider.name,
                           presetId: presetForProvider(provider)?.id,
@@ -229,7 +234,7 @@ class _ProviderScreenState extends State<ProviderScreen> {
             title: T('i18n.china_providers'),
             footer: T('i18n.api_urls_and_example_models'),
             children: [
-              for (final preset in providerPresets.where(
+              for (final preset in availableProviderPresets.where(
                 (p) => {
                   'deepseek',
                   'glm',
@@ -248,7 +253,7 @@ class _ProviderScreenState extends State<ProviderScreen> {
           IosSection(
             title: T('i18n.international_providers'),
             children: [
-              for (final preset in providerPresets.where(
+              for (final preset in availableProviderPresets.where(
                 (p) => {
                   'openai',
                   'claude',
@@ -265,7 +270,7 @@ class _ProviderScreenState extends State<ProviderScreen> {
           IosSection(
             title: T('i18n.aggregators_inference'),
             children: [
-              for (final preset in providerPresets.where(
+              for (final preset in availableProviderPresets.where(
                 (p) => {'openrouter', 'together', 'fireworks'}.contains(p.id),
               ))
                 _presetRow(preset),
@@ -273,7 +278,11 @@ class _ProviderScreenState extends State<ProviderScreen> {
           ),
           IosSection(
             title: T('i18n.other'),
-            footer: T('i18n.supports_openai_compatible_chat_completions'),
+            footer: T(
+              StorefrontPolicy.instance.restricted
+                  ? 'i18n.supports_compatible_chat_protocols'
+                  : 'i18n.supports_openai_compatible_chat_completions',
+            ),
             children: [
               IosRow(
                 title: T('i18n.scan_to_import'),
@@ -305,11 +314,7 @@ class _ProviderScreenState extends State<ProviderScreen> {
   Widget _presetRow(ProviderPreset preset) => IosRow(
     title: T(preset.name),
     subtitle: T(preset.protocol.label),
-    leading: ProviderBadge(
-      name: T(preset.name),
-      presetId: preset.id,
-      size: 30,
-    ),
+    leading: ProviderBadge(name: T(preset.name), presetId: preset.id, size: 30),
     onTap: () => _edit(preset: preset),
   );
 }
@@ -323,7 +328,7 @@ class ProviderEditor extends StatefulWidget {
   State<ProviderEditor> createState() => _ProviderEditorState();
 }
 
-class _ProviderEditorState extends State<ProviderEditor> {
+class _ProviderEditorState extends State<ProviderEditor> with StorefrontAware {
   late final TextEditingController _name;
   late final TextEditingController _baseUrl;
   late final TextEditingController _model;
@@ -479,7 +484,9 @@ class _ProviderEditorState extends State<ProviderEditor> {
         decoded['apiKey'] = key;
         _json.text = const JsonEncoder.withIndent('  ').convert(decoded);
       } catch (_) {
-        _showError(FormatException(T('i18n.fix_the_configuration_json_before')));
+        _showError(
+          FormatException(T('i18n.fix_the_configuration_json_before')),
+        );
       }
     } else {
       _key.text = key;
@@ -509,7 +516,9 @@ class _ProviderEditorState extends State<ProviderEditor> {
           : null;
       Future<List<String>> fetchFresh() async {
         final models = await ModelApiClient(value.config, key).fetchModels();
-        if (models.isEmpty) throw ApiException(T('i18n.the_service_returned_no_usable'));
+        if (models.isEmpty) {
+          throw ApiException(T('i18n.the_service_returned_no_usable'));
+        }
         _pendingModelCache = (
           models: models,
           baseUrl: value.config.baseUrl,
@@ -597,7 +606,9 @@ class _ProviderEditorState extends State<ProviderEditor> {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: IosColors.background,
     appBar: iosAppBar(
-      title: widget.config == null ? T('i18n.add_a_model_service') : T('i18n.edit_service'),
+      title: widget.config == null
+          ? T('i18n.add_a_model_service')
+          : T('i18n.edit_service'),
       leading: IosNavButton(
         icon: CupertinoIcons.back,
         onPressed: () => Navigator.pop(context),
@@ -668,7 +679,13 @@ class _ProviderEditorState extends State<ProviderEditor> {
                     title: T('i18n.connection'),
                     footer: T('i18n.enter_the_api_base_url'),
                     children: [
-                      _editorField(_name, 'i18n.service_name', 'i18n.for_example_my_openai'),
+                      _editorField(
+                        _name,
+                        'i18n.service_name',
+                        StorefrontPolicy.instance.restricted
+                            ? 'i18n.for_example_my_model_service'
+                            : 'i18n.for_example_my_openai',
+                      ),
                       IosRow(
                         title: T('i18n.api_protocol'),
                         subtitle: T(_protocol.label),
@@ -679,7 +696,11 @@ class _ProviderEditorState extends State<ProviderEditor> {
                         'i18n.api_base_url',
                         'https://api.example.com/v1',
                       ),
-                      _editorField(_model, 'i18n.default_model', 'i18n.enter_model_id'),
+                      _editorField(
+                        _model,
+                        'i18n.default_model',
+                        'i18n.enter_model_id',
+                      ),
                       _editorField(
                         _key,
                         'API Key',

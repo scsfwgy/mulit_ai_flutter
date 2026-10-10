@@ -8,6 +8,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import 'package:mulit_ai_flutter/core/storefront_policy.dart';
 import 'package:mulit_ai_flutter/chat/chat_home.dart';
 import 'package:mulit_ai_flutter/core/app_platform.dart';
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
@@ -29,6 +30,7 @@ Future<void> main() async {
   // 文案表必须在首帧之前就绪：启动页在 `AppPreferences.load` 完成前就会渲染，
   // 若此时资源还没载入，页面会先显示裸 key（减少动画时尤其明显）。
   await AppPreferences.instance.loadLocalization();
+  await StorefrontPolicy.instance.refresh();
   runApp(const ModelChatApp());
 }
 
@@ -40,7 +42,10 @@ class ModelChatApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-    animation: AppPreferences.instance,
+    animation: Listenable.merge([
+      AppPreferences.instance,
+      StorefrontPolicy.instance,
+    ]),
     builder: (context, _) => MaterialApp(
       title: T('AI Link'),
       debugShowCheckedModeBanner: false,

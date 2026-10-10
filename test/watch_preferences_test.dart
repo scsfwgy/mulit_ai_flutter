@@ -431,6 +431,7 @@ void main() {
       'watch_tts_enabled': '1',
     });
     expect(await WatchChatProcessor(store: store).preferences(), {
+      'openAIRestricted': false,
       'providerName': 'Chosen',
       'model': 'manual-model',
       'autoSend': false,
@@ -462,6 +463,7 @@ void main() {
         'watch_model_id': 'deleted-model',
       });
       expect(await WatchChatProcessor(store: store).preferences(), {
+      'openAIRestricted': false,
         'providerName': 'Available',
         'model': 'default',
         'autoSend': true,
@@ -478,6 +480,7 @@ void main() {
 
   test('empty configuration still syncs usable display defaults', () async {
     expect(await WatchChatProcessor(store: _Store()).preferences(), {
+      'openAIRestricted': false,
       'providerName': '',
       'model': '',
       'autoSend': true,

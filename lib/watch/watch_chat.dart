@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import 'package:mulit_ai_flutter/core/storefront_policy.dart';
 import 'package:mulit_ai_flutter/api/api_client.dart';
 import 'package:mulit_ai_flutter/core/apple_purchases.dart';
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
@@ -316,20 +317,32 @@ class WatchChatProcessor {
   }
 
   Future<Map<String, Object?>> configuration({bool includeKeys = true}) async {
+    await StorefrontPolicy.instance.refresh();
     final providers = await store.providers();
     final selection = await loadWatchChatSelection(store);
     final provider =
         providers.where((p) => p.id == selection?.providerId).firstOrNull ??
         providers.firstOrNull;
-    final key = provider == null ? null : await store.apiKey(provider.id);
     final model = provider == null
         ? ''
         : provider.id == selection?.providerId
         ? selection!.model
         : provider.model;
+    final blocked =
+        provider != null &&
+        StorefrontPolicy.instance.blocks(
+          provider.baseUrl,
+          presetId: provider.presetId, model: model
+        );
+    final key = provider == null || blocked
+        ? null
+        : await store.apiKey(provider.id);
     Future<Map<String, Object?>?> voice(String settingKey) async {
       final selected = await _selectedVoice(settingKey);
-      if (selected == null) return null;
+      if (selected == null ||
+          StorefrontPolicy.instance.blocks(selected.baseUrl, model: settingKey == 'voice_asr_id' ? selected.asrModel : selected.ttsModel)) {
+        return null;
+      }
       final voiceKey = await store.voiceApiKey(selected);
       if (voiceKey == null ||
           voiceKey.trim().isEmpty ||
@@ -366,6 +379,7 @@ class WatchChatProcessor {
         model.trim().isNotEmpty &&
         _validEndpoint(provider.baseUrl);
     return {
+      'openAIRestricted': StorefrontPolicy.instance.restricted,
       'providerName': provider?.name ?? '',
       'model': model,
       'textReady': textReady,

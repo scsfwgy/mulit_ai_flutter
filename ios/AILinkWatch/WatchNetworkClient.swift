@@ -3,6 +3,15 @@ import Foundation
 @MainActor
 final class WatchNetworkClient: NSObject, URLSessionTaskDelegate {
   private var session: URLSession!
+  // Unknown / old phone snapshots must not authorize OpenAI.
+  var openAIRestricted = true
+
+  private func requireAllowed(_ endpoint: String, presetID: String? = nil, model: String? = nil, config: WatchNetworkConfiguration? = nil) throws {
+    if (openAIRestricted || (config != nil && config?.openAIRestricted != false)),
+       WatchNetworkConfiguration.isOpenAI(endpoint, presetID: presetID, model: model) {
+      throw WatchRequestError("当前商店地区无法使用 OpenAI，请在手机选择其他服务", "OpenAI is unavailable for this storefront; choose another service on iPhone")
+    }
+  }
 
   init(configuration: URLSessionConfiguration = .ephemeral) {
     super.init()
@@ -28,6 +37,7 @@ final class WatchNetworkClient: NSObject, URLSessionTaskDelegate {
   private func request(base: String, path: String, key: String, body: Data,
                        contentType: String = "application/json", protocolName: String = "openAi",
                        headers: [String: String] = [:]) throws -> URLRequest {
+    try requireAllowed(base)
     guard !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
           !key.contains(where: { $0.isNewline }),
           headers.values.allSatisfy({ !$0.contains(where: { $0.isNewline }) }) else {
@@ -98,6 +108,8 @@ final class WatchNetworkClient: NSObject, URLSessionTaskDelegate {
   }
 
   func transcribe(_ wav: Data, config: WatchNetworkConfiguration) async throws -> String {
+    try requireAllowed(config.baseUrl ?? "", presetID: config.providerPresetId, model: config.model, config: config)
+    if let voice = config.asr { try requireAllowed(voice.baseUrl, model: voice.asrModel, config: config) }
     await ApplePurchaseStore.shared.refresh()
     guard ApplePurchaseStore.shared.canUse else {
       throw WatchRequestError("请在 iPhone 领取试用或永久解锁，再刷新手表权益", "Start trial or unlock on iPhone, then refresh watch purchases")
@@ -106,6 +118,7 @@ final class WatchNetworkClient: NSObject, URLSessionTaskDelegate {
           !wav.isEmpty, wav.count <= 4 * 1024 * 1024 else {
       throw WatchRequestError("请先在手机配置文字模型和语音识别", "Set up text and transcription services on iPhone first")
     }
+    try requireAllowed(voice.baseUrl, model: voice.asrModel, config: config)
     switch voice.protocolName {
     case "openAi":
       let boundary = "AILink\(UUID().uuidString)"
@@ -220,6 +233,7 @@ final class WatchNetworkClient: NSObject, URLSessionTaskDelegate {
 
   func reply(history: [[String: String]], config: WatchNetworkConfiguration,
              onText: @escaping (String) -> Void) async throws -> String {
+    try requireAllowed(config.baseUrl ?? "", presetID: config.providerPresetId, model: config.model, config: config)
     await ApplePurchaseStore.shared.refresh()
     guard ApplePurchaseStore.shared.canUse else {
       throw WatchRequestError("请在 iPhone 领取试用或永久解锁，再刷新手表权益", "Start trial or unlock on iPhone, then refresh watch purchases")
@@ -244,6 +258,7 @@ final class WatchNetworkClient: NSObject, URLSessionTaskDelegate {
       body["max_tokens"] = 4096
       if !prompt.isEmpty { body["system"] = prompt }
     }
+    try requireAllowed(config.baseUrl ?? "", presetID: config.providerPresetId, model: config.model, config: config)
     var request = try request(base: config.baseUrl!, path: anthropic ? "/messages" : "/chat/completions",
       key: config.apiKey!, body: encode(body), protocolName: config.protocolName!)
     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
@@ -307,6 +322,7 @@ final class WatchNetworkClient: NSObject, URLSessionTaskDelegate {
   }
 
   func synthesize(_ text: String, config: WatchNetworkConfiguration) async throws -> (Data, String)? {
+    if let voice = config.tts { try requireAllowed(voice.baseUrl, model: voice.ttsModel, config: config) }
     await ApplePurchaseStore.shared.refresh()
     guard ApplePurchaseStore.shared.canUse else {
       throw WatchRequestError("请在 iPhone 领取试用或永久解锁，再刷新手表权益", "Start trial or unlock on iPhone, then refresh watch purchases")
@@ -314,6 +330,7 @@ final class WatchNetworkClient: NSObject, URLSessionTaskDelegate {
     guard let voice = config.tts else { return nil }
     let input = String(String.UnicodeScalarView(text.unicodeScalars.prefix(1800))).trimmingCharacters(in: .whitespacesAndNewlines)
     guard !input.isEmpty else { return nil }
+    try requireAllowed(voice.baseUrl, model: voice.ttsModel, config: config)
     switch voice.protocolName {
     case "openAi":
       let (data, _) = try await post(voice, path: "/audio/speech", body: ["model": voice.ttsModel,

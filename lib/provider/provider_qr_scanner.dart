@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/core/storefront_policy.dart';
 import 'package:mulit_ai_flutter/core/app_platform.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
@@ -88,6 +89,8 @@ class _ProviderQrScannerState extends State<ProviderQrScanner>
       final value = ProviderConfig.fromQrCode(raw);
       await ChatStore.instance.saveProvider(value.config, apiKey: value.key);
       if (mounted) Navigator.pop(context, true);
+    } on StorefrontRestrictedException catch (error) {
+      await _showError(error.message);
     } on FormatException catch (error) {
       await _showError(error.message);
     } catch (_) {

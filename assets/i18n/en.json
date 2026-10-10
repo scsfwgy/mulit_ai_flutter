@@ -568,5 +568,10 @@
   "i18n.yichen": "Yichen",
   "i18n.you_can_enter_a_model": "You can enter a model ID if fetching fails. The key is never stored in the chat database.",
   "i18n.you_can_use_a_model": "You can use a model that is missing from the server list.",
-  "i18n.your_messages_show_the_model": "Your messages show the model and character count. Timing and tokens cover the whole reply request. Missing statistics in old messages stay hidden; providers without usage data show Token —."
+  "i18n.your_messages_show_the_model": "Your messages show the model and character count. Timing and tokens cover the whole reply request. Missing statistics in old messages stay hidden; providers without usage data show Token —.",
+  "i18n.openai_storefront_unavailable": "OpenAI services are unavailable for the China mainland App Store or while the storefront is unknown. Choose another service.",
+  "i18n.compatible_voice_service": "Compatible audio service",
+  "i18n.compatible_chat_protocol": "Chat Completions compatible",
+  "i18n.supports_compatible_chat_protocols": "Supports compatible Chat Completions and Claude Messages protocols.",
+  "i18n.for_example_my_model_service": "For example: My model service"
 }

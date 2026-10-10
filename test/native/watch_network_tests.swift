@@ -17,6 +17,42 @@ struct WatchNetworkTests {
     let client = WatchNetworkClient()
     defer { client.close() }
     let history = [["role": "user", "content": "question"]]
+    func openAIConfig(_ restricted: Bool?, model: String = "chat", presetID: String? = "openai") -> WatchNetworkConfiguration {
+      let original = config()
+      return WatchNetworkConfiguration(version: 1, providerId: 7, providerName: "Renamed", providerPresetId: presetID,
+        protocolName: original.protocolName, baseUrl: base, apiKey: original.apiKey, model: model,
+        systemPrompt: original.systemPrompt, textReady: true, asrReady: true, asr: original.asr, tts: original.tts,
+        openAIRestricted: restricted)
+    }
+    try expect(!openAIConfig(nil).canChat, "old cache with unknown storefront blocks OpenAI")
+    try expect(!openAIConfig(true).canChat, "mainland storefront blocks OpenAI")
+    try expect(openAIConfig(false).canChat, "overseas storefront permits OpenAI")
+    try expect(config().canChat, "compatible protocol remains available")
+    for endpoint in ["https://api.openai.com/v1", "https://API.OPENAI.COM./v1", "https://platform.openai.com"] {
+      try expect(WatchNetworkConfiguration.isOpenAI(endpoint), "recognize official OpenAI host")
+    }
+    try expect(!WatchNetworkConfiguration.isOpenAI("https://api.openai.com.example.org/v1"), "host boundary")
+    for restricted in [Optional<Bool>.none, true, false] {
+      do {
+        _ = try await client.reply(history: history, config: openAIConfig(restricted)) { _ in }
+        throw NSError(domain: "unknown runtime storefront sent OpenAI request", code: 1)
+      } catch let error as WatchRequestError {
+        try expect(!error.retrySafe, "regional restriction cannot trigger phone fallback")
+      }
+    }
+    try expect(!openAIConfig(nil, model: "openai/gpt-test", presetID: nil).canChat, "OpenAI namespace blocked on aggregator")
+    do {
+      _ = try await client.reply(history: history, config: openAIConfig(false, model: "~openai/gpt-latest", presetID: nil)) { _ in }
+      throw NSError(domain: "aggregator bypassed unknown storefront", code: 1)
+    } catch is WatchRequestError {}
+    client.openAIRestricted = false
+    _ = try await client.reply(history: history, config: openAIConfig(false)) { _ in }
+    client.openAIRestricted = true
+    do {
+      _ = try await client.reply(history: history, config: openAIConfig(false)) { _ in }
+      throw NSError(domain: "live region change reused overseas config", code: 1)
+    } catch is WatchRequestError {}
+
     for proto in ["openai_chat", "anthropic_messages"] {
       var partial = ""
       let answer = try await client.reply(history: history, config: config(protocolName: proto)) { partial = $0 }

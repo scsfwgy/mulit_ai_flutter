@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'package:mulit_ai_flutter/api/api_client.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/core/storefront_policy.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 import 'package:mulit_ai_flutter/chat/model_picker.dart';
@@ -45,7 +46,7 @@ class ChatModelSelector extends StatefulWidget {
   State<ChatModelSelector> createState() => _ChatModelSelectorState();
 }
 
-class _ChatModelSelectorState extends State<ChatModelSelector> {
+class _ChatModelSelectorState extends State<ChatModelSelector> with StorefrontAware {
   late int _providerId;
   late final TextEditingController _model;
   final _search = TextEditingController();
@@ -156,8 +157,15 @@ class _ChatModelSelectorState extends State<ChatModelSelector> {
     }
   }
 
-  void _choose(String model) =>
+  Future<void> _choose(String model) async {
+    try {
+      await StorefrontPolicy.instance.requireAllowed(_provider.baseUrl, presetId: _provider.presetId, model: model);
+      if (!mounted) return;
       Navigator.pop(context, ChatModelSelection(_providerId, model));
+    } on StorefrontRestrictedException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    }
+  }
 
   String? get _cacheSubtitle {
     final time = _fetchedAt;
@@ -202,7 +210,7 @@ class _ChatModelSelectorState extends State<ChatModelSelector> {
             IosSection(
               title: T('i18n.model_services'),
               children: [
-                for (final provider in widget.providers)
+                for (final provider in widget.providers.where((p) => !StorefrontPolicy.instance.blocks(p.baseUrl, presetId: p.presetId, model: p.model)))
                   IosRow(
                     title: provider.name,
                     leading: Icon(
@@ -300,7 +308,7 @@ class _ChatModelSelectorState extends State<ChatModelSelector> {
                 ),
               ),
               ModelCatalog(
-                models: _models,
+                models: _models.where((id) => !(StorefrontPolicy.instance.restricted && StorefrontPolicy.isOpenAIModel(id))).toList(),
                 query: _search.text,
                 onSelected: _choose,
               ),

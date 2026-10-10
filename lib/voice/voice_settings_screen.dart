@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import 'package:mulit_ai_flutter/core/storefront_policy.dart';
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/core/app_platform.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
@@ -17,7 +18,8 @@ class VoiceSettingsScreen extends StatefulWidget {
   State<VoiceSettingsScreen> createState() => _VoiceSettingsScreenState();
 }
 
-class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
+class _VoiceSettingsScreenState extends State<VoiceSettingsScreen>
+    with StorefrontAware {
   List<VoiceProviderConfig> _services = [];
   String? _asrId;
   String? _ttsId;
@@ -53,15 +55,23 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
   }
 
   String _name(String? id) =>
-      _services.where((item) => item.id == id).firstOrNull?.name ?? T('i18n.not_set');
+      _services.where((item) => item.id == id).firstOrNull?.name ??
+      T('i18n.not_set');
 
   Future<void> _choose(bool asr) async {
     final value = await showAppModalPopup<String>(
       context: context,
       builder: (context) => CupertinoActionSheet(
-        title: Text(T(asr ? 'i18n.transcription_service' : 'i18n.speech_service')),
+        title: Text(
+          T(asr ? 'i18n.transcription_service' : 'i18n.speech_service'),
+        ),
         actions: [
-          for (final service in _services)
+          for (final service in _services.where(
+            (s) => !StorefrontPolicy.instance.blocks(
+              s.baseUrl,
+              model: asr ? s.asrModel : s.ttsModel,
+            ),
+          ))
             CupertinoActionSheetAction(
               onPressed: () => Navigator.pop(context, service.id),
               child: Text(service.name),
@@ -146,7 +156,16 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                 IosRow(
                   title: service.name,
                   subtitle:
-                      '${service.protocol.name} · ${service.textProviderId == null ? T('i18n.separate_key') : T('i18n.reuse_text_provider')}',
+                      (StorefrontPolicy.instance.blocks(
+                            service.baseUrl,
+                            model: service.asrModel,
+                          ) ||
+                          StorefrontPolicy.instance.blocks(
+                            service.baseUrl,
+                            model: service.ttsModel,
+                          ))
+                      ? T('i18n.openai_storefront_unavailable')
+                      : '${service.protocol.name} · ${service.textProviderId == null ? T('i18n.separate_key') : T('i18n.reuse_text_provider')}',
                   leading: Icon(CupertinoIcons.waveform, color: IosColors.blue),
                   onTap: () => _edit(service),
                 ),
@@ -173,7 +192,8 @@ class VoiceServiceEditor extends StatefulWidget {
   State<VoiceServiceEditor> createState() => _VoiceServiceEditorState();
 }
 
-class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
+class _VoiceServiceEditorState extends State<VoiceServiceEditor>
+    with StorefrontAware {
   late VoiceProtocol _protocol;
   late final TextEditingController _name;
   late final TextEditingController _url;
@@ -191,9 +211,7 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
     super.initState();
     final service = widget.service;
     _protocol = service?.protocol ?? VoiceProtocol.mimo;
-    _name = TextEditingController(
-      text: service?.name ?? T('i18n.xiaomi_mimo'),
-    );
+    _name = TextEditingController(text: service?.name ?? T('i18n.xiaomi_mimo'));
     _url = TextEditingController(
       text: service?.baseUrl ?? 'https://api.xiaomimimo.com/v1',
     );
@@ -216,7 +234,10 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
   }
 
   String _label(VoiceProtocol protocol) => switch (protocol) {
-    VoiceProtocol.openAi => 'i18n.openai_compatible_audio',
+    VoiceProtocol.openAi =>
+      StorefrontPolicy.instance.restricted
+          ? 'i18n.compatible_voice_service'
+          : 'i18n.openai_compatible_audio',
     VoiceProtocol.mimo => 'i18n.xiaomi_mimo',
     VoiceProtocol.doubao => 'i18n.doubao_speech',
   };
@@ -227,11 +248,16 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
       _textProviderId = null;
       switch (value) {
         case VoiceProtocol.openAi:
-          _name.text = T('i18n.voice_default_name_openai');
-          _url.text = 'https://api.openai.com/v1';
-          _asr.text = 'gpt-transcribe';
-          _tts.text = 'gpt-4o-mini-tts';
-          _voice.text = 'coral';
+          final restricted = StorefrontPolicy.instance.restricted;
+          _name.text = T(
+            restricted
+                ? 'i18n.compatible_voice_service'
+                : 'i18n.voice_default_name_openai',
+          );
+          _url.text = restricted ? '' : 'https://api.openai.com/v1';
+          _asr.text = restricted ? '' : 'gpt-transcribe';
+          _tts.text = restricted ? '' : 'gpt-4o-mini-tts';
+          _voice.text = restricted ? '' : 'coral';
         case VoiceProtocol.mimo:
           _name.text = T('i18n.xiaomi_mimo');
           _url.text = 'https://api.xiaomimimo.com/v1';
@@ -273,6 +299,11 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
     final candidates = _textProviders
         .where(
           (item) =>
+              !StorefrontPolicy.instance.blocks(
+                item.baseUrl,
+                presetId: item.presetId,
+                model: item.model,
+              ) &&
               item.protocol == ApiProtocol.openAi &&
               (_protocol != VoiceProtocol.mimo ||
                   Uri.tryParse(item.baseUrl)?.host == 'api.xiaomimimo.com'),
@@ -290,7 +321,9 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
           for (final provider in candidates)
             CupertinoActionSheetAction(
               onPressed: () => Navigator.pop(context, provider.id),
-              child: Text('${T('i18n.reuse_text_provider')} · ${provider.name}'),
+              child: Text(
+                '${T('i18n.reuse_text_provider')} · ${provider.name}',
+              ),
             ),
         ],
         cancelButton: CupertinoActionSheetAction(
@@ -361,7 +394,9 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
       context,
       appPageRoute(
         builder: (_) => VoiceCatalogPicker(
-          title: kind == VoiceCatalogKind.voice ? T('i18n.choose_voice') : T('i18n.choose_model'),
+          title: kind == VoiceCatalogKind.voice
+              ? T('i18n.choose_voice')
+              : T('i18n.choose_model'),
           initialValue: controller.text,
           examples: voiceCatalogExamples(
             _protocol,
@@ -517,7 +552,9 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
           builder: (context) => CupertinoAlertDialog(
             title: Text(T('i18n.unable_to_save')),
             content: Text(
-              error is FormatException ? T(error.message) : T('i18n.check_the_configuration_and_try'),
+              error is FormatException
+                  ? T(error.message)
+                  : T('i18n.check_the_configuration_and_try'),
             ),
             actions: [
               CupertinoDialogAction(
@@ -562,7 +599,9 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor> {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: IosColors.background,
     appBar: iosAppBar(
-      title: widget.service == null ? T('i18n.add_voice_provider') : T('i18n.edit_voice_provider'),
+      title: widget.service == null
+          ? T('i18n.add_voice_provider')
+          : T('i18n.edit_voice_provider'),
       leading: IosNavButton(
         icon: CupertinoIcons.back,
         onPressed: () => Navigator.pop(context),
