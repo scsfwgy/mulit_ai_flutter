@@ -302,6 +302,22 @@ for suffix in (['ipa'] if args.platform == 'ios' else ['dmg', 'zip']):
             self.assertEqual(len(list(info.parent.glob("*.apk"))), 2)
             self.assertEqual(len(list(info.parent.glob("*.aab"))), 2)
 
+    def test_push_mobile_uploads_google_play_and_app_store(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, env = self.mock_release_root(directory, ["--push-mobile"])
+            result = subprocess.run(["/bin/bash", "release.sh", "--push-mobile"], cwd=root,
+                                    env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            calls = (root / "calls").read_text()
+            self.assertIn("apple ios 1.0.1+10", calls)
+            self.assertNotIn("apple macos", calls)
+            self.assertIn("python -u scripts/play_upload.py", calls)
+            self.assertIn("python -u scripts/appstore_upload.py", calls)
+            info = next((root / "release-artifacts").rglob("release-info.txt")).read_text()
+            self.assertIn("websiteStatus=CONFIRMED\n", info)
+            self.assertIn("playStatus=COMMITTED|test-edit\n", info)
+            self.assertIn("appstoreStatus=UPLOADED|", info)
+
     def test_ios_upload_failure_is_recorded(self):
         with tempfile.TemporaryDirectory() as directory:
             root, env = self.mock_release_root(directory, ["--push-ios"], appstore_failure=True)
@@ -361,7 +377,7 @@ for suffix in (['ipa'] if args.platform == 'ios' else ['dmg', 'zip']):
             self.assertEqual(result.returncode, 2, result.stderr)
 
     def test_test_packages_cannot_be_published(self):
-        for flag in ("--push-release", "--push-website", "--push-ios"):
+        for flag in ("--push-release", "--push-website", "--push-ios", "--push-mobile"):
             result = subprocess.run(["/bin/bash", str(RELEASE_SCRIPT), "--test", flag],
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 2)

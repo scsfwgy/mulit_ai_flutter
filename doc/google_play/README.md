@@ -20,6 +20,7 @@
 ./release.sh --test                               # 只构建测试手机与手表 APK
 ./release.sh --push-website                       # 同步官网两端 APK 下载，不上传 Play
 ./release.sh --push-release --play-track internal # 同步官网并上传手机及 Wear OS 内部测试轨道
+./release.sh --push-mobile                         # 同步官网，并上传 Google Play 与 App Store Connect
 ./release.sh --push-release --play-track alpha --wear-track 'wear:手表内部测试V2' # 两端指定不同的已有测试轨道
 ```
 

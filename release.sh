@@ -5,13 +5,14 @@
 #   --push-website   APK 同步 AI Link 官网（OSS + HomeTools 发布接口）              需要 Android
 #   --push-release   官网 + Google Play：APK 到官网，手机与 Wear OS 两个 AAB 到 Play  需要 Android
 #   --push-ios       IPA 上传 App Store Connect（TestFlight，不自动提审）            需要 iOS
+#   --push-mobile    官网 + Google Play + App Store Connect，同 --push-release --push-ios  需要 Android 与 iOS
 #
 # 常用组合：
 #   ./release.sh                             全平台构建并本地归档，不上传
 #   ./release.sh --test                      测试签名 APK（仅 Android 手机与 Wear OS）
 #   ./release.sh --push-release              Android：官网 + Google Play
 #   ./release.sh --push-ios                  iOS：构建并上传 App Store Connect
-#   ./release.sh --push-release --push-ios   Android 与 iOS 一起发布（不含 macOS）
+#   ./release.sh --push-mobile               Android 与 iOS 一起发布（不含 macOS）
 #   ./release.sh --platform macos            只构建 macOS
 #
 # 凭据都放在已被 .gitignore 忽略的 localConfig/ 下，脚本只读取、不写入：
@@ -37,16 +38,17 @@ wear_track=""
 json_key="${PLAY_SERVICE_ACCOUNT_JSON:-$repo_root/localConfig/google-play-service-account.json}"
 
 usage() {
-  echo "用法：./release.sh [--platform all|mobile|android|ios|macos] [--test] [--push-release|--push-website|--push-ios] [--ios-export-options 路径] [--play-track internal|alpha|beta|production] [--wear-track wear:轨道名] [--json-key 路径]"
+  echo "用法：./release.sh [--platform all|mobile|android|ios|macos] [--test] [--push-release|--push-website|--push-ios|--push-mobile] [--ios-export-options 路径] [--play-track internal|alpha|beta|production] [--wear-track wear:轨道名] [--json-key 路径]"
   echo "  （无参数）        构建 Android/Wear OS APK/AAB、iOS/Apple Watch IPA 与归档、macOS APP/DMG/ZIP；仅本地归档"
   echo "  --platform      只构建所选平台；all 为全部，mobile 为 Android + iOS（不含 macOS）；Apple 平台需 Mac/Xcode，本机无 iOS 分发证书时自动跳过 iOS"
-  echo "                  不指定时按发布开关推导：--push-release/--push-website 取 Android，--push-ios 取 iOS，两者同时给出则取 mobile"
+  echo "                  不指定时按发布开关推导：--push-release/--push-website 取 Android，--push-ios 取 iOS，--push-mobile 或两者同时给出则取 mobile"
   echo "  --ios-export-options  iOS 本地 IPA 导出 plist；也可设 IOS_EXPORT_OPTIONS_PLIST"
   echo "  --test          构建本地测试签名的手机和 Wear OS APK；不上传"
   echo "  --push-release  默认只构建 Android；APK 同步官网，同时上传两个 AAB 到 Google Play"
   echo "  --push-website  默认只构建 Android；APK 同步 AI Link 官网；不上传 Google Play"
   echo "  --push-ios      默认只构建 iOS；把正式签名 IPA 上传到 App Store Connect（TestFlight）；不自动提交审核"
   echo "                  凭据见 localConfig/appstore-connect.env，模板 scripts/appstore_connect.env.example"
+  echo "  --push-mobile   同 --push-release --push-ios：同步官网，并上传 Google Play 与 App Store Connect；不构建 macOS"
   echo "  --play-track    手机轨道；Wear OS 自动使用 wear:<轨道>"
   echo "  --wear-track    指定已有手表轨道，可与手机轨道名称不同"
   echo "  --json-key      服务账号 JSON 路径；也可设 PLAY_SERVICE_ACCOUNT_JSON"
@@ -64,6 +66,7 @@ while [[ $# -gt 0 ]]; do
     --push-release) push_release=1; push_website=1; shift ;;
     --push-website) push_website=1; shift ;;
     --push-ios) push_ios=1; shift ;;
+    --push-mobile) push_release=1; push_website=1; push_ios=1; shift ;;
     --play-track)
       [[ $# -ge 2 ]] || { echo "--play-track 缺少轨道" >&2; exit 2; }
       play_track="$2"; shift 2 ;;
