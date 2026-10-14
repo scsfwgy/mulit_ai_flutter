@@ -72,7 +72,7 @@
 
 ### 语音（voice/）
 
-- `lib/voice/voice_client.dart`：云端语音识别和合成的 OpenAI 兼容、MiMo、豆包语音协议适配；不得使用系统 ASR/TTS 代替。
+- `lib/voice/voice_client.dart`：云端语音识别和合成的 OpenAI 兼容、MiMo、豆包语音协议适配；保留云端协议；iPhone 可选择苹果系统识别与朗读，新安装默认系统语音，自动朗读默认关闭。`voice_selection.dart` 管理选择与默认值；系统音色 ID 保存在 `system_tts_voice_id` 并同步到 Watch，手表可本地覆盖，指定音色不可用时使用默认音色。`system_voice.dart` 和 iOS `SystemVoiceBridge.swift` 提供原生桥接。已有云端选择和明确关闭朗读的设置不得被覆盖。
 - `lib/voice/voice_settings_screen.dart`：独立语音提供商、文字服务密钥复用、识别/朗读选择和自动朗读设置；发送或确认由录音手势决定。
 - `lib/voice/voice_recording_overlay.dart`：手机按住录音时的全屏浮层、实时振幅波纹和计时。
 - `lib/voice/voice_catalog.dart` 与 `lib/voice/voice_catalog_picker.dart`：语音模型/音色候选、兼容服务 `/models` 查询和选择界面；候选不表示账号权限。
@@ -102,7 +102,7 @@
 
 - `assets/provider_icons/`：本地服务图标及 Lobe Icons 的许可文件。
 - `android/wear/`：独立 Wear OS APK，负责录音、路由选择、手表独立请求、展示回复和音频播放；`WatchPhoneRelay.kt` 处理手机网络路径，`WatchNetworkSelector.kt` 指定手表 Wi-Fi/蜂窝网络，所选密钥用 Android Keystore 加密保存。
-- `ios/AILinkWatch/`：SwiftUI Apple Watch 配套应用，长按录音、松手发送、左上滑取消、右上滑转文字后确认，显示最近问答和可选的模型语音播放；语言跟随手机 App，外观跟随手表系统。经 WatchConnectivity 同步所选服务配置，密钥仅在手表 Keychain 保存；优先使用 URLSession 直接请求，手表网络明确不可用且手机可达时复用配对 iPhone 无落库接口。`WatchNetworkClient.swift` 适配文字与语音协议，`WatchPhoneRelay.swift` 关联请求阶段，`WatchNetworkConfiguration.swift` 管理安全配置、路由与确认同步；真实服务及 Wi-Fi/蜂窝待真机验证。
+- `ios/AILinkWatch/`：SwiftUI Apple Watch 配套应用；系统识别模式使用 `TextFieldLink` 的系统听写/键盘输入并确认发送，系统朗读使用手表本地 `AVSpeechSynthesizer`，两者无需语音服务密钥但仍需文字模型配置。云端识别模式长按录音、松手发送、左上滑取消、右上滑转文字后确认，显示最近问答和可选的模型语音播放；语言跟随手机 App，外观跟随手表系统。经 WatchConnectivity 同步所选服务配置，密钥仅在手表 Keychain 保存；优先使用 URLSession 直接请求，手表网络明确不可用且手机可达时复用配对 iPhone 无落库接口。`WatchNetworkClient.swift` 适配文字与语音协议，`WatchPhoneRelay.swift` 关联请求阶段，`WatchNetworkConfiguration.swift` 管理安全配置、路由与确认同步；真实服务及 Wi-Fi/蜂窝待真机验证。
 - `ios/Runner/AppleWatchBridge.swift`：iPhone 端 WatchConnectivity 与后台 Flutter worker 桥接；沿用 `WatchChatProcessor` 云端识别、聊天、可选合成及 SQLite 入库。Apple 平台待 Xcode 编译、后台唤醒和配对设备验证，不能仅凭 Swift 语法检查声明可运行。
 - `ios/AILinkWatchWidgets/` 与 `ios/AILinkWatchShared/`：表盘复杂功能和智能叠放入口。2026-10-03 曾因账号及扩展签名未就绪暂关；2026-10-07 用户确认开发者账号已申请后恢复构建依赖和嵌入，并实现思考时的问题摘要、最近手表回复摘要与回答/语音状态。仅通过专用 Keychain Sharing 组共享状态、最多 141 字符摘要、语言和更新时间，Debug/Profile 与 Release 分组；原有凭据的应用私有组必须保留在 entitlements 第一项，扩展不得获得该组权限。不使用 App Groups，不分享完整服务配置或录音，不从扩展请求网络。流式更新按 5 秒合并请求，实际刷新由系统调度；中间状态过期后提示打开查看，不保证表盘实时滚动或应用后台持续运行。签名及设备验证范围见 `doc/ios/README.md`。
 - 手表应用是手机应用的功能子集，界面语言跟随手机 App，支持中文和英文。手机选“跟随系统”时，同步手机实际使用的语言，不能改为跟随手表系统语言；手机切换语言、冷启动和恢复前台时发送最新设置。Wear OS 用持久化 DataItem，Apple Watch 用 applicationContext；手表离线保留最后收到的语言，重连补同步。外观仍跟随手表自身日夜模式。手机端的繁體中文不在手表支持范围内，`_syncWatchLanguage` 会按「非英文即中文」上报为 `zh`，手表显示简体中文；新增手表语言需同步改这里与两端原生资源。

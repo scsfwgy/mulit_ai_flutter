@@ -17,6 +17,7 @@ import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
 import 'package:mulit_ai_flutter/voice/voice_client.dart';
 import 'package:mulit_ai_flutter/voice/voice_send_preference.dart';
+import 'package:mulit_ai_flutter/voice/voice_selection.dart';
 
 /// Handles configuration delivery and deferred history sync for the watch.
 /// Older watch builds can still send audio through the phone worker.
@@ -332,7 +333,8 @@ class WatchChatProcessor {
         provider != null &&
         StorefrontPolicy.instance.blocks(
           provider.baseUrl,
-          presetId: provider.presetId, model: model
+          presetId: provider.presetId,
+          model: model,
         );
     final key = provider == null || blocked
         ? null
@@ -372,6 +374,8 @@ class WatchChatProcessor {
         searchKey?.trim().isNotEmpty == true &&
         _validEndpoint(search.endpoint);
     final asr = await voice('voice_asr_id');
+    final systemAsr = await usesSystemVoice(store, 'voice_asr_id');
+    final systemTts = await usesSystemVoice(store, 'voice_tts_id');
     final textReady =
         provider != null &&
         key != null &&
@@ -390,6 +394,9 @@ class WatchChatProcessor {
       'searchService': search?.service.name ?? '',
       if (includeKeys) ...{
         'version': 1,
+        'systemAsr': systemAsr,
+        'systemTts': systemTts,
+        'systemVoiceIdentifier': await store.setting(systemSpeechVoiceSetting),
         'providerId': provider?.id,
         'providerPresetId': provider?.presetId,
         'protocol': provider?.protocol.value,

@@ -23,7 +23,7 @@ struct WatchTurn: Codable, Identifiable {
 
 /// Watch-first requests and optional phone fallback share watch-owned history.
 @MainActor
-final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVAudioRecorderDelegate, AVAudioPlayerDelegate {
+final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVAudioRecorderDelegate, AVAudioPlayerDelegate, AVSpeechSynthesizerDelegate {
   @Published private(set) var turns: [WatchTurn] = [] { didSet { publishComplication() } }
   @Published private(set) var status = ""
   @Published private(set) var transcript = ""
@@ -37,6 +37,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
   @Published var releaseAction = WatchReleaseAction.send
   @Published private(set) var language = UserDefaults.standard.string(forKey: "ai_link_phone_language") ?? "zh" { didSet { publishComplication() } }
   @Published private(set) var speak = false
+  @Published private(set) var systemVoiceIdentifier = UserDefaults.standard.string(forKey: "ai_link_watch_system_voice") ?? ""
   @Published private(set) var playing = false { didSet { publishComplication() } }
   @Published private(set) var loadingAudio = false { didSet { publishComplication() } }
   @Published private(set) var syncingSettings = false
@@ -57,6 +58,12 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
 
   private var recorder: AVAudioRecorder?
   private var player: AVAudioPlayer?
+  private lazy var systemSynthesizer: AVSpeechSynthesizer = {
+    let synthesizer = AVSpeechSynthesizer()
+    synthesizer.delegate = self
+    return synthesizer
+  }()
+  private var systemUtterance: AVSpeechUtterance?
   private var playbackURL: URL?
   private var timer: Timer?
   private var recordURL: URL?
@@ -100,7 +107,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     configuration = configurationStore.load()
     networkClient.openAIRestricted = configuration?.openAIRestricted != false
     textReady = configuration?.canChat ?? false
-    asrReady = configuration?.canTranscribe ?? false
+    asrReady = (configuration?.canTranscribe ?? false) || configuration?.systemAsr == true
     for turn in independentHistory.snapshot.recent where !turns.contains(where: { $0.id == turn.id }) {
       turns.append(WatchTurn(id: turn.id, question: turn.transcript, answer: turn.answer))
     }
@@ -228,7 +235,40 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     phoneAvailable ? localized("手机已连接", "Phone connected") : localized("手机未连接 · 使用手表网络", "Phone offline · using watch network")
   }
 
+  var usesSystemInput: Bool { configuration?.systemAsr == true || configuration == nil }
+
+  func acceptSystemTranscript(_ value: String) {
+    guard usesSystemInput, !busy, !recording else { return }
+    guard ApplePurchaseStore.shared.canUse else {
+      setStatus("请在 iPhone 领取试用或永久解锁，再刷新权益", "Start a trial or unlock on iPhone, then refresh access")
+      refreshPurchases()
+      return
+    }
+    guard let config = configuration, config.canChat else { configurationPrompt = true; return }
+    guard independentHistory.snapshot.pending.count < 100 else {
+      setStatus("请先连接手机同步已有问答", "Reconnect iPhone to sync pending chats first")
+      return
+    }
+    let clean = value.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) || $0 == "\n" || $0 == "\t" }
+    let text = String(String.UnicodeScalarView(clean)).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else { return }
+    guard text.count <= 5000 else { setStatus("文字过长，请缩短后重试", "Text is too long; shorten it and retry"); return }
+    stopPlayback()
+    activeID = UUID().uuidString.lowercased()
+    turnConfiguration = config
+    transcript = text
+    answer = ""
+    awaitingConfirmation = true
+    phase = "awaiting_confirmation"
+    scrollGeneration += 1
+    setStatus("确认后发送", "Confirm to send")
+  }
+
   var configurationGuidance: String {
+    if usesSystemInput {
+      return localized("请先在 iPhone 配置文字模型服务、模型和 API Key，再同步到手表。系统听写和朗读无需语音服务密钥。",
+        "Set up a text service, model and API key on iPhone, then sync to your watch. System dictation and speech need no voice API key.")
+    }
     let missing = !textReady && !asrReady
       ? localized("请先配置文字模型和语音识别服务。", "Set up text and speech recognition services first.")
       : !textReady
@@ -243,9 +283,26 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     if awaitingConfirmation { return localized("确认发送", "Confirm and send") }
     if busy || recordingPreflight { return localized("请稍候", "Please wait") }
     if !textReady || !asrReady { return localized("配置服务", "Set up services") }
+    if usesSystemInput { return localized("语音或文字提问", "Ask by voice or text") }
     if phase == "error" { return localized("按住重试", "Hold to retry") }
     if phase == "complete" { return localized("按住再说", "Hold to speak again") }
     return localized("按住说话", "Hold to speak")
+  }
+
+  var availableSystemVoices: [AVSpeechSynthesisVoice] {
+    AVSpeechSynthesisVoice.speechVoices().filter {
+      ($0.language.hasPrefix(chinese ? "zh" : "en") || $0.identifier == systemVoiceIdentifier) && !$0.voiceTraits.contains(.isPersonalVoice)
+    }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+  }
+
+  func setSystemVoice(_ identifier: String) {
+    if !identifier.isEmpty {
+      guard let voice = AVSpeechSynthesisVoice(identifier: identifier),
+            !voice.voiceTraits.contains(.isPersonalVoice) else { return }
+    }
+    stopPlayback()
+    systemVoiceIdentifier = identifier
+    UserDefaults.standard.set(identifier, forKey: "ai_link_watch_system_voice")
   }
 
   func setSpeak(_ value: Bool) {
@@ -345,6 +402,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
   }
 
   func startRecording() {
+    guard !usesSystemInput else { return }
     pressActive = true
     guard ApplePurchaseStore.shared.canUse else {
       setStatus("请在 iPhone 领取试用或永久解锁，再刷新权益", "Start a trial or unlock on iPhone, then refresh access")
@@ -374,6 +432,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
   }
 
   private func requestMicrophoneAndRecord() {
+    guard !usesSystemInput else { pressActive = false; return }
     permissionPending = true
     AVAudioSession.sharedInstance().requestRecordPermission { [weak self] granted in
       DispatchQueue.main.async {
@@ -538,7 +597,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
       setStatus("", "")
       syncPendingTurns()
       busy = false
-      if speak, config.tts != nil {
+      if speak, config.systemTts == true || config.tts != nil {
         startSpeech(result, config: config)
       }
     } catch { failRequest(error) }
@@ -546,6 +605,29 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
 
   private func startSpeech(_ result: String, config: WatchNetworkConfiguration) {
     stopPlayback()
+    if config.systemTts == true {
+      let text = WatchMarkdownDocument(result).blocks.map { String($0.text.characters) }.joined(separator: "\n")
+      guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+      do {
+        try AVAudioSession.sharedInstance().setCategory(.playback)
+        try AVAudioSession.sharedInstance().setActive(true)
+        let voiceID = systemVoiceIdentifier.isEmpty ? config.systemVoiceIdentifier ?? "" : systemVoiceIdentifier
+        let selected = voiceID.isEmpty ? nil : AVSpeechSynthesisVoice(identifier: voiceID)
+        guard let voice = selected ?? AVSpeechSynthesisVoice(language: chinese ? "zh-CN" : "en-US") else {
+          throw NSError(domain: "AILinkWatch", code: 3)
+        }
+        let utterance = AVSpeechUtterance(string: String(text.prefix(1800)))
+        utterance.voice = voice
+        systemUtterance = utterance
+        playing = true
+        scrollGeneration += 1
+        systemSynthesizer.speak(utterance)
+      } catch {
+        stopPlayback()
+        setStatus("文字已保存，系统朗读不可用", "Text saved; system speech unavailable")
+      }
+      return
+    }
     let id = UUID()
     speechID = id
     loadingAudio = true
@@ -635,7 +717,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
         _ = try? configurationStore.save(snapshot)
       }
       textReady = config.canChat
-      asrReady = config.canTranscribe
+      asrReady = config.canTranscribe || config.systemAsr == true
     }
     if restricted, let active = turnConfiguration,
        WatchNetworkConfiguration.isOpenAI(active.baseUrl ?? "", presetID: active.providerPresetId, model: active.model)
@@ -686,7 +768,7 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
         configuration = saved
         applyStorefrontRestriction((update["openAIRestricted"] as? Bool ?? saved.openAIRestricted) != false)
         textReady = configuration?.canChat ?? false
-        asrReady = configuration?.canTranscribe ?? false
+        asrReady = (configuration?.canTranscribe ?? false) || configuration?.systemAsr == true
       } catch {
         if updateID == settingsRequestID { finishSettingsRequest(success: false) }
         return
@@ -730,6 +812,8 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
   }
 
   func stopPlayback() {
+    systemUtterance = nil
+    systemSynthesizer.stopSpeaking(at: .immediate)
     speechID = nil
     speechTask?.cancel()
     speechTask = nil
@@ -740,6 +824,18 @@ final class WatchChatSession: NSObject, ObservableObject, WCSessionDelegate, AVA
     player = nil
     playing = false
     try? AVAudioSession.sharedInstance().setActive(false)
+  }
+
+  nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+    DispatchQueue.main.async {
+      if self.systemUtterance === utterance { self.stopPlayback() }
+    }
+  }
+
+  nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+    DispatchQueue.main.async {
+      if self.systemUtterance === utterance { self.stopPlayback() }
+    }
   }
 
   nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {

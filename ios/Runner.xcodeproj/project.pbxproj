@@ -43,6 +43,7 @@
 		AA7700000000000000000012 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AA7700000000000000000001 /* PrivacyInfo.xcprivacy */; };
 		AA8800000000000000000011 /* WatchComplicationSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA8800000000000000000001 /* WatchComplicationSnapshot.swift */; };
 		AA8800000000000000000012 /* WatchComplicationSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA8800000000000000000001 /* WatchComplicationSnapshot.swift */; };
+		AA9900000000000000000011 /* SystemVoiceBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA9900000000000000000001 /* SystemVoiceBridge.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -130,6 +131,7 @@
 		AA7700000000000000000001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = AILinkPurchases/PrivacyInfo.xcprivacy; sourceTree = SOURCE_ROOT; };
 		AA8800000000000000000001 /* WatchComplicationSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchComplicationSnapshot.swift; sourceTree = "<group>"; };
 		AA8800000000000000000002 /* WatchComplication.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WatchComplication.entitlements; sourceTree = "<group>"; };
+		AA9900000000000000000001 /* SystemVoiceBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemVoiceBridge.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -210,6 +212,7 @@
 				1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */,
 				1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */,
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
+				AA9900000000000000000001 /* SystemVoiceBridge.swift */,
 				AA6600000000000000000001 /* ApplePurchaseStore.swift */,
 				AA7700000000000000000001 /* PrivacyInfo.xcprivacy */,
 				AA7700000000000000000002 /* AppleStorefrontBridge.swift */,
@@ -463,6 +466,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
+				AA9900000000000000000011 /* SystemVoiceBridge.swift in Sources */,
 				AA6600000000000000000011 /* ApplePurchaseStore.swift in Sources */,
 				AA7700000000000000000013 /* AppleStorefrontBridge.swift in Sources */,
 				AA6600000000000000000013 /* ApplePurchaseBridge.swift in Sources */,

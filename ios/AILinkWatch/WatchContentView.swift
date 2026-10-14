@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 struct WatchContentView: View {
   @ObservedObject var session: WatchChatSession
@@ -10,6 +11,8 @@ struct WatchContentView: View {
   @GestureState private var holdingChat = false
   @State private var recordingPressStarted = false
   @State private var confirmClear = false
+  @State private var choosingSystemVoice = false
+  @State private var systemVoiceChoices: [AVSpeechSynthesisVoice] = []
   private let accent = Color(red: 24 / 255, green: 126 / 255, blue: 240 / 255)
 
   private func label(_ zh: String, _ en: String) -> String { session.chinese ? zh : en }
@@ -62,6 +65,7 @@ struct WatchContentView: View {
     .onChange(of: page) { _, value in
       if value != 0 { session.cancelRecording() }
     }
+    .sheet(isPresented: $choosingSystemVoice) { systemVoiceSheet }
     .onChange(of: holdingChat) { _, holding in
       // Release or interruption must also stop a pending recording preflight.
       if !holding && recordingPressStarted {
@@ -83,11 +87,22 @@ struct WatchContentView: View {
 
   private var gestureInstructions: some View {
     VStack(spacing: 10) {
-      Text(label("长按屏幕说话，松手发送；左上滑取消，右上滑转文字后确认。",
-        "Hold to speak, release to send. Slide up-left to cancel, up-right to review text."))
+      Text(session.usesSystemInput
+        ? label("点击提问，使用系统听写或键盘输入，确认文字后发送。语音服务可在 iPhone 设置中切换。",
+          "Tap to ask with system dictation or keyboard, then confirm to send. Change voice services in iPhone settings.")
+        : label("长按屏幕说话，松手发送；左上滑取消，右上滑转文字后确认。",
+          "Hold to speak, release to send. Slide up-left to cancel, up-right to review text."))
       Text(label("双击切换聊天与设置，设置页右滑返回；上下滑动查看内容。",
         "Double-tap to switch chat and settings. Swipe right to leave settings; swipe up or down to read."))
     }.font(.system(size: 13)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+  }
+
+  private func voiceQuality(_ value: Int) -> String {
+    switch value {
+    case 2: return label("增强", "Enhanced")
+    case 3: return label("高品质", "Premium")
+    default: return label("标准", "Standard")
+    }
   }
 
   private var chatPage: some View {
@@ -95,6 +110,15 @@ struct WatchContentView: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 10) {
           Color.clear.frame(height: 0).id("top")
+          if session.usesSystemInput && !session.awaitingConfirmation {
+            TextFieldLink(prompt: Text(label("请输入问题", "Enter your question"))) {
+              Image(systemName: "mic.fill").font(.system(size: 24))
+            } onSubmit: { session.acceptSystemTranscript($0) }
+            .accessibilityLabel(label("语音或文字提问", "Ask by voice or text"))
+            .disabled(session.busy)
+            .frame(maxWidth: .infinity)
+          }
+
           if !session.status.isEmpty && session.processingLabel == nil {
             Text(session.status).font(.system(size: 12)).foregroundStyle(.secondary)
               .fixedSize(horizontal: false, vertical: true)
@@ -110,7 +134,7 @@ struct WatchContentView: View {
           if session.awaitingConfirmation {
             Button(label("确认发送", "Confirm and send")) { session.confirmTranscript() }
               .frame(maxWidth: .infinity)
-            Button(label("重新录音", "Record again")) { session.resetForRecording() }
+            Button(session.usesSystemInput ? label("重新输入", "Enter again") : label("重新录音", "Record again")) { session.resetForRecording() }
               .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(.secondary)
               .frame(maxWidth: .infinity)
           }
@@ -131,8 +155,8 @@ struct WatchContentView: View {
       .scrollDisabled(recordingPressStarted)
       .contentShape(Rectangle())
       .onTapGesture(count: 2) { page = 1 }
-      .simultaneousGesture(recordingGesture)
-      .accessibilityHint(label("长按录音，双击进入设置", "Hold to record, double-tap for settings"))
+      .simultaneousGesture(recordingGesture, including: session.usesSystemInput ? .none : .all)
+      .accessibilityHint(session.usesSystemInput ? label("点击提问按钮输入，双击进入设置", "Tap Ask to enter text, double-tap for settings") : label("长按录音，双击进入设置", "Hold to record, double-tap for settings"))
       .onChange(of: session.scrollGeneration) { _, _ in proxy.scrollTo("top", anchor: .top) }
     }
   }
@@ -180,24 +204,45 @@ struct WatchContentView: View {
         Text(label("清空当前聊天；历史问答同步保存到手机，离线记录将在重连后同步。",
           "Clears the current chat. History is saved to your phone; offline chats sync after reconnecting."))
           .font(.system(size: 10)).foregroundStyle(.secondary).multilineTextAlignment(.center)
-        VStack(alignment: .leading, spacing: 6) {
-          Text(label("录音界面", "Recording view")).font(.system(size: 12)).foregroundStyle(.secondary)
-          HStack(spacing: 4) {
-            recordingMode(label("新手模式", "Beginner"), simple: false)
-            recordingMode(label("简洁模式", "Simple"), simple: true)
-          }
-          Text(label("新手：显示方向提示、波形和计时。\n简洁：仅显示语音图标和音量环。\n两种模式的录音手势相同。",
-            "Beginner: hints, waveform and timer.\nSimple: voice icon and volume ring.\nBoth use the same recording gestures."))
-            .font(.system(size: 10)).foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-        }.frame(maxWidth: .infinity, alignment: .leading)
+        if !session.usesSystemInput {
+          VStack(alignment: .leading, spacing: 6) {
+            Text(label("录音界面", "Recording view")).font(.system(size: 12)).foregroundStyle(.secondary)
+            HStack(spacing: 4) {
+              recordingMode(label("新手模式", "Beginner"), simple: false)
+              recordingMode(label("简洁模式", "Simple"), simple: true)
+            }
+            Text(label("新手：显示方向提示、波形和计时。\n简洁：仅显示语音图标和音量环。\n两种模式的录音手势相同。",
+              "Beginner: hints, waveform and timer.\nSimple: voice icon and volume ring.\nBoth use the same recording gestures."))
+              .font(.system(size: 10)).foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
+          }.frame(maxWidth: .infinity, alignment: .leading)
+        }
         serviceDetails(label("文本模型", "Text model"),
           provider: session.configuration?.providerName, model: session.configuration?.model)
         serviceDetails(label("语音识别", "Speech recognition"),
-          provider: session.configuration?.asr?.providerName, model: session.configuration?.asr?.asrModel)
+          provider: session.usesSystemInput ? label("苹果系统听写", "Apple system dictation") : session.configuration?.asr?.providerName, model: session.configuration?.asr?.asrModel, system: session.usesSystemInput)
         serviceDetails(label("语音朗读", "Speech synthesis"),
-          provider: session.configuration?.tts?.providerName, model: session.configuration?.tts?.ttsModel,
-          voice: session.configuration?.tts?.voice, showVoice: true)
+          provider: session.configuration?.systemTts == true ? label("苹果系统朗读", "Apple system speech") : session.configuration?.tts?.providerName, model: session.configuration?.tts?.ttsModel,
+          voice: session.configuration?.tts?.voice, showVoice: true, system: session.configuration?.systemTts == true)
+        if session.configuration?.systemTts == true {
+          Button {
+            // Enumerate once on entry, not on every scroll/focus update.
+            systemVoiceChoices = session.availableSystemVoices
+            choosingSystemVoice = true
+          } label: {
+            HStack {
+              VStack(alignment: .leading, spacing: 3) {
+                Text(label("系统朗读音色", "System speech voice"))
+                Text(systemVoiceSelectionLabel).font(.system(size: 11)).foregroundStyle(.secondary)
+              }
+              Spacer()
+              Image(systemName: "chevron.right").font(.system(size: 11))
+            }.frame(maxWidth: .infinity, alignment: .leading)
+          }
+          Text(label("显示当前语言及已选可用音色；手机所选音色不可用时使用默认音色。",
+            "Lists available voices for the current language and selection. Unavailable iPhone voices fall back to the default."))
+            .font(.system(size: 10)).foregroundStyle(.secondary)
+        }
         VStack(alignment: .leading, spacing: 3) {
           Text(label("联网搜索", "Web search")).font(.system(size: 13, weight: .semibold))
           serviceField(label("状态", "Status"), value: session.configuration?.searchEnabled == true
@@ -257,6 +302,50 @@ struct WatchContentView: View {
     .accessibilityHint(label("双击或右滑返回聊天", "Double-tap or swipe right to chat"))
   }
 
+  private var systemVoiceSelectionLabel: String {
+    guard !session.systemVoiceIdentifier.isEmpty else { return label("跟随手机", "Follow iPhone") }
+    guard let voice = AVSpeechSynthesisVoice(identifier: session.systemVoiceIdentifier) else {
+      return label("音色不可用，使用默认音色", "Voice unavailable; using default")
+    }
+    return "\(voice.name) · \(voice.language) · \(voiceQuality(voice.quality.rawValue))"
+  }
+
+  private var systemVoiceSheet: some View {
+    NavigationStack {
+      List {
+        Button {
+          session.setSystemVoice("")
+          choosingSystemVoice = false
+        } label: {
+          HStack {
+            Text(label("跟随手机", "Follow iPhone"))
+            Spacer()
+            if session.systemVoiceIdentifier.isEmpty { Image(systemName: "checkmark") }
+          }
+        }
+        ForEach(systemVoiceChoices, id: \.identifier) { voice in
+          Button {
+            session.setSystemVoice(voice.identifier)
+            choosingSystemVoice = false
+          } label: {
+            HStack {
+              Text("\(voice.name) · \(voice.language) · \(voiceQuality(voice.quality.rawValue))")
+                .font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
+              Spacer()
+              if session.systemVoiceIdentifier == voice.identifier { Image(systemName: "checkmark") }
+            }
+          }
+        }
+      }
+      .navigationTitle(label("系统朗读音色", "System speech voice"))
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button(label("取消", "Cancel")) { choosingSystemVoice = false }
+        }
+      }
+    }
+  }
+
   private var speechIndicator: some View {
     TimelineView(.animation(minimumInterval: 0.08)) { timeline in
       let time = timeline.date.timeIntervalSinceReferenceDate
@@ -283,13 +372,18 @@ struct WatchContentView: View {
     }
   }
 
-  private func serviceDetails(_ title: String, provider: String?, model: String?, voice: String? = nil, showVoice: Bool = false) -> some View {
+  private func serviceDetails(_ title: String, provider: String?, model: String?, voice: String? = nil, showVoice: Bool = false, system: Bool = false) -> some View {
     VStack(alignment: .leading, spacing: 5) {
       Text(title).font(.system(size: 13, weight: .semibold))
       serviceField(label("提供商", "Provider"), value: provider,
         fallback: model?.isEmpty == false ? label("同步后显示", "Sync to display") : nil)
-      serviceField(label("模型 ID", "Model ID"), value: model)
-      if showVoice { serviceField(label("音色", "Voice"), value: voice) }
+      if system {
+        Text(label("无需语音服务密钥", "No voice API key needed"))
+          .font(.system(size: 10)).foregroundStyle(.secondary)
+      } else {
+        serviceField(label("模型 ID", "Model ID"), value: model)
+        if showVoice { serviceField(label("音色", "Voice"), value: voice) }
+      }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(10)

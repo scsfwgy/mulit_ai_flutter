@@ -10,6 +10,9 @@ import 'package:mulit_ai_flutter/core/data.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 import 'package:mulit_ai_flutter/provider/provider_qr_scanner.dart';
 import 'package:mulit_ai_flutter/voice/voice_catalog.dart';
+import 'package:mulit_ai_flutter/voice/voice_selection.dart';
+import 'package:mulit_ai_flutter/voice/system_voice.dart';
+import 'package:mulit_ai_flutter/voice/voice_client.dart';
 import 'package:mulit_ai_flutter/voice/voice_catalog_picker.dart';
 
 class VoiceSettingsScreen extends StatefulWidget {
@@ -23,6 +26,8 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen>
   List<VoiceProviderConfig> _services = [];
   String? _asrId;
   String? _ttsId;
+  String _systemVoiceIdentifier = '';
+  List<SystemSpeechVoice> _systemVoices = [];
 
   @override
   void initState() {
@@ -33,8 +38,8 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen>
   Future<void> _load() async {
     final store = ChatStore.instance;
     final services = await store.voiceProviders();
-    var asr = await store.setting('voice_asr_id');
-    var tts = await store.setting('voice_tts_id');
+    var asr = await selectedVoiceId(store, 'voice_asr_id');
+    var tts = await selectedVoiceId(store, 'voice_tts_id');
     if (services.length == 1) {
       asr ??= services.first.id;
       tts ??= services.first.id;
@@ -45,18 +50,31 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen>
         await store.saveSetting('voice_tts_id', tts);
       }
     }
+    final systemVoiceIdentifier =
+        await store.setting(systemSpeechVoiceSetting) ?? '';
+    var systemVoices = <SystemSpeechVoice>[];
+    if (supportsSystemVoice && tts == systemVoiceId) {
+      try {
+        systemVoices = await SystemVoice.availableVoices();
+      } on VoiceException {
+        // The picker retries if the native service was temporarily unavailable.
+      }
+    }
     if (mounted) {
       setState(() {
         _services = services;
         _asrId = asr;
         _ttsId = tts;
+        _systemVoiceIdentifier = systemVoiceIdentifier;
+        _systemVoices = systemVoices;
       });
     }
   }
 
-  String _name(String? id) =>
-      _services.where((item) => item.id == id).firstOrNull?.name ??
-      T('i18n.not_set');
+  String _name(String? id) => id == systemVoiceId && supportsSystemVoice
+      ? T('i18n.apple_system_voice')
+      : _services.where((item) => item.id == id).firstOrNull?.name ??
+            T('i18n.not_set');
 
   Future<void> _choose(bool asr) async {
     final value = await showAppModalPopup<String>(
@@ -66,6 +84,11 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen>
           T(asr ? 'i18n.transcription_service' : 'i18n.speech_service'),
         ),
         actions: [
+          if (supportsSystemVoice)
+            CupertinoActionSheetAction(
+              onPressed: () => Navigator.pop(context, systemVoiceId),
+              child: Text(T('i18n.apple_system_voice')),
+            ),
           for (final service in _services.where(
             (s) => !StorefrontPolicy.instance.blocks(
               s.baseUrl,
@@ -95,6 +118,56 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen>
     await _load();
   }
 
+  Future<void> _chooseSystemVoice() async {
+    try {
+      final voices = await SystemVoice.availableVoices();
+      if (!mounted) return;
+      final prefix = AppPreferences.instance.english ? 'en' : 'zh';
+      final choices =
+          voices.where((voice) => voice.language.startsWith(prefix)).toList()
+            ..sort((a, b) => a.label.compareTo(b.label));
+      final value = await showAppModalPopup<String>(
+        context: context,
+        builder: (context) => CupertinoActionSheet(
+          title: Text(T('i18n.system_speech_voice')),
+          message: Text(T('i18n.system_speech_voice_hint')),
+          actions: [
+            CupertinoActionSheetAction(
+              onPressed: () => Navigator.pop(context, ''),
+              child: Text(T('i18n.system_voice_default')),
+            ),
+            for (final voice in choices)
+              CupertinoActionSheetAction(
+                onPressed: () => Navigator.pop(context, voice.identifier),
+                child: Text(voice.label),
+              ),
+          ],
+          cancelButton: CupertinoActionSheetAction(
+            onPressed: () => Navigator.pop(context),
+            child: Text(T('i18n.cancel')),
+          ),
+        ),
+      );
+      if (value == null) return;
+      await ChatStore.instance.saveSetting(systemSpeechVoiceSetting, value);
+      await _load();
+    } on VoiceException catch (error) {
+      if (!mounted) return;
+      await showCupertinoDialog<void>(
+        context: context,
+        builder: (context) => CupertinoAlertDialog(
+          content: Text(error.message),
+          actions: [
+            CupertinoDialogAction(
+              onPressed: () => Navigator.pop(context),
+              child: Text(T('i18n.ok')),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
   Future<void> _edit([VoiceProviderConfig? service]) async {
     await Navigator.push<void>(
       context,
@@ -118,7 +191,9 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen>
         children: [
           IosSection(
             footer: T(
-              isDesktopApp
+              supportsSystemVoice
+                  ? 'i18n.system_voice_setup_hint'
+                  : isDesktopApp
                   ? 'i18n.hold_to_record_slide_left'
                   : 'i18n.hold_to_record_on_phone',
             ),
@@ -135,6 +210,21 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen>
                 leading: Icon(CupertinoIcons.speaker_2, color: IosColors.blue),
                 onTap: () => _choose(false),
               ),
+              if (supportsSystemVoice && _ttsId == systemVoiceId)
+                IosRow(
+                  title: T('i18n.system_speech_voice'),
+                  subtitle:
+                      _systemVoices
+                          .where(
+                            (voice) =>
+                                voice.identifier == _systemVoiceIdentifier,
+                          )
+                          .firstOrNull
+                          ?.label ??
+                      T('i18n.system_voice_default'),
+                  leading: Icon(CupertinoIcons.person, color: IosColors.blue),
+                  onTap: _chooseSystemVoice,
+                ),
               IosRow(
                 title: T('i18n.read_replies_aloud_automatically'),
                 chevron: false,
@@ -179,6 +269,14 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen>
               ),
             ],
           ),
+          if (supportsSystemVoice)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+              child: Text(
+                T('i18n.watch_system_dictation_recommendation'),
+                style: TextStyle(fontSize: 13, color: IosColors.secondary),
+              ),
+            ),
         ],
       ),
     ),

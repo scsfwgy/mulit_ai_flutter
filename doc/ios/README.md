@@ -154,3 +154,14 @@ xcrun swiftc -swift-version 5 -parse-as-library \
 - Runner 通过 Swift Package Manager 使用 Firebase Apple SDK 12.19.2，依赖 `FirebaseCore` 和 `FirebaseAnalyticsCore`。该版本中，旧的 `FirebaseAnalyticsWithoutAdId` 已由 Core 产品替代；不选择 `FirebaseAnalyticsIdentitySupport` 或完整的 `FirebaseAnalytics` 产品，以避免引入广告 ID 支持。
 - 沿用 Flutter `AppDelegate` 与现有引擎、手表桥接。仅正式 Bundle ID 执行 `FirebaseApp.configure()` 与 `Analytics.setAnalyticsCollectionEnabled(true)`；Info.plist 默认关闭统计，Debug/Profile 不初始化。下载文件中的 `IS_ANALYTICS_ENABLED` 保持原样，收集开关由 AppDelegate 的正式包分支明确设置。
 - 当前仅 SDK 自动应用事件，没有 Flutter 页面路由或聊天内容埋点。未安装到真机并在 Firebase DebugView/报告验证之前，只能声明依赖和构建验证结果。
+
+## 苹果系统语音（2026-10-14）
+
+- 新安装 iPhone 默认选择系统识别与朗读，手机与 Watch 自动朗读默认关闭，需用户手动开启；现有云端选择及明确关闭朗读的设置保留。识别与朗读可分别切换系统、已配置的自定义服务或无。
+- `SystemVoiceBridge.swift` 在前台 iPhone engine 处理 Speech 授权、临时 WAV 识别与系统朗读，尽可能使用本地识别；不支持本地识别时可能使用 Apple 服务。每次请求包含真实权限与当前语言可用性检查，取消、超时、结束均清理临时文件。手机录音原有 0.6 秒过滤与手势不变。
+- Watch 的 `systemAsr` 使用 `TextFieldLink` 系统听写/键盘输入，不把系统听写接到自定义录音文件上；确认后复用模型请求、历史保存与幂等同步。`systemTts` 在手表本地使用 `AVSpeechSynthesizer`，不传输合成音频。云端模式保留原有长按录音与网络路由。
+- 手机「语音服务」提供设备实际可用音色选择，ID 保存在 SQLite 的 `system_tts_voice_id` 并同步到 Watch；手表设置可选择本地音色或跟随手机，指定音色不可用时回退到默认音色。当前不列出需额外授权的个人声音。系统音色选择不会自动启动播放。手表使用点按入口打开独立音色列表，避免内嵌滚轮与设置页滚动手势冲突；打开时缓存音色列表，选择后返回设置。
+- 系统模式的提问按钮仅显示麦克风图标，保留无障碍标签。手机语音服务页底部说明：系统听写使用苹果输入界面，配置自己的识别服务后可使用原有自定义手势。
+- 配置版本仍为 1，新增 optional 字段；旧缓存保持云端模式。两端需要更新才能使用系统语音默认值。没有 ASR 密钥时仍保持旧协议的 `asrReady = false`，避免旧 Watch 误以为云端语音已配置。
+- 验证：216 项 Flutter 测试（含默认值、旧选择、Android 隔离、配置快照、原生桥接错误与 iOS 选择页），原生 Watch 协议与 Markdown 测试；iOS/watchOS Debug 配对模拟器构建及启动通过。独立新安装模拟器的四项设置已核对为系统识别、系统朗读、手机自动朗读关闭、Watch 自动朗读关闭。最终静态分析无问题，Android Debug APK 构建通过；官网本地隐私源码三语更新的 91 项测试通过，尚未发布线上。
+- 真机未验收：中文/英文识别质量、设备音色、扬声器/耳机、权限拒绝与恢复、真实模型请求、锁屏/后台、配对与断连。模拟器启动与编译不代替这些证据。

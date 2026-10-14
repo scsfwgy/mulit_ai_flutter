@@ -43,6 +43,9 @@ struct WatchNetworkConfiguration: Codable {
   let asrReady: Bool
   let asr: WatchVoiceConfiguration?
   let tts: WatchVoiceConfiguration?
+  var systemAsr: Bool? = nil
+  var systemTts: Bool? = nil
+  var systemVoiceIdentifier: String? = nil
   var openAIRestricted: Bool? = nil
   var searchEnabled: Bool? = nil
   var search: WatchSearchConfiguration? = nil
@@ -50,7 +53,7 @@ struct WatchNetworkConfiguration: Codable {
   enum CodingKeys: String, CodingKey {
     case protocolName = "protocol"
     case version, providerId, providerName, providerPresetId, baseUrl, apiKey
-    case model, systemPrompt, textReady, asrReady, asr, tts, openAIRestricted, searchEnabled, search
+    case model, systemPrompt, textReady, asrReady, asr, tts, systemAsr, systemTts, systemVoiceIdentifier, openAIRestricted, searchEnabled, search
   }
 
   static func endpoint(_ base: String, _ suffix: String) throws -> URL {

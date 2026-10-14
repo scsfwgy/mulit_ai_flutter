@@ -80,6 +80,21 @@ struct WatchNetworkTests {
     let oldSnapshot = try JSONEncoder().encode(config())
     let oldConfig = try JSONDecoder().decode(WatchNetworkConfiguration.self, from: oldSnapshot)
     try expect(oldConfig.searchEnabled == nil && oldConfig.search == nil, "old snapshots default to search off")
+    try expect(oldConfig.systemAsr == nil && oldConfig.systemTts == nil, "old snapshots keep cloud voice mode")
+    var systemSnapshot = try JSONSerialization.jsonObject(with: oldSnapshot) as! [String: Any]
+    systemSnapshot["systemAsr"] = true
+    systemSnapshot["systemTts"] = true
+    systemSnapshot["systemVoiceIdentifier"] = "phone-voice-test"
+    systemSnapshot.removeValue(forKey: "asr")
+    systemSnapshot.removeValue(forKey: "tts")
+    systemSnapshot["asrReady"] = false
+    let systemConfig = try JSONDecoder().decode(WatchNetworkConfiguration.self,
+      from: JSONSerialization.data(withJSONObject: systemSnapshot))
+    try expect(systemConfig.canChat && systemConfig.systemAsr == true && systemConfig.systemTts == true,
+      "system input and playback require only text configuration")
+    try expect(systemConfig.systemVoiceIdentifier == "phone-voice-test", "system voice identifier survives config sync")
+    try expect(!systemConfig.canTranscribe && systemConfig.asr == nil && systemConfig.tts == nil,
+      "system input must not be routed to cloud ASR")
     for proto in ["openAi", "mimo", "doubao"] {
       let c = config(voice: proto)
       let transcript = try await client.transcribe(Data([82, 73, 70, 70]), config: c)

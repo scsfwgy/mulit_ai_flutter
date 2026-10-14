@@ -43,6 +43,8 @@ import 'package:mulit_ai_flutter/settings/purchase_screen.dart';
 import 'package:mulit_ai_flutter/settings/settings_screen.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 import 'package:mulit_ai_flutter/voice/voice_client.dart';
+import 'package:mulit_ai_flutter/voice/voice_selection.dart';
+import 'package:mulit_ai_flutter/voice/system_voice.dart';
 import 'package:mulit_ai_flutter/voice/voice_recording.dart';
 import 'package:mulit_ai_flutter/voice/voice_recording_overlay.dart';
 import 'package:mulit_ai_flutter/voice/voice_settings_screen.dart';
@@ -150,6 +152,15 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   final _recordClock = Stopwatch();
   StreamSubscription<Amplitude>? _amplitudeSubscription;
   bool _transcribing = false;
+  bool _recordingUsesSystemVoice = false;
+  bool _preparingVoiceRecording = false;
+  bool _systemSpeechPlaying = false;
+  int _transcriptionGeneration = 0;
+  String get _speechLocale => AppPreferences.instance.english
+      ? 'en-US'
+      : I18n.current == AppLanguage.zhTW
+      ? 'zh-TW'
+      : 'zh-CN';
   bool _canSpeak = false;
   int? _speechMessageId;
   SpeechPlaybackState _speechState = SpeechPlaybackState.idle;
@@ -270,6 +281,11 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     if (_recording) _recorder.cancel();
     _recorder.dispose();
     _speechGeneration++;
+    _transcriptionGeneration++;
+    if (supportsSystemVoice) {
+      unawaited(SystemVoice.stop());
+      unawaited(SystemVoice.cancelRecognition());
+    }
     _speechClient?.close();
     unawaited(_playbackCompletion?.cancel());
     _player.dispose();
@@ -303,6 +319,11 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       _hideVoiceOverlay();
       if (wasHolding && mounted) setState(() {});
       if (_recording) unawaited(_cancelRecording());
+      if (supportsSystemVoice) {
+        _transcriptionGeneration++;
+        unawaited(SystemVoice.cancelRecognition());
+        if (_systemSpeechPlaying) unawaited(SystemVoice.stop());
+      }
     }
   }
 
@@ -311,7 +332,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     if (_activeClient?.provider case final provider?) {
       if (StorefrontPolicy.instance.blocks(
         provider.baseUrl,
-        presetId: provider.presetId, model: provider.model
+        presetId: provider.presetId,
+        model: provider.model,
       )) {
         _activeClient?.cancel();
       }
@@ -392,17 +414,19 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           .where(
             (p) => !StorefrontPolicy.instance.blocks(
               p.baseUrl,
-              presetId: p.presetId, model: p.model
+              presetId: p.presetId,
+              model: p.model,
             ),
           )
           .toList();
       final store = ChatStore.instance;
       final searchEnabled = await store.setting('search_enabled') == '1';
-      final ttsId = await store.setting('voice_tts_id');
+      final ttsId = await selectedVoiceId(store, 'voice_tts_id');
       final speechService = (await store.voiceProviders())
           .where((service) => service.id == ttsId)
           .firstOrNull;
       final canSpeak =
+          (supportsSystemVoice && ttsId == systemVoiceId) ||
           speechService != null &&
           !StorefrontPolicy.instance.blocks(speechService.baseUrl, model: speechService.ttsModel) &&
           speechService.ttsModel.trim().isNotEmpty &&
@@ -710,6 +734,13 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   }
 
   Future<void> _startRecording() async {
+    if (_preparingVoiceRecording) return;
+    _preparingVoiceRecording = true;
+    try { await _prepareRecording(); }
+    finally { _preparingVoiceRecording = false; }
+  }
+
+  Future<void> _prepareRecording() async {
     if (!_voicePointerDown ||
         _recording ||
         _transcribing ||
@@ -717,14 +748,23 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         _starting) {
       return;
     }
-    if (await _selectedVoiceService('voice_asr_id', openSettings: false) ==
-        null) {
+    _recordingUsesSystemVoice = await usesSystemVoice(
+      ChatStore.instance,
+      'voice_asr_id',
+    );
+    if (!_recordingUsesSystemVoice &&
+        await _selectedVoiceService('voice_asr_id', openSettings: false) ==
+            null) {
       _endVoicePress();
       if (mounted) await _selectedVoiceService('voice_asr_id');
       return;
     }
     try {
       if (!await _ensurePurchaseAccess()) return;
+      if (_systemSpeechPlaying) await SystemVoice.stop();
+      if (_recordingUsesSystemVoice) {
+        await SystemVoice.prepareRecognition(_speechLocale);
+      }
       if (!await _recorder.hasPermission()) {
         _endVoicePress();
         if (mounted) {
@@ -774,10 +814,14 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           _completeVoiceRecording();
         }
       });
-    } catch (_) {
+    } catch (error) {
       _endVoicePress();
       if (mounted) {
-        _notify(T('i18n.could_not_record_check_microphone'));
+        _notify(
+          error is VoiceException
+              ? error.message
+              : T('i18n.could_not_record_check_microphone'),
+        );
       }
     }
   }
@@ -815,25 +859,38 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     });
     final recording = _pcmRecording;
     _pcmRecording = null;
+    final transcriptionGeneration = ++_transcriptionGeneration;
     VoiceClient? client;
     var sendAfterTranscription = false;
     try {
       await _recorder.stop();
       if (recording == null) throw VoiceException(T('i18n.audio_capture_failed_try_again'));
       final data = await recording.finish();
-      final service = await _selectedVoiceService(
-        'voice_asr_id',
-        openSettings: false,
-      );
-      if (service == null) throw VoiceException(T('i18n.choose_a_transcription_service_first'));
-      final key = await ChatStore.instance.voiceApiKey(service);
-      if (key == null || key.isEmpty) {
-        throw VoiceException(T('i18n.voice_service_api_key'));
+      if (!await _ensurePurchaseAccess() ||
+          transcriptionGeneration != _transcriptionGeneration) {
+        return;
       }
-      if (!await _ensurePurchaseAccess()) return;
-      client = VoiceClient(service, key);
-      final transcript = await client.transcribe(data);
-      if (!mounted) return;
+      final String transcript;
+      if (_recordingUsesSystemVoice) {
+        transcript = await SystemVoice.transcribe(data, _speechLocale);
+      } else {
+        final service = await _selectedVoiceService(
+          'voice_asr_id',
+          openSettings: false,
+        );
+        if (service == null) {
+          throw VoiceException(T('i18n.choose_a_transcription_service_first'));
+        }
+        final key = await ChatStore.instance.voiceApiKey(service);
+        if (key == null || key.isEmpty) {
+          throw VoiceException(T('i18n.voice_service_api_key'));
+        }
+        client = VoiceClient(service, key);
+        transcript = await client.transcribe(data);
+      }
+      if (!mounted || transcriptionGeneration != _transcriptionGeneration) {
+        return;
+      }
       sendAfterTranscription = !reviewBeforeSending;
       final old = _input.text.trim();
       _input.text = old.isEmpty ? transcript : '$old\n$transcript';
@@ -845,8 +902,12 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         });
       }
     } catch (error) {
-      if (mounted) {
-        _notify(error is VoiceException ? T(error.message) : T('i18n.transcription_failed_try_again'));
+      if (mounted && transcriptionGeneration == _transcriptionGeneration) {
+        _notify(
+          error is VoiceException
+              ? T(error.message)
+              : T('i18n.transcription_failed_try_again'),
+        );
       }
     } finally {
       client?.close();
@@ -858,6 +919,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
 
   void _voiceDown(PointerDownEvent event) {
     if (_voicePointerDown ||
+        _preparingVoiceRecording ||
         _recording ||
         _transcribing ||
         _sending ||
@@ -951,6 +1013,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       _playingPath = null;
       setState(() => _speechState = SpeechPlaybackState.loading);
       try {
+        if (_systemSpeechPlaying) await SystemVoice.stop();
         await _player.stop();
       } finally {
         if (oldPath != null) {
@@ -975,6 +1038,25 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     VoiceClient? client;
     String? path;
     try {
+      if (await usesSystemVoice(ChatStore.instance, 'voice_tts_id')) {
+        final voiceIdentifier = await ChatStore.instance.setting(systemSpeechVoiceSetting);
+        if (!mounted || generation != _speechGeneration) return;
+        _systemSpeechPlaying = true;
+        setState(() => _speechState = SpeechPlaybackState.playing);
+        try {
+          await SystemVoice.speak(readableMarkdown(markdown), _speechLocale,
+            voiceIdentifier: voiceIdentifier);
+        } finally {
+          _systemSpeechPlaying = false;
+          if (mounted && generation == _speechGeneration) {
+            setState(() {
+              _speechState = SpeechPlaybackState.idle;
+              _speechMessageId = null;
+            });
+          }
+        }
+        return;
+      }
       final service = await _selectedVoiceService(
         'voice_tts_id',
         openSettings: false,

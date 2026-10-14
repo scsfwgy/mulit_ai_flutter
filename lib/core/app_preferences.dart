@@ -9,6 +9,7 @@ import 'package:mulit_ai_flutter/core/app_platform.dart';
 import 'package:mulit_ai_flutter/chat/chat_context.dart';
 import 'package:mulit_ai_flutter/i18n/app_language.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
+import 'package:mulit_ai_flutter/voice/voice_selection.dart';
 
 // 语言枚举与文案表已迁至 lib/i18n/；此处保留导出以兼容既有导入路径。
 export 'package:mulit_ai_flutter/i18n/app_language.dart'
@@ -60,6 +61,7 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
     _language = value;
     I18n.apply(value);
   }
+
   AppSkin skin = AppSkin.blue;
   AppAppearance appearance = AppAppearance.system;
   final Map<ChatInfoField, bool> _chatInfoVisible = {
@@ -205,6 +207,7 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> load() async {
     await loadLocalization();
+    await initializeSystemVoiceDefaults(ChatStore.instance);
     contextWindowTokens = ChatContext.parseWindow(
       await ChatStore.instance.setting(ChatContext.settingKey),
     );

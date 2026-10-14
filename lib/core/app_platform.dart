@@ -12,6 +12,9 @@ bool get isDesktopApp =>
 bool get supportsApplePurchases =>
     !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
+bool get supportsSystemVoice =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+
 bool get supportsWatchCompanion =>
     !kIsWeb &&
     const [

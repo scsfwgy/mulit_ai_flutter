@@ -281,7 +281,9 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
           ),
           IosSection(
             footer: T(
-              'i18n.voice_transcription_setup_hint',
+              _isAppleWatch
+                  ? 'i18n.apple_watch_system_voice_hint'
+                  : 'i18n.voice_transcription_setup_hint',
             ),
             children: [
               IosRow(

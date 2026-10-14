@@ -1027,7 +1027,14 @@ class ChatStore {
       'key': key,
       'value': value,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
-    if (key == 'search_enabled' || key == 'search_provider_id') {
+    if ([
+      'search_enabled',
+      'search_provider_id',
+      'voice_asr_id',
+      'voice_tts_id',
+      'watch_tts_enabled',
+      'system_tts_voice_id',
+    ].contains(key)) {
       _watchConfigurationChanges.add(null);
     }
   }

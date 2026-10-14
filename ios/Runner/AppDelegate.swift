@@ -24,6 +24,7 @@ import UIKit
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     ApplePurchaseBridge.shared.attach(messenger: engineBridge.applicationRegistrar.messenger())
     AppleStorefrontBridge.shared.attach(messenger: engineBridge.applicationRegistrar.messenger())
+    SystemVoiceBridge.shared.attach(messenger: engineBridge.applicationRegistrar.messenger())
     AppleWatchBridge.shared.attachCompanionChannel(
       messenger: engineBridge.applicationRegistrar.messenger()
     )

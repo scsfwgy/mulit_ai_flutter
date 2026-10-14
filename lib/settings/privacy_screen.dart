@@ -109,6 +109,11 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
                       : 'i18n.web_search_privacy_watch',
                 ),
               ),
+              if (supportsSystemVoice)
+                _PrivacyRow(
+                  title: T('i18n.apple_system_voice'),
+                  detail: T('i18n.system_voice_privacy'),
+                ),
               if (supportsWatchCompanion)
                 _PrivacyRow(
                   title: T('i18n.watch_data'),
