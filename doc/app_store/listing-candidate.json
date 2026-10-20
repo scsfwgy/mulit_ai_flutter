@@ -1,0 +1,54 @@
+{
+  "appId": "6819497731",
+  "version": "1.1.0",
+  "preparedOn": "2026-10-20",
+  "localizations": {
+    "zh-Hans": {
+      "name": "AI Link - 自定义大模型聊天",
+      "subtitle": "主流模型自由接入，语音与手表对话",
+      "keywords": "人工智能,多模型,问答,提示词,Markdown,朗读,听写,语音识别,API,写作,翻译,总结,本地记录,联网搜索,Apple Watch,iPad",
+      "promotionalText": "自定义接入主流大模型，把常用 AI 放进一个 App。支持 DeepSeek、千问、智谱 GLM、豆包、Kimi、MiniMax 等模型服务，也可填写兼容的 API 地址和模型 ID。自备 API Key，第三方服务用量另计。",
+      "description": "自定义大模型，把常用 AI 放进一个 App。AI Link 支持多家主流模型服务，使用你自己的 API Key，自由选择模型、切换对话方式，也能在 Apple Watch 上随手发起提问。\n\n【主流大模型，自定义接入】\n提供 DeepSeek、智谱 GLM、通义千问 Qwen、豆包／火山方舟、百度千帆／文心、腾讯混元、Kimi／Moonshot、MiniMax、硅基流动等服务预设。也可填写兼容的 API 地址、协议与模型 ID，接入自己的模型服务，并在聊天中切换服务和模型。\n\n支持兼容 Chat Completions 与 Claude Messages 的文字聊天接口；具体服务和模型以应用内可选项目、所在商店地区、服务商能力及账号权限为准。支持表单、JSON 与二维码导入。AI Link 不提供内置模型额度，使用前需准备可用的第三方 API Key。\n\n【文字与语音，按习惯切换】\n在 iPhone 上使用系统语音输入与朗读，或选择支持的云端语音服务。输入后检查、编辑再发送；云端按住录音可用滑动手势取消或转成文字确认。自动朗读可按需开启。\n\n【联网找资料，回答有出处】\n启用联网搜索后，先检索网页资料，再由你选择的文字模型回答。展开搜索来源查看标题和链接。已配置的官方 DeepSeek 文字服务可直接复用当前密钥，无需再次填写；也可独立配置其他支持的搜索服务。搜索与模型请求可能分别计费。\n\n【抬起手腕，随手问一句】\n先在 iPhone 完成服务配置，再在配对 Apple Watch 上提问、查看回答或使用本地系统朗读。手表问答重连后同步到 iPhone 的本地会话。可用方式取决于手表网络、所选服务与设备权限。\n\n【回答方式，由你来定】\n设置全局或单模型提示词，让回复更符合你的语言、格式和表达偏好。多话题管理把不同讨论分开；Markdown 展示支持标题、列表、表格与代码块，方便阅读和复制。\n\n【本地保存，清楚知道数据去向】\nAPI Key 保存在设备安全存储中；聊天记录和提示词保存在本机。请求所需的数据直接发送至你配置的第三方服务，不经过 AI Link 自有中转服务器。配对手表会同步所选服务配置和密钥。iPhone 和 iPad 正式版使用 Firebase Analytics 处理应用使用统计，具体范围见隐私政策；聊天内容、提示词、录音和密钥不作为统计事件发送。\n\n【试用与永久解锁】\n可主动领取 7 天全部功能试用；试用不自动续费，也不会在到期时自动扣款。永久解锁为一次性购买，支持同一 Apple 账户在 iPhone、iPad 与配对 Apple Watch 上恢复购买。重装或恢复购买不会重新开始试用；试用需联网验证时间。当前价格和可领取资格以 App 内及 App Store 的实际显示为准。\n\n第三方模型、联网搜索与云端语音的用量不包含在应用解锁费用中，可用性及费用取决于所选服务和账号权限。当前不支持图片或文件发送，也不提供跨账号云端历史同步。\n\n支持简体中文、繁體中文与英文界面，以及浅色、深色和跟随系统外观；手表界面支持简体中文与英文。AI 生成内容可能不准确，请核实重要信息。",
+      "whatsNew": "• 新增 DeepSeek 联网搜索，可查看网页来源。\n• 已配置的官方 DeepSeek 文字服务可直接用于搜索，无需重复填写 API Key。\n• 文字服务密钥更新或删除后，关联搜索与手表配置同步跟随。",
+      "supportUrl": "https://www.tools24.uk/app/ai-link",
+      "marketingUrl": "https://www.tools24.uk/app/ai-link"
+    }
+  },
+  "screenshots": [
+    {
+      "id": "chat",
+      "title": "自定义大模型\n按需自由接入",
+      "subtitle": "自备 API Key，汇集常用模型服务",
+      "phone": "doc/app_store/zh-Hans/iphone/01-chat.jpg",
+      "ipad": "doc/app_store/zh-Hans/ipad/01-chat.jpg"
+    },
+    {
+      "id": "models",
+      "title": "主流大模型\n一个 App 切换",
+      "subtitle": "DeepSeek、千问、GLM、Kimi 等",
+      "phone": "release-artifacts/store-optimization-20261020/models-focus/source/providers-phone.png",
+      "ipad": "release-artifacts/store-optimization-20261020/models-focus/source/providers-ipad.png"
+    },
+    {
+      "id": "watch",
+      "title": "抬起手腕\n随手问一句",
+      "subtitle": "配对 Apple Watch，提问和查看回答",
+      "phone": "doc/app_store/zh-Hans/iphone/01-chat.jpg",
+      "ipad": "doc/app_store/zh-Hans/ipad/01-chat.jpg",
+      "watch": "doc/app_store/zh-Hans/watch/01-chat.jpg"
+    },
+    {
+      "id": "prompts",
+      "title": "回答方式\n由你来定",
+      "subtitle": "全局与单模型提示词，按习惯设置",
+      "phone": "doc/app_store/zh-Hans/iphone/03-prompts.jpg",
+      "ipad": "doc/app_store/zh-Hans/ipad/03-prompts.jpg"
+    }
+  ],
+  "creativeAssets": {
+    "title": "自定义大模型\n一个 App 接入",
+    "features": "主流模型 · 自定义 API · 语音对话",
+    "note": "需自备 API Key，第三方服务用量另计。"
+  },
+  "captureProvenance": "Model service list: production ProviderScreen rendered on 2026-10-20 in an isolated Flutter widget capture, using an empty stub database, actual provider assets and locally loaded system fonts; iOS restricted storefront defaults. No UI rows or provider names are redrawn. This is not a simulator/device capture or live-provider validation. Other pages reuse original 2026-10-06 simulator captures with public example content."
+}

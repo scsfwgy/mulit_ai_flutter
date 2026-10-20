@@ -38,3 +38,28 @@ Apple 截图格式和尺寸依据：[Screenshot specifications](https://develope
 `release-artifacts/app-store/AI-Link-App-Store-zh-Hans-20261006.zip`
 
 商店已接受这 10 张截图并保存为草稿，不表示内购可售或应用已审核通过。最终内购包若改变所展示界面，上传前须核对截图与最终应用一致。
+
+## 2026-10-20 商店搜索与展示优化
+
+当前候选字段与四张核心卖点保存在 `listing-candidate.json`。优先面向现有的简体中文商店页：名称“AI Link - 自定义大模型聊天”，副标题“主流模型自由接入，语音与手表对话”；关键词扩展多模型、问答、提示词、朗读等实际用途，不堆砌竞品名，不保证排名提升。
+
+素材通过原生 AppKit 字体和画布排版，原始 UI 来自本目录 2026-10-06 保存的真实模拟器捕获，使用公开示例对话及配置；界面内容没有重绘。选用仍支持的文字聊天、提示词和手表回答页，未使用旧模型服务列表或旧语音设置页。模型服务列表直接渲染当前 `ProviderScreen`，使用空测试数据库、真实服务图标和本机字体，仅捕获滚动列表视口，避免混入测试导航栏字体；它是 Flutter 界面渲染，并非模拟器或设备原生截图。上述素材不构成真实 API 或配对设备验证。
+
+```sh
+AI_LINK_CAPTURE_DIR="$PWD/release-artifacts/store-optimization-20261020/models-focus/source" \
+  flutter test test/app_store_capture_test.dart
+swift scripts/render_appstore.swift "$PWD" \
+  doc/app_store/listing-candidate.json \
+  release-artifacts/store-optimization-20261020/models-focus
+```
+
+生成简体中文四张截图，覆盖 `APP_IPHONE_61`（1206×2622）、`APP_IPHONE_67`（1320×2868）、`APP_IPAD_PRO_3GEN_129`（2752×2064），共 12 张；另有标题横幅 PNG（3840×1646）和搜索结果 JPG（3840×2560）。所有成品为不含透明通道的 RGB，标题及说明有越界检查。顺序为自定义接入、主流模型列表、手表问答、提示词。独立 Apple Watch 截图组沿用原有素材。
+
+新版标题和搜索结果创意素材适用于 Apple 当前说明中的 iOS／iPadOS 27 及以后。上传前读取 `appAssetLibraryRefData`，核对类别、尺寸和格式；常规截图与两种创意展示位分别上传、处理、关联及回查。推广文本可以单独更新；名称、副标题、关键词、描述和新截图保存到 1.1.0 手动发布草稿，需后续提交审核并发布才会随版本生效。
+
+本次不上传安装包、不提交审核、不修改价格或销售范围。后台回执、原始状态备份、成品预览、校验清单及 ZIP 位于忽略目录 `release-artifacts/store-optimization-20261020/`，本次“自定义大模型”修订在其 `models-focus/` 子目录，最终状态以该子目录的 `DELIVERY.md` 和 API 回读回执为准。
+
+官方依据：
+
+- [产品页文案、关键词及截图](https://developer.apple.com/app-store/product-page/)
+- [标题与搜索结果创意素材](https://developer.apple.com/app-store/asset-best-practices/)
