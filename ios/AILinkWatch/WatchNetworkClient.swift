@@ -155,7 +155,7 @@ final class WatchNetworkClient: NSObject, URLSessionTaskDelegate {
   private func searchEvidence(_ config: WatchSearchConfiguration, question: String) async throws -> String {
     let key = config.apiKey ?? ""
     guard !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-      (1...10).contains(config.maxResults), ["bocha", "tavily", "exa"].contains(config.service),
+      (1...10).contains(config.maxResults), ["bocha", "tavily", "exa", "deepseek"].contains(config.service),
       ["any", "day", "week", "month", "year"].contains(config.timeRange) else {
       throw WatchRequestError("请先在手机端配置联网搜索并同步手表", "Set up web search on phone and sync watch settings")
     }
@@ -167,6 +167,11 @@ final class WatchNetworkClient: NSObject, URLSessionTaskDelegate {
     var body: [String: Any] = ["query": query]
     let range = config.timeRange
     switch config.service {
+    case "deepseek":
+      let days = ["day": 1, "week": 7, "month": 30, "year": 365][range] ?? 365
+      let after = range == "any" ? "" : " after:" + ISO8601DateFormatter().string(from: Date().addingTimeInterval(-Double(days) * 86400)).prefix(10)
+      body["query"] = limit(query, 128 - after.count).trimmingCharacters(in: .whitespacesAndNewlines) + after
+      body["count"] = config.maxResults; body["need_content"] = config.detailed
     case "bocha":
       body["count"] = config.maxResults; body["summary"] = true
       if range != "any" { body["freshness"] = ["day": "oneDay", "week": "oneWeek", "month": "oneMonth", "year": "oneYear"][range]! }
@@ -211,6 +216,9 @@ final class WatchNetworkClient: NSObject, URLSessionTaskDelegate {
         url.user == nil, url.password == nil, seen.insert(link).inserted else { continue }
       let text: String
       switch config.service {
+      case "deepseek":
+        text = (config.detailed ? ["content", "summary", "snippet"] : ["summary", "snippet"])
+          .compactMap { item[$0] as? String }.first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? ""
       case "bocha": text = item["summary"] as? String ?? item["snippet"] as? String ?? ""
       case "exa": text = item["text"] as? String ?? (item["highlights"] as? [String])?.joined(separator: "\n") ?? ""
       default: text = item["content"] as? String ?? ""
@@ -219,7 +227,7 @@ final class WatchNetworkClient: NSObject, URLSessionTaskDelegate {
       if clean.isEmpty { continue }
       let title = item["title"] as? String ?? item["name"] as? String ?? host
       var source = ["title": limit(redact(title), 200), "url": link, "excerpt": limit(redact(clean), 2000)]
-      if let date = (item["publishedDate"] ?? item["datePublished"] ?? item["published_date"]) as? String {
+      if let date = (item["publishedDate"] ?? item["datePublished"] ?? item["published_date"] ?? item["date"]) as? String {
         source["publishedAt"] = limit(redact(date), 100)
       }
       sources.append(source)

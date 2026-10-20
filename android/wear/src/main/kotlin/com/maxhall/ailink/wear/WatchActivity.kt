@@ -1075,7 +1075,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             field("提供商", service?.optString(if (search) "name" else "providerName"),
                 if (service?.optString(modelKey)?.isNotBlank() == true) "同步后显示" else "未配置")
             field(if (search) "搜索服务" else "模型 ID", service?.optString(modelKey)?.let {
-                if (search && it == "bocha") watchText("博查") else if (search && it == "tavily") "Tavily" else if (search && it == "exa") "Exa" else it
+                if (search && it == "bocha") watchText("博查") else if (search && it == "tavily") "Tavily" else if (search && it == "exa") "Exa" else if (search && it == "deepseek") "DeepSeek" else it
             })
             if (showVoice) field("音色", service?.optString("voice"))
         }

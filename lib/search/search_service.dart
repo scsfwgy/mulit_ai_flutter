@@ -7,7 +7,8 @@ import 'package:mulit_ai_flutter/i18n/strings.dart';
 enum SearchService {
   bocha('i18n.bocha', 'https://api.bochaai.com/v1/web-search'),
   tavily('Tavily', 'https://api.tavily.com/search'),
-  exa('Exa', 'https://api.exa.ai/search');
+  exa('Exa', 'https://api.exa.ai/search'),
+  deepseek('DeepSeek', 'https://api.deepseek.com/v1/tools/search');
 
   const SearchService(this.label, this.endpoint);
   final String label;
@@ -17,17 +18,20 @@ enum SearchService {
     bocha => 'https://open.bochaai.com/api-keys',
     tavily => 'https://app.tavily.com/',
     exa => 'https://dashboard.exa.ai/api-keys',
+    deepseek => 'https://platform.deepseek.com/api_keys',
   };
 
   String get pricingUrl => switch (this) {
     bocha => 'https://bocha-ai.feishu.cn/wiki/JYSbwzdPIiFnz4kDYPXcHSDrnZb',
     tavily => 'https://docs.tavily.com/documentation/api-credits',
     exa => 'https://exa.ai/pricing',
+    deepseek =>
+      'https://api-docs.deepseek.com/zh-cn/guides/search#%E8%AE%A1%E8%B4%B9',
   };
 
-  // Official policies checked on 2026-10-05; these are not account balances.
+  // Policies checked on 2026-10-05 (DeepSeek: 2026-10-20), not account balances.
   String get billingLabel => switch (this) {
-    bocha => 'i18n.pay_as_you_go',
+    bocha || deepseek => 'i18n.pay_as_you_go',
     tavily || exa => 'i18n.free_credits_available',
   };
 
@@ -35,6 +39,7 @@ enum SearchService {
     bocha => 'i18n.usage_based_pricing_add_funds',
     tavily => 'i18n.1_000_free_credits_per',
     exa => 'i18n.us_10_in_free_credits',
+    deepseek => 'i18n.deepseek_search_billing',
   };
 }
 
@@ -49,6 +54,7 @@ class SearchProviderConfig {
     this.maxResults = 5,
     this.detailed = false,
     this.timeRange = SearchTimeRange.any,
+    this.textProviderId,
   });
 
   final String id;
@@ -58,6 +64,7 @@ class SearchProviderConfig {
   final int maxResults;
   final bool detailed;
   final SearchTimeRange timeRange;
+  final int? textProviderId;
 
   Map<String, Object?> toJson() => {
     'id': id,
@@ -67,6 +74,7 @@ class SearchProviderConfig {
     'maxResults': maxResults,
     'detailed': detailed,
     'timeRange': timeRange.name,
+    if (textProviderId != null) 'textProviderId': textProviderId,
   };
 
   factory SearchProviderConfig.fromJson(Map<String, dynamic> value) =>
@@ -80,6 +88,7 @@ class SearchProviderConfig {
         timeRange: SearchTimeRange.values.byName(
           value['timeRange'] as String? ?? 'any',
         ),
+        textProviderId: value['textProviderId'] as int?,
       );
 }
 
@@ -187,7 +196,10 @@ class SearchClient {
     } on SearchException {
       rethrow;
     } on TimeoutException {
-      throw SearchException(T('i18n.web_search_timed_out_try'), networkFailure: true);
+      throw SearchException(
+        T('i18n.web_search_timed_out_try'),
+        networkFailure: true,
+      );
     } on SocketException catch (error) {
       throw SearchException(
         T('i18n.could_not_connect'),
@@ -221,8 +233,25 @@ class SearchClient {
     if (config.maxResults < 1 || config.maxResults > 10) {
       throw SearchException(T('i18n.choose_1_to_10_search'));
     }
-    final cleanQuery = _limit(query.trim(), 1000);
-    if (cleanQuery.isEmpty) throw SearchException(T('i18n.the_search_query_cannot'));
+    final range = config.timeRange;
+    var cleanQuery = _limit(query.trim(), 1000);
+    if (cleanQuery.isEmpty) {
+      throw SearchException(T('i18n.the_search_query_cannot'));
+    }
+    if (config.service == SearchService.deepseek) {
+      final days = switch (range) {
+        SearchTimeRange.day => 1,
+        SearchTimeRange.week => 7,
+        SearchTimeRange.month => 30,
+        _ => 365,
+      };
+      final after = range == SearchTimeRange.any
+          ? ''
+          : ' after:${DateTime.now().toUtc().subtract(Duration(days: days)).toIso8601String().substring(0, 10)}';
+      // Reserve room for the date filter within DeepSeek's 128-code-point limit.
+      cleanQuery =
+          '${_limit(cleanQuery, 128 - after.length).trimRight()}$after';
+    }
     final request = await _client.postUrl(uri);
     request.followRedirects = false;
     request.headers.contentType = ContentType.json;
@@ -230,8 +259,12 @@ class SearchClient {
       config.service == SearchService.exa ? 'x-api-key' : 'authorization',
       config.service == SearchService.exa ? apiKey : 'Bearer $apiKey',
     );
-    final range = config.timeRange;
     final body = switch (config.service) {
+      SearchService.deepseek => <String, Object?>{
+        'query': cleanQuery,
+        'count': config.maxResults,
+        'need_content': config.detailed,
+      },
       SearchService.bocha => <String, Object?>{
         'query': cleanQuery,
         'count': config.maxResults,
@@ -323,7 +356,16 @@ class SearchClient {
           !seen.add(url)) {
         continue;
       }
-      final text = config.service == SearchService.bocha
+      final text = config.service == SearchService.deepseek
+          ? [
+              if (config.detailed) item['content'],
+              item['summary'],
+              item['snippet'],
+            ].whereType<String>().firstWhere(
+              (text) => text.trim().isNotEmpty,
+              orElse: () => '',
+            )
+          : config.service == SearchService.bocha
           ? item['summary'] ?? item['snippet']
           : config.service == SearchService.exa
           ? item['text'] ?? (item['highlights'] as List?)?.join('\n')
@@ -333,7 +375,8 @@ class SearchClient {
       final date =
           item['publishedDate'] ??
           item['datePublished'] ??
-          item['published_date'];
+          item['published_date'] ??
+          item['date'];
       sources.add(
         SearchSource(
           title: _limit(

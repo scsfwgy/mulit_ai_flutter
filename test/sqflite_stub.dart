@@ -14,7 +14,10 @@ import 'package:sqflite/sqflite.dart';
 ///
 /// 需要已初始化的测试 binding；在 `testWidgets` 内部调用即可，普通 `test()`
 /// 里只要事先调过 `TestWidgetsFlutterBinding.ensureInitialized()` 同样可用。
-void installEmptyDatabaseStub({Map<String, String>? settings}) {
+void installEmptyDatabaseStub({
+  Map<String, String>? settings,
+  List<Map<String, Object?>>? providers,
+}) {
   const channel = MethodChannel('com.tekartik.sqflite');
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -34,6 +37,9 @@ void installEmptyDatabaseStub({Map<String, String>? settings}) {
           return [
             {'user_version': 5},
           ];
+        }
+        if (providers != null && sql.contains('FROM providers')) {
+          return providers;
         }
         // sqflite 的 query/rawQuery 只把 `sql` 与 `arguments` 发到通道，
         // 没有 `table` / `whereArgs`，所以按 SQL 文本 + 参数值匹配。

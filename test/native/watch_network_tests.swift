@@ -58,7 +58,7 @@ struct WatchNetworkTests {
       let answer = try await client.reply(history: history, config: config(protocolName: proto)) { partial = $0 }
       try expect(answer == "你好👋" && partial == answer, "streamed Unicode reply")
     }
-    for service in ["bocha", "tavily", "exa"] {
+    for service in ["bocha", "tavily", "exa", "deepseek"] {
       let search = WatchSearchConfiguration(id: "search", name: "Search", service: service,
         endpoint: base + "/search/" + service, apiKey: "watch-search-key", maxResults: 3, detailed: true, timeRange: "week")
       for proto in ["openai_chat", "anthropic_messages"] {
@@ -66,6 +66,14 @@ struct WatchNetworkTests {
           search: search, searchEnabled: true)) { _ in }
         try expect(answer == "你好👋", "grounded answer for \(service) / \(proto)")
       }
+    }
+    for (detailed, range) in [(false, "any"), (true, "month")] {
+      let search = WatchSearchConfiguration(id: "search", name: "DeepSeek", service: "deepseek",
+        endpoint: base + "/search/deepseek", apiKey: "watch-search-key", maxResults: 3, detailed: detailed, timeRange: range)
+      try expect(search.serviceLabel == "DeepSeek", "DeepSeek display label")
+      let answer = try await client.reply(history: [["role": "user", "content": String(repeating: "👋", count: 200)]],
+        config: config(model: "grounded", search: search, searchEnabled: true)) { _ in }
+      try expect(answer == "你好👋", "DeepSeek Unicode and mode")
     }
     for failure in ["redirect", "rejected", "empty", "huge"] {
       let search = WatchSearchConfiguration(id: "search", name: "Search", service: "tavily",

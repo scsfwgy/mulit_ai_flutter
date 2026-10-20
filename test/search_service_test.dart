@@ -94,13 +94,18 @@ void main() {
                     {
                       'title': '新闻',
                       'url': 'https://example.com/news',
+                      if (service == SearchService.deepseek) ...{
+                        'summary': '网页摘要',
+                        'snippet': '短摘要',
+                        'date': '2026-10-05',
+                      },
                       if (service == SearchService.exa)
                         'text': '网页资料'
                       else
                         'content': '网页资料',
                       if (service == SearchService.exa)
                         'publishedDate': '2026-10-05'
-                      else
+                      else if (service != SearchService.deepseek)
                         'published_date': '2026-10-05',
                     },
                   ],
@@ -115,9 +120,22 @@ void main() {
       expect(result.sources.single.publishedAt, '2026-10-05');
       expect(result.context, contains('untrusted'));
       final body = await received.future;
-      expect(body['query'], question.content);
+      expect(
+        body['query'],
+        service == SearchService.deepseek
+            ? startsWith('${question.content} after:')
+            : question.content,
+      );
       expect(jsonEncode(body), isNot(contains('fake-search-key')));
       switch (service) {
+        case SearchService.deepseek:
+          expect(
+            body.keys,
+            unorderedEquals(['query', 'count', 'need_content']),
+          );
+          expect(body['count'], 3);
+          expect(body['need_content'], true);
+          expect(result.sources.single.excerpt, '网页资料');
         case SearchService.bocha:
           expect(body['count'], 3);
           expect(body['freshness'], 'oneWeek');
@@ -137,6 +155,81 @@ void main() {
           expect(body['contents']['text']['maxCharacters'], 2000);
       }
     });
+  }
+
+  for (final detailed in [false, true]) {
+    for (final range in SearchTimeRange.values) {
+      test(
+        'DeepSeek bounds Unicode query and falls back to summaries: $detailed / $range',
+        () async {
+          final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+          addTearDown(() => server.close(force: true));
+          final received = Completer<Map<String, dynamic>>();
+          server.listen((request) async {
+            received.complete(
+              jsonDecode(await utf8.decoder.bind(request).join())
+                  as Map<String, dynamic>,
+            );
+            jsonResponse(request, {
+              'results': [
+                {
+                  'url': 'https://example.com/summary',
+                  'content': '  ',
+                  'summary': ' summary fake-key ',
+                  'snippet': 'short',
+                },
+                {
+                  'url': 'https://example.com/snippet',
+                  'content': '',
+                  'summary': '',
+                  'snippet': 'fallback',
+                },
+                {
+                  'url': 'https://example.com/content',
+                  'content': 'full page',
+                  'summary': 'summary',
+                },
+              ],
+            });
+          });
+          final result = await SearchClient(
+            SearchProviderConfig(
+              id: 'deepseek',
+              name: 'DeepSeek',
+              service: SearchService.deepseek,
+              endpoint: 'http://127.0.0.1:${server.port}/search',
+              detailed: detailed,
+              timeRange: range,
+            ),
+            'fake-key',
+          ).search(List.filled(200, '👋').join());
+          final body = await received.future;
+          final query = body['query'] as String;
+          expect(query.runes.length, 128);
+          expect(body['need_content'], detailed);
+          if (range == SearchTimeRange.any) {
+            expect(query, List.filled(128, '👋').join());
+          } else {
+            final days = {
+              SearchTimeRange.day: 1,
+              SearchTimeRange.week: 7,
+              SearchTimeRange.month: 30,
+              SearchTimeRange.year: 365,
+            }[range]!;
+            final date = DateTime.now()
+                .toUtc()
+                .subtract(Duration(days: days))
+                .toIso8601String()
+                .substring(0, 10);
+            expect(query, endsWith(' after:$date'));
+          }
+          expect(result.sources[0].excerpt, contains('summary'));
+          expect(result.context, isNot(contains('fake-key')));
+          expect(result.sources[1].excerpt, 'fallback');
+          expect(result.sources[2].excerpt, detailed ? 'full page' : 'summary');
+        },
+      );
+    }
   }
 
   test(
@@ -267,7 +360,7 @@ void main() {
 
   for (final protocol in ApiProtocol.values) {
     test(
-      'search grounds ${protocol.name} without changing stored user content',
+      'DeepSeek search grounds ${protocol.name} without changing stored user content',
       () async {
         final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
         addTearDown(() => server.close(force: true));
@@ -284,7 +377,8 @@ void main() {
                 {
                   'title': '官方资料',
                   'url': 'https://example.com/news',
-                  'content': '最新的网页资料',
+                  'content': '',
+                  'summary': '最新的网页资料',
                 },
               ],
             });
@@ -343,7 +437,7 @@ void main() {
               systemPrompt: '全局提示词',
               requireComplete: true,
               webSearch: (
-                config: config(server, SearchService.tavily),
+                config: config(server, SearchService.deepseek),
                 apiKey: 'fake-search-key',
               ),
               onSearchResults: (value) => sources = value,

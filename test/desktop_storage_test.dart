@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/search/search_service.dart';
 
 void main() {
   const channel = MethodChannel('plugins.it_nomads.com/flutter_secure_storage');
@@ -18,7 +19,14 @@ void main() {
     addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
     for (final request in [
       ChatStore.instance.apiKey(123),
-      ChatStore.instance.searchApiKey('local-test'),
+      ChatStore.instance.searchApiKey(
+        const SearchProviderConfig(
+          id: 'local-test',
+          name: 'Test',
+          service: SearchService.tavily,
+          endpoint: 'https://api.tavily.com/search',
+        ),
+      ),
     ]) {
       await expectLater(request, throwsA(isA<KeychainAccessException>()));
     }

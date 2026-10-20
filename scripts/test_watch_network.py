@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise watch Swift adapters against local fixtures; no real keys or services."""
 import base64
+from datetime import datetime, timedelta, timezone
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -27,7 +28,21 @@ class Handler(BaseHTTPRequestHandler):
             assert self.headers.get('x-api-key' if service == 'exa' else 'Authorization') == ('watch-search-key' if service == 'exa' else 'Bearer watch-search-key')
             if service == 'exa':
                 assert self.headers.get('Authorization') is None
-            assert payload['query'] == 'question'
+            if service == 'deepseek':
+                query = payload['query']
+                if query.startswith('question'):
+                    date = (datetime.now(timezone.utc) - timedelta(days=7)).date().isoformat()
+                    assert query == 'question after:' + date
+                else:
+                    assert len(query) == 128
+                    if payload['need_content']:
+                        date = (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()
+                        assert query == '👋' * 111 + ' after:' + date
+                    else:
+                        assert query == '👋' * 128
+                assert payload['count'] == 3 and set(payload) == {'query', 'count', 'need_content'}
+            else:
+                assert payload['query'] == 'question'
             Handler.searches += 1
             status, headers = 200, {}
             if service == 'redirect':
@@ -44,6 +59,13 @@ class Handler(BaseHTTPRequestHandler):
                     result = {'code': 200, 'data': {'webPages': {'value': [
                         {'name': 'source', 'url': 'https://example.com/source', 'summary': 'evidence watch-search-key'},
                     ]}}}
+                elif service == 'deepseek':
+                    result = {'results': [
+                        {'url': 'https://example.com/watch-search-key', 'summary': 'unsafe'},
+                        {'title': 'source', 'url': 'https://example.com/source', 'content': '  ', 'summary': 'evidence watch-search-key', 'date': '2026-10-20'},
+                        {'url': 'https://example.com/fallback', 'content': '', 'summary': '', 'snippet': 'fallback evidence'},
+                        {'url': 'https://example.com/content', 'content': 'full page', 'summary': 'summary only'},
+                    ]}
                 else:
                     if service == 'tavily':
                         assert payload['max_results'] == 3 and payload['search_depth'] == 'advanced' and payload['time_range'] == 'week'
@@ -80,6 +102,8 @@ class Handler(BaseHTTPRequestHandler):
                 assert 'untrusted webpage evidence' in payload['messages'][-1]['content']
                 assert 'https://example.com/source' in payload['messages'][-1]['content'].replace('\\/', '/')
                 assert 'watch-search-key' not in json.dumps(payload)
+                if 'after:' in payload['messages'][-1]['content'] or payload['messages'][-1]['content'].startswith('👋'):
+                    assert 'fallback evidence' in payload['messages'][-1]['content']
                 assert 'cite the exact source URLs' in (payload['system'] if is_claude else payload['messages'][0]['content'])
             else:
                 assert (payload.get('system') == 'system') if is_claude else (payload['messages'][0]['role'] == 'system')
@@ -134,7 +158,7 @@ def main():
                             str(ROOT / 'test/native/watch_network_tests.swift'), '-o', executable], check=True)
             env = dict(os.environ, WATCH_TEST_URL=f'http://127.0.0.1:{server.server_port}')
             subprocess.run([executable], env=env, check=True, timeout=45)
-            assert Handler.searches == 10 and Handler.grounded == 6, 'Search before model / failed search must block model'
+            assert Handler.searches == 14 and Handler.grounded == 10, 'Search before model / failed search must block model'
             assert not Handler.redirected, 'Redirect forwarded a credentialed request'
     finally:
         server.shutdown()

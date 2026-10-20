@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/core/data.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
 import 'package:mulit_ai_flutter/search/search_settings_screen.dart';
@@ -14,6 +15,8 @@ import 'dart:convert';
 
 import 'package:sqflite/sqflite.dart';
 
+import 'sqflite_stub.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   databaseFactory = databaseFactorySqflitePlugin;
@@ -23,12 +26,23 @@ void main() {
     'missing key',
     'configured',
     'configured after setup',
+    'configured DeepSeek text provider',
   ]) {
     testWidgets('message search switch checks $scenario before enabling', (
       tester,
     ) async {
       final values = <String, String>{};
       final secrets = <String, String>{};
+      const text = ProviderConfig(
+        id: 42,
+        name: 'My DeepSeek',
+        baseUrl: 'https://api.deepseek.com',
+        model: 'deepseek-flash',
+        protocol: ApiProtocol.openAi,
+      );
+      if (scenario == 'configured DeepSeek text provider') {
+        secrets['provider_42'] = 'fake-text-key';
+      }
       if (scenario == 'missing key' || scenario == 'configured') {
         const provider = SearchProviderConfig(
           id: 'test-search',
@@ -60,6 +74,13 @@ void main() {
               {'user_version': 5},
             ];
           }
+          if (sql.contains('FROM providers')) {
+            return scenario == 'configured DeepSeek text provider'
+                ? [
+                    {...text.toMap(), 'id': 42},
+                  ]
+                : [];
+          }
           final key = params.single;
           return values.containsKey(key)
               ? [
@@ -90,7 +111,8 @@ void main() {
       );
       await tester.tap(toggle);
       await tester.pumpAndSettle();
-      if (scenario == 'configured') {
+      if (scenario == 'configured' ||
+          scenario == 'configured DeepSeek text provider') {
         expect(values['search_enabled'], '1');
         expect(tester.widget<CupertinoSwitch>(toggle).value, true);
         await tester.tap(toggle);
@@ -123,6 +145,46 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
   }
+
+  testWidgets(
+    'DeepSeek text service appears directly and its editor does not ask for a key',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 2000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      const text = ProviderConfig(
+        id: 42,
+        name: 'My DeepSeek',
+        baseUrl: 'https://api.deepseek.com',
+        model: 'deepseek-flash',
+        protocol: ApiProtocol.openAi,
+      );
+      installEmptyDatabaseStub(
+        providers: [
+          {...text.toMap(), 'id': 42},
+        ],
+      );
+      await tester.pumpWidget(const MaterialApp(home: SearchSettingsScreen()));
+      await tester.pumpAndSettle();
+      expect(find.text('My DeepSeek'), findsNWidgets(2));
+      expect(find.text('DeepSeek · 复用文字服务'), findsOneWidget);
+      await tester.tap(find.text('My DeepSeek').last);
+      await tester.pumpAndSettle();
+      expect(find.byType(SearchServiceEditor), findsOneWidget);
+      final inputs = tester
+          .widgetList<CupertinoTextField>(find.byType(CupertinoTextField))
+          .toList();
+      expect(inputs.length, 2);
+      expect(inputs.last.readOnly, true);
+      expect(find.text('复用文字服务'), findsOneWidget);
+      expect(find.textContaining('无需重复填写'), findsOneWidget);
+      expect(find.text('删除搜索服务'), findsNothing);
+      expect(find.text('申请 API Key'), findsNothing);
+      expect(find.text('测试搜索'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('search presets update endpoint and clear credentials', (
     tester,
@@ -183,6 +245,27 @@ void main() {
     await tester.tap(find.text('查看价格与免费额度'));
     await tester.pumpAndSettle();
     expect(opened.last, 'https://exa.ai/pricing');
+    await tester.enterText(key, 'fake-key');
+    tester.testTextInput.hide();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('搜索服务类型'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('DeepSeek'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('https://api.deepseek.com/v1/tools/search'),
+      findsOneWidget,
+    );
+    expect(tester.widget<CupertinoTextField>(key).controller!.text, isEmpty);
+    expect(find.textContaining('DeepSeek 搜索按成功且有结果'), findsOneWidget);
+    expect(find.textContaining('128 个字符'), findsOneWidget);
+    expect(find.text('深入搜索'), findsOneWidget);
+    await tester.tap(find.text('申请 API Key'));
+    await tester.pumpAndSettle();
+    expect(opened.last, 'https://platform.deepseek.com/api_keys');
+    await tester.tap(find.text('查看价格与免费额度'));
+    await tester.pumpAndSettle();
+    expect(opened.last, SearchService.deepseek.pricingUrl);
   });
 
   testWidgets('saved sources expand, open exact URLs and fit narrow screens', (

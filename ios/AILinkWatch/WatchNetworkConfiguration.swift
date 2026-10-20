@@ -26,7 +26,7 @@ struct WatchSearchConfiguration: Codable {
   let detailed: Bool
   let timeRange: String
 
-  var serviceLabel: String { service == "bocha" ? "Bocha" : service == "tavily" ? "Tavily" : service == "exa" ? "Exa" : service }
+  var serviceLabel: String { service == "bocha" ? "Bocha" : service == "tavily" ? "Tavily" : service == "exa" ? "Exa" : service == "deepseek" ? "DeepSeek" : service }
 }
 
 struct WatchNetworkConfiguration: Codable {

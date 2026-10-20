@@ -25,7 +25,8 @@ class _Store extends Fake implements ChatStore {
       searches.where((s) => s.id == values['search_provider_id']).firstOrNull;
 
   @override
-  Future<String?> searchApiKey(String id) async => searchKeys[id];
+  Future<String?> searchApiKey(SearchProviderConfig config) async =>
+      config.textProviderId == null ? searchKeys[config.id] : apiKey(config.textProviderId!);
   final textKeys = <int, String?>{};
   String? voiceKey = 'test-key';
 

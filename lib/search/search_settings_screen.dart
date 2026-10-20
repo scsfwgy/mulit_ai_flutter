@@ -31,11 +31,11 @@ class _SearchSettingsScreenState extends State<SearchSettingsScreen> {
   Future<void> _load() async {
     try {
       final services = await ChatStore.instance.searchProviders();
-      final selected = await ChatStore.instance.setting('search_provider_id');
+      final selected = await ChatStore.instance.selectedSearchProvider();
       if (mounted) {
         setState(() {
           _services = services;
-          _selectedId = selected;
+          _selectedId = selected?.id;
           _loading = false;
           _error = null;
         });
@@ -139,7 +139,9 @@ class _SearchSettingsScreenState extends State<SearchSettingsScreen> {
                     for (final service in _services)
                       IosRow(
                         title: service.name,
-                        subtitle: T(service.service.label),
+                        subtitle: service.textProviderId == null
+                            ? T(service.service.label)
+                            : '${T(service.service.label)} · ${T('i18n.reuse_text_provider')}',
                         leading: Icon(
                           CupertinoIcons.search,
                           color: IosColors.blue,
@@ -187,6 +189,8 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
   bool _busy = false;
   bool _obscure = true;
   SearchClient? _testClient;
+  String? _textProviderName;
+  bool get _linked => widget.service?.textProviderId != null;
 
   @override
   void initState() {
@@ -200,6 +204,20 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
     _count = saved?.maxResults ?? 5;
     _detailed = saved?.detailed ?? false;
     _range = saved?.timeRange ?? SearchTimeRange.any;
+    if (_linked) _loadTextProviderName();
+  }
+
+  Future<void> _loadTextProviderName() async {
+    try {
+      final providers = await ChatStore.instance.providers();
+      if (mounted) {
+        setState(() => _textProviderName = providers
+            .where((item) => item.id == widget.service!.textProviderId)
+            .firstOrNull?.name);
+      }
+    } catch (_) {
+      // The editor still validates the source before testing or saving.
+    }
   }
 
   @override
@@ -256,10 +274,18 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
       maxResults: _count,
       detailed: _detailed,
       timeRange: _range,
+      textProviderId: widget.service?.textProviderId,
     );
   }
 
   Future<String> _apiKey(SearchProviderConfig config) async {
+    if (_linked) {
+      final key = await ChatStore.instance.searchApiKey(config);
+      if (key?.trim().isNotEmpty != true) {
+        throw FormatException(T('i18n.search_text_key_unavailable'));
+      }
+      return key!;
+    }
     final provided = _key.text.trim();
     if (provided.contains(RegExp(r'[\x00-\x1F]'))) {
       throw FormatException(T('i18n.api_keys_cannot_contain_line'));
@@ -269,7 +295,7 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
     if (saved != null &&
         saved.service == config.service &&
         saved.endpoint == config.endpoint) {
-      final existing = await ChatStore.instance.searchApiKey(saved.id);
+      final existing = await ChatStore.instance.searchApiKey(saved);
       if (existing?.isNotEmpty == true) return existing!;
     }
     throw FormatException(T('i18n.enter_the_search_api_key'));
@@ -394,6 +420,7 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
     String label,
     TextEditingController controller, {
     bool secret = false,
+    bool readOnly = false,
   }) => Padding(
     padding: const EdgeInsets.all(14),
     child: Column(
@@ -407,6 +434,7 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
         CupertinoTextField(
           controller: controller,
           enabled: !_busy,
+          readOnly: readOnly,
           obscureText: secret && _obscure,
           autocorrect: false,
           enableSuggestions: false,
@@ -464,11 +492,17 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
               IosRow(
                 title: T('i18n.search_provider'),
                 subtitle: T(_service.label),
-                onTap: _busy ? null : _chooseService,
+                onTap: _busy || _linked ? null : _chooseService,
               ),
               _field('i18n.service_name', _name),
-              _field('i18n.search_endpoint', _endpoint),
-              _field(
+              _field('i18n.search_endpoint', _endpoint, readOnly: _linked),
+              if (_linked)
+                IosRow(
+                  title: T('i18n.reuse_text_provider'),
+                  subtitle: _textProviderName ?? widget.service!.name,
+                  chevron: false,
+                )
+              else _field(
                 widget.service == null
                     ? 'API Key'
                     : 'i18n.api_key_blank_keeps_current',
@@ -480,9 +514,9 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
           IosSection(
             title: T('i18n.api_key_pricing'),
             footer:
-                '${T(_service.billingDescription)}\n${T('i18n.free_credits_and_prices_may')}',
+                '${_linked ? '${T('i18n.search_reuses_text_key')}\n' : ''}${T(_service.billingDescription)}\n${T('i18n.free_credits_and_prices_may')}',
             children: [
-              IosRow(
+              if (!_linked) IosRow(
                 title: T('i18n.get_an_api_key'),
                 subtitle: _service.apiKeyUrl.replaceFirst('https://', ''),
                 leading: Icon(CupertinoIcons.globe, color: IosColors.blue),
@@ -506,7 +540,11 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
           ),
           IosSection(
             title: T('i18n.search_options'),
-            footer: T('i18n.more_results_and_detailed_search'),
+            footer: T(
+              _service == SearchService.deepseek
+                  ? 'i18n.deepseek_search_options'
+                  : 'i18n.more_results_and_detailed_search',
+            ),
             children: [
               IosRow(
                 title: T('i18n.result_count'),
@@ -565,7 +603,7 @@ class _SearchServiceEditorState extends State<SearchServiceEditor> {
               ),
             ],
           ),
-          if (widget.service != null)
+          if (widget.service != null && !_linked)
             IosSection(
               children: [
                 IosRow(

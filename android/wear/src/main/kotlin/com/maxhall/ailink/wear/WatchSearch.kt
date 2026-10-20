@@ -21,7 +21,7 @@ object WatchSearch {
         val endpoint = config.optString("endpoint")
         val url = try { URI(endpoint) } catch (_: Exception) { null }
         if (key.isBlank() || key.any { it.code < 32 } || count !in 1..10 ||
-            service !in setOf("bocha", "tavily", "exa") || range !in setOf("any", "day", "week", "month", "year") ||
+            service !in setOf("bocha", "tavily", "exa", "deepseek") || range !in setOf("any", "day", "week", "month", "year") ||
             url == null || url.scheme != "https" || url.host.isNullOrBlank() || url.userInfo != null ||
             url.rawQuery != null || url.rawFragment != null) {
             throw WatchNetworkException("请先在手机端配置联网搜索并同步手表")
@@ -30,6 +30,13 @@ object WatchSearch {
         if (query.isEmpty()) throw WatchNetworkException("未找到可用网页资料")
         val body = JSONObject().put("query", query)
         when (service) {
+            "deepseek" -> {
+                val after = if (range == "any") "" else " after:" + Instant.now().minus(when (range) {
+                    "day" -> 1L; "week" -> 7L; "month" -> 30L; else -> 365L
+                }, ChronoUnit.DAYS).toString().take(10)
+                body.put("query", limit(query, 128 - after.length).trimEnd() + after)
+                    .put("count", count).put("need_content", config.optBoolean("detailed"))
+            }
             "bocha" -> {
                 body.put("count", count).put("summary", true)
                 if (range != "any") body.put("freshness", when (range) {
@@ -71,6 +78,9 @@ object WatchSearch {
             if (parsed == null || parsed.scheme !in setOf("http", "https") || parsed.host.isNullOrBlank() ||
                 parsed.userInfo != null || link.length > 2048 || link.contains(key) || link.contains(encodedKey) || !seen.add(link)) continue
             val text = when (service) {
+                "deepseek" -> (if (config.optBoolean("detailed")) listOf("content", "summary", "snippet")
+                    else listOf("summary", "snippet"))
+                    .firstNotNullOfOrNull { field -> (item.opt(field) as? String)?.takeIf { it.isNotBlank() } } ?: ""
                 "bocha" -> item.optString("summary").ifEmpty { item.optString("snippet") }
                 "exa" -> item.optString("text").ifEmpty { item.optJSONArray("highlights")?.let { h ->
                     (0 until h.length()).joinToString("\n") { h.optString(it) }
@@ -81,7 +91,7 @@ object WatchSearch {
             val title = item.optString("title").ifEmpty { item.optString("name") }.ifEmpty { parsed.host }
             val source = JSONObject().put("title", limit(redact(title), 200)).put("url", link)
                 .put("excerpt", limit(redact(text), 2000))
-            val date = listOf("publishedDate", "datePublished", "published_date")
+            val date = listOf("publishedDate", "datePublished", "published_date", "date")
                 .firstNotNullOfOrNull { item.optString(it).takeIf(String::isNotBlank) }
             if (date != null) source.put("publishedAt", limit(redact(date), 100))
             sources.put(source)

@@ -1296,7 +1296,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         final config = await ChatStore.instance.selectedSearchProvider();
         final searchKey = config == null
             ? null
-            : await ChatStore.instance.searchApiKey(config.id);
+            : await ChatStore.instance.searchApiKey(config);
         if (config == null || searchKey == null || searchKey.isEmpty) {
           throw SearchException(T('i18n.configure_a_search_service'));
         }

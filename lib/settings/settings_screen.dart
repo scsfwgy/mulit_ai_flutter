@@ -397,7 +397,7 @@ class _MessageSettingsScreenState extends State<MessageSettingsScreen> {
     final store = ChatStore.instance;
     final provider = await store.selectedSearchProvider();
     return provider != null &&
-        (await store.searchApiKey(provider.id))?.trim().isNotEmpty == true;
+        (await store.searchApiKey(provider))?.trim().isNotEmpty == true;
   }
 
   Future<void> _setSearchEnabled(bool enabled) async {

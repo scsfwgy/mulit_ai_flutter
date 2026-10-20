@@ -9,20 +9,29 @@ class WatchSearchTest {
         .put("apiKey", "fake-search-key").put("maxResults", 3).put("detailed", true).put("timeRange", "week")
 
     @Test fun presetsSendBoundedQueriesAndDoNotExposeKeysInEvidence() {
-        for (service in listOf("bocha", "tavily", "exa")) {
+        for (service in listOf("bocha", "tavily", "exa", "deepseek")) {
             var calls = 0
             val evidence = WatchSearch.evidence(config(service), "👋".repeat(1001)) { _, key, actual, body ->
                 calls++
                 assertEquals("fake-search-key", key)
                 assertEquals(service, actual)
-                assertEquals("👋".repeat(1000), body.getString("query"))
+                val query = body.getString("query")
+                if (service == "deepseek") {
+                    assertEquals(128, query.codePointCount(0, query.length))
+                    assertTrue(query.startsWith("👋".repeat(111) + " after:"))
+                } else assertEquals("👋".repeat(1000), query)
                 when (service) {
+                    "deepseek" -> { assertEquals(3, body.getInt("count")); assertTrue(body.getBoolean("need_content")) }
                     "bocha" -> { assertEquals(3, body.getInt("count")); assertEquals("oneWeek", body.getString("freshness")) }
                     "tavily" -> { assertEquals("advanced", body.getString("search_depth")); assertEquals("week", body.getString("time_range")) }
                     "exa" -> { assertEquals("auto", body.getString("type")); assertTrue(body.has("startPublishedDate")) }
                 }
                 (if (service == "bocha") """{"code":200,"data":{"webPages":{"value":[
                     {"name":"title","url":"https://example.com/source","summary":"evidence fake-search-key"}]}}}"""
+                else if (service == "deepseek") """{"results":[
+                    {"title":"unsafe","url":"https://example.com/fake-search-key","summary":"unsafe"},
+                    {"title":"title","url":"https://example.com/source","content":" ","summary":"evidence fake-search-key","date":"2026-10-20"},
+                    {"title":"duplicate","url":"https://example.com/source","snippet":"duplicate"}]}"""
                 else """{"results":[
                     {"title":"unsafe","url":"https://example.com/fake-search-key","content":"unsafe","text":"unsafe"},
                     {"title":"title","url":"https://example.com/source","content":"evidence fake-search-key","text":"evidence fake-search-key"},
@@ -33,6 +42,27 @@ class WatchSearchTest {
             assertTrue(evidence.contains("https://example.com/source"))
             assertFalse(evidence.contains("fake-search-key"))
             assertFalse(evidence.contains("duplicate"))
+            if (service == "deepseek") assertTrue(evidence.contains("2026-10-20"))
+        }
+    }
+
+    @Test fun deepseekModesAndDateFilters() {
+        for (detailed in listOf(false, true)) for (range in listOf("any", "day", "week", "month", "year")) {
+            val evidence = WatchSearch.evidence(config("deepseek").put("detailed", detailed).put("timeRange", range), "👋".repeat(200)) { _, _, _, body ->
+                val query = body.getString("query")
+                assertEquals(128, query.codePointCount(0, query.length))
+                assertEquals(detailed, body.getBoolean("need_content"))
+                if (range == "any") assertEquals("👋".repeat(128), query)
+                else {
+                    val days = mapOf("day" to 1L, "week" to 7L, "month" to 30L, "year" to 365L).getValue(range)
+                    val date = java.time.Instant.now().minus(days, java.time.temporal.ChronoUnit.DAYS).toString().take(10)
+                    assertTrue(query.endsWith(" after:$date"))
+                }
+                """{"results":[{"url":"https://example.com/source","content":"full page","summary":"summary"},
+                    {"url":"https://example.com/fallback","content":"","summary":" ","snippet":"fallback"}]}""".toByteArray()
+            }
+            assertTrue(evidence.contains(if (detailed) "full page" else "summary"))
+            assertTrue(evidence.contains("fallback"))
         }
     }
 

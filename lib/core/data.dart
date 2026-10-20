@@ -783,6 +783,7 @@ class ChatStore {
         () => _secrets.write(key: 'provider_$id', value: apiKey),
       );
     }
+    _watchConfigurationChanges.add(null);
     return id;
   }
 
@@ -791,21 +792,58 @@ class ChatStore {
 
   Future<List<SearchProviderConfig>> searchProviders() async {
     final raw = await setting('search_providers');
-    if (raw == null) return [];
-    return (jsonDecode(raw) as List)
-        .map(
-          (item) => SearchProviderConfig.fromJson(item as Map<String, dynamic>),
-        )
-        .toList();
+    final items = raw == null
+        ? <SearchProviderConfig>[]
+        : (jsonDecode(raw) as List)
+              .map((item) => SearchProviderConfig.fromJson(item as Map<String, dynamic>))
+              .toList();
+    for (final provider in await providers()) {
+      if (_supportsDeepSeekSearch(provider) &&
+          !items.any((item) => item.textProviderId == provider.id)) {
+        items.add(
+          SearchProviderConfig(
+            id: 'text_${provider.id}',
+            name: provider.name,
+            service: SearchService.deepseek,
+            endpoint: SearchService.deepseek.endpoint,
+            textProviderId: provider.id,
+          ),
+        );
+      }
+    }
+    return items;
   }
 
   Future<SearchProviderConfig?> selectedSearchProvider() async {
     final id = await setting('search_provider_id');
-    return (await searchProviders()).where((item) => item.id == id).firstOrNull;
+    final items = await searchProviders();
+    return items.where((item) => id == null
+            ? item.textProviderId != null
+            : item.id == id).firstOrNull;
   }
 
-  Future<String?> searchApiKey(String id) =>
-      _withSecureStorage(() => _secrets.read(key: 'search_$id'));
+  bool _supportsDeepSeekSearch(ProviderConfig provider) {
+    final uri = Uri.tryParse(provider.baseUrl);
+    return uri != null &&
+        uri.scheme == 'https' &&
+        uri.host == 'api.deepseek.com' &&
+        uri.port == 443 &&
+        uri.userInfo.isEmpty && !uri.hasQuery && !uri.hasFragment;
+  }
+
+  Future<String?> searchApiKey(SearchProviderConfig config) async {
+    if (config.textProviderId case final id?) {
+      final provider = (await providers()).where((item) => item.id == id).firstOrNull;
+      // A text key may only be reused for its official search endpoint.
+      if (provider == null || !_supportsDeepSeekSearch(provider) ||
+          config.service != SearchService.deepseek ||
+          config.endpoint != SearchService.deepseek.endpoint) {
+        return null;
+      }
+      return apiKey(id);
+    }
+    return _withSecureStorage(() => _secrets.read(key: 'search_${config.id}'));
+  }
 
   Future<void> saveSearchProvider(
     SearchProviderConfig config, {
@@ -822,17 +860,24 @@ class ChatStore {
       throw FormatException(T('i18n.search_name_and_count_required'));
     }
     validateBaseUrl(config.endpoint);
-    if (key.isEmpty &&
+    final linked = config.textProviderId != null;
+    if (linked && (await searchApiKey(config))?.trim().isNotEmpty != true) {
+      throw FormatException(T('i18n.search_text_key_unavailable'));
+    }
+    if (!linked && key.isEmpty &&
         (previous == null ||
+            previous.textProviderId != null ||
             previous.service != config.service ||
             previous.endpoint != config.endpoint ||
-            (await searchApiKey(config.id))?.isNotEmpty != true)) {
+            (await searchApiKey(config))?.isNotEmpty != true)) {
       throw FormatException(T('i18n.enter_the_search_api_key'));
     }
     if (key.contains(RegExp(r'[\x00-\x1F]'))) {
       throw FormatException(T('i18n.api_keys_cannot_contain_line'));
     }
-    if (key.isNotEmpty) {
+    if (linked) {
+      await _withSecureStorage(() => _secrets.delete(key: 'search_${config.id}'));
+    } else if (key.isNotEmpty) {
       await _withSecureStorage(
         () => _secrets.write(key: 'search_${config.id}', value: key),
       );
@@ -980,6 +1025,14 @@ class ChatStore {
   }
 
   Future<void> deleteProvider(int id) async {
+    final selectedSearch = await selectedSearchProvider();
+    for (final search in await searchProviders()) {
+      if (search.textProviderId == id) await deleteSearchProvider(search.id);
+    }
+    if (selectedSearch?.textProviderId == id) {
+      await saveSetting('search_provider_id', '');
+      await saveSetting('search_enabled', '0');
+    }
     for (final voice in await voiceProviders()) {
       if (voice.textProviderId == id) await deleteVoiceProvider(voice.id);
     }
@@ -993,6 +1046,7 @@ class ChatStore {
       );
     }
     await _withSecureStorage(() => _secrets.delete(key: 'provider_$id'));
+    _watchConfigurationChanges.add(null);
   }
 
   /// Clears app-owned local data after explicit confirmation in the UI.

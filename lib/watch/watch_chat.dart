@@ -368,7 +368,7 @@ class WatchChatProcessor {
     final search = await store.selectedSearchProvider();
     final searchKey = search == null
         ? null
-        : await store.searchApiKey(search.id);
+        : await store.searchApiKey(search);
     final searchReady =
         search != null &&
         searchKey?.trim().isNotEmpty == true &&
@@ -430,7 +430,7 @@ class WatchChatProcessor {
         : (await store.searchProviders())
               .where((item) => item.id == providerId)
               .firstOrNull;
-    final key = config == null ? null : await store.searchApiKey(config.id);
+    final key = config == null ? null : await store.searchApiKey(config);
     if (config == null || key == null || key.trim().isEmpty) {
       throw WatchChatException(T('i18n.configure_web_search'));
     }
