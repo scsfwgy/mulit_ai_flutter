@@ -703,11 +703,17 @@ class _AboutScreenState extends State<AboutScreen> {
   String? _version;
   String? _versionCode;
 
-  Future<void> _openWebsite() async {
-    await launchUrl(
-      Uri.parse('https://www.tools24.uk/app/ai-link'),
-      mode: LaunchMode.externalApplication,
-    );
+  Future<void> _openUrl(String url) async {
+    try {
+      if (await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)) return;
+    } catch (_) {
+      // Keep unavailable browsers from surfacing as unhandled platform errors.
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(T('i18n.could_not_open_a_browser'))),
+      );
+    }
   }
 
   Future<void> _contact() async {
@@ -799,7 +805,12 @@ class _AboutScreenState extends State<AboutScreen> {
                 title: T('i18n.official_website'),
                 subtitle: 'tools24.uk/app/ai-link',
                 leading: Icon(CupertinoIcons.globe, color: IosColors.blue),
-                onTap: _openWebsite,
+                onTap: () => _openUrl('https://www.tools24.uk/app/ai-link'),
+              ),
+              IosRow(
+                title: T('i18n.wish_wall'),
+                leading: Icon(CupertinoIcons.text_bubble, color: IosColors.blue),
+                onTap: () => _openUrl('https://www.tools24.uk/app/ai-link/wishes'),
               ),
               const ApiKeyHelpRow(url: apiKeyTutorialUrl),
               IosRow(

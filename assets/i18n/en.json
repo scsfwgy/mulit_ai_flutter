@@ -591,5 +591,6 @@
   "i18n.system_voice_premium": "Premium",
   "i18n.system_voice_standard": "Standard",
   "i18n.system_speech_voice_hint": "Lists voices available on this device for the current language. Apple Watch can follow iPhone or select its own voice. An unavailable voice falls back to the default.",
-  "i18n.watch_system_dictation_recommendation": "For a more seamless watch voice experience, consider configuring your own speech recognition service. Apple Watch system dictation uses Apple’s input screen. A custom recognition service enables hold-to-record, slide-to-cancel and transcription review gestures."
+  "i18n.watch_system_dictation_recommendation": "For a more seamless watch voice experience, consider configuring your own speech recognition service. Apple Watch system dictation uses Apple’s input screen. A custom recognition service enables hold-to-record, slide-to-cancel and transcription review gestures.",
+  "i18n.wish_wall": "Wish wall"
 }

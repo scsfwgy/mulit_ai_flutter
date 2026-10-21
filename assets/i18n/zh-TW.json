@@ -591,5 +591,6 @@
   "i18n.system_voice_premium": "高品質",
   "i18n.system_voice_standard": "標準",
   "i18n.system_speech_voice_hint": "僅列出裝置上目前語言可用的音色。手錶可跟隨手機或另選手錶音色；指定音色在裝置上無法使用時會回退到預設音色。",
-  "i18n.watch_system_dictation_recommendation": "若希望獲得更連貫的手錶語音操作體驗，建議設定自己的語音辨識服務。Apple Watch 系統聽寫必須使用 Apple 輸入介面；設定自訂辨識服務後，可使用長按錄音、滑動取消及轉文字確認等操作。"
+  "i18n.watch_system_dictation_recommendation": "若希望獲得更連貫的手錶語音操作體驗，建議設定自己的語音辨識服務。Apple Watch 系統聽寫必須使用 Apple 輸入介面；設定自訂辨識服務後，可使用長按錄音、滑動取消及轉文字確認等操作。",
+  "i18n.wish_wall": "心願牆"
 }
