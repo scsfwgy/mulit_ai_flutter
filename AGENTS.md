@@ -26,6 +26,7 @@
 - `lib/chat/widgets/chat_error_card.dart`：错误卡片与 `ChatErrorAction` 枚举。
 - `lib/chat/widgets/message_bubble.dart`：单条消息气泡，含正文、搜索来源与气泡下统计。
 - `lib/chat/widgets/chat_composer.dart`：底部输入区，语音/文字切换、按住说话与发送按钮。
+- `lib/chat/widgets/desktop_attachment_drop.dart`：桌面聊天投递区与悬停反馈，忙碌或被页面遮挡时禁用；桌面「＋」直开文件选择器，macOS 拖入文件在私有复制期间临时开启并释放 security-scoped access。
 - `lib/chat/widgets/chat_attachments.dart`：草稿和历史附件卡片、移除、图片缩放及文本预览；PDF 显示文件说明，不内置页面阅读器。
 - `lib/chat/chat_more_menu.dart`：聊天页右上角“更多”操作表，包含新对话、切换模型和模型服务。
 - `lib/chat/chat_model_title.dart`：聊天页顶部当前服务与模型标题，可点按切换模型。

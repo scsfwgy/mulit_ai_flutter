@@ -618,5 +618,7 @@
   "i18n.system_speech_voice_hint": "仅列出设备上当前语言可用的音色。手表可跟随手机或单独选择手表音色；指定音色在设备上不可用时回退到默认音色。",
   "i18n.watch_system_dictation_recommendation": "如果希望获得更连贯的手表语音操作体验，建议配置自己的语音识别服务。Apple Watch 系统听写必须使用苹果输入界面；配置自定义识别服务后，可使用长按录音、滑动取消和转文字确认等操作。",
   "i18n.wish_wall": "心愿墙",
-  "i18n.attachment_image_failed": "无法处理这张图片，请尝试重新保存后添加。"
+  "i18n.attachment_image_failed": "无法处理这张图片，请尝试重新保存后添加。",
+  "i18n.attachment_drop_here": "松开以添加图片或文件",
+  "i18n.attachment_drop_files_only": "请拖入图片或文件，暂不支持文件夹。"
 }

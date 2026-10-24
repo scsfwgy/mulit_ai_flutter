@@ -618,5 +618,7 @@
   "i18n.system_speech_voice_hint": "Lists voices available on this device for the current language. Apple Watch can follow iPhone or select its own voice. An unavailable voice falls back to the default.",
   "i18n.watch_system_dictation_recommendation": "For a more seamless watch voice experience, consider configuring your own speech recognition service. Apple Watch system dictation uses Apple’s input screen. A custom recognition service enables hold-to-record, slide-to-cancel and transcription review gestures.",
   "i18n.wish_wall": "Wish wall",
-  "i18n.attachment_image_failed": "Could not process this image. Try saving it again before adding it."
+  "i18n.attachment_image_failed": "Could not process this image. Try saving it again before adding it.",
+  "i18n.attachment_drop_here": "Drop to add images or files",
+  "i18n.attachment_drop_files_only": "Drop images or files. Folders are not supported."
 }

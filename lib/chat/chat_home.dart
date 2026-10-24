@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:file_selector/file_selector.dart' as files;
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'package:flutter/cupertino.dart';
@@ -17,6 +18,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:mulit_ai_flutter/core/storefront_policy.dart';
 import 'package:mulit_ai_flutter/chat/attachment_picker.dart';
+import 'package:mulit_ai_flutter/chat/widgets/desktop_attachment_drop.dart';
 import 'package:mulit_ai_flutter/api/api_client.dart';
 import 'package:mulit_ai_flutter/chat/chat_context_screen.dart';
 import 'package:mulit_ai_flutter/chat/chat_message_meta.dart';
@@ -1243,14 +1245,63 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _pickAttachment() async {
-    if (_pickingAttachment ||
-        _sending ||
-        _starting ||
-        _recording ||
-        _transcribing) {
+  bool get _attachmentBusy =>
+      _pickingAttachment ||
+      _sending ||
+      _starting ||
+      _recording ||
+      _transcribing;
+
+  Future<void> _dropAttachments(List<DropItem> items) async {
+    if (!mounted ||
+        _attachmentBusy ||
+        _navigation.canPop() ||
+        Navigator.of(context).canPop()) {
       return;
     }
+    setState(() => _pickingAttachment = true);
+    try {
+      if (_attachments.length + items.length > AttachmentStore.maxCount) {
+        throw const AttachmentException('i18n.attachment_count_limit');
+      }
+      await importDroppedChatFiles(items, (files) => _importAttachments(files));
+      if (mounted) _inputFocus.requestFocus();
+    } catch (error) {
+      if (mounted) {
+        _notify(
+          error is AttachmentException
+              ? error.toString()
+              : T('i18n.attachment_pick_failed'),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _pickingAttachment = false);
+    }
+  }
+
+  Future<List<XFile>> _selectAttachmentFile() async {
+    final file = await files.openFile(
+      acceptedTypeGroups: [
+        files.XTypeGroup(
+          label: T('i18n.attachment_files'),
+          extensions: [
+            'pdf',
+            'jpg',
+            'jpeg',
+            'png',
+            'gif',
+            'webp',
+            ...AttachmentStore.textExtensions,
+          ],
+          uniformTypeIdentifiers: ['public.data'],
+        ),
+      ],
+    );
+    return file == null ? [] : [file];
+  }
+
+  Future<void> _pickAttachment() async {
+    if (_attachmentBusy) return;
     _inputFocus.unfocus();
     final remaining = AttachmentStore.maxCount - _attachments.length;
     if (remaining <= 0) {
@@ -1259,6 +1310,10 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     }
     setState(() => _pickingAttachment = true);
     try {
+      if (isDesktopApp) {
+        await _importAttachments(await _selectAttachmentFile());
+        return;
+      }
       final source = await showAppModalPopup<_AttachmentSource>(
         context: context,
         builder: (context) => CupertinoActionSheet(
@@ -1300,24 +1355,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           );
           selected = photo == null ? [] : [photo];
         case _AttachmentSource.file:
-          final file = await files.openFile(
-            acceptedTypeGroups: [
-              files.XTypeGroup(
-                label: T('i18n.attachment_files'),
-                extensions: [
-                  'pdf',
-                  'jpg',
-                  'jpeg',
-                  'png',
-                  'gif',
-                  'webp',
-                  ...AttachmentStore.textExtensions,
-                ],
-                uniformTypeIdentifiers: ['public.data'],
-              ),
-            ],
-          );
-          selected = file == null ? [] : [file];
+          selected = await _selectAttachmentFile();
       }
       await _importAttachments(
         selected,
@@ -1799,6 +1837,17 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     },
   );
 
+  Widget _attachmentDropArea(Widget child) => isDesktopApp
+      ? DesktopAttachmentDrop(
+          enabled:
+              !_loading &&
+              !_attachmentBusy &&
+              (ModalRoute.of(context)?.isCurrent ?? true),
+          onDrop: _dropAttachments,
+          child: child,
+        )
+      : child;
+
   Widget _buildChat(BuildContext context, bool wide) {
     final provider = _providers
         .where((item) => item.id == _currentProviderId)
@@ -1849,69 +1898,71 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           ),
         ],
       ),
-      body: Align(
-        alignment: Alignment.topCenter,
-        child: SizedBox(
-          width: isDesktopApp ? 960 : double.infinity,
-          child: _loading
-              ? const Center(child: CupertinoActivityIndicator(radius: 14))
-              : Column(
-                  children: [
-                    Expanded(
-                      child: Listener(
-                        behavior: HitTestBehavior.opaque,
-                        onPointerDown: (_) => _inputFocus.unfocus(),
-                        child: _topic == null && !_hasDraft
-                            ? ChatWelcome(
-                                hasProviders: _providers.isNotEmpty,
-                                onPrimary: _providers.isEmpty
-                                    ? _openProviders
-                                    : _newTopic,
-                              )
-                            : _chatList(),
-                      ),
-                    ),
-                    if (_error != null)
-                      ChatErrorCard(
-                        messageKey: _error!,
-                        action: _errorAction,
-                        canRetryFromLastUser:
-                            _messages.lastOrNull?.role == 'user',
-                        onCheckProvider: _editCurrentProvider,
-                        onCheckSearch: _openSearchSettings,
-                        onRetry: _retryReply,
-                        onAdjustContext: () => _pushRoute<void>(
-                          appPageRoute(
-                            builder: (_) => const ChatContextScreen(),
-                          ),
+      body: _attachmentDropArea(
+        Align(
+          alignment: Alignment.topCenter,
+          child: SizedBox(
+            width: isDesktopApp ? 960 : double.infinity,
+            child: _loading
+                ? const Center(child: CupertinoActivityIndicator(radius: 14))
+                : Column(
+                    children: [
+                      Expanded(
+                        child: Listener(
+                          behavior: HitTestBehavior.opaque,
+                          onPointerDown: (_) => _inputFocus.unfocus(),
+                          child: _topic == null && !_hasDraft
+                              ? ChatWelcome(
+                                  hasProviders: _providers.isNotEmpty,
+                                  onPrimary: _providers.isEmpty
+                                      ? _openProviders
+                                      : _newTopic,
+                                )
+                              : _chatList(),
                         ),
-                        onNewTopic: _newTopic,
-                        onChangeModel: _changeModel,
                       ),
-                    ChatComposer(
-                      attachments: _attachments,
-                      pickingAttachment: _pickingAttachment,
-                      onAddAttachment: _pickAttachment,
-                      onRemoveAttachment: _removeAttachment,
-                      controller: _input,
-                      focusNode: _inputFocus,
-                      voiceMode: _voiceMode,
-                      transcribing: _transcribing,
-                      voicePointerDown: _voicePointerDown,
-                      sending: _sending,
-                      starting: _starting,
-                      recording: _recording,
-                      hasProviders: _providers.isNotEmpty,
-                      onToggleVoiceMode: _toggleVoiceMode,
-                      onVoiceDown: _voiceDown,
-                      onVoiceMove: _voiceMove,
-                      onVoiceUp: _voiceUp,
-                      onVoiceCancel: _voiceCancel,
-                      onSend: _send,
-                      onStop: _stopReply,
-                    ),
-                  ],
-                ),
+                      if (_error != null)
+                        ChatErrorCard(
+                          messageKey: _error!,
+                          action: _errorAction,
+                          canRetryFromLastUser:
+                              _messages.lastOrNull?.role == 'user',
+                          onCheckProvider: _editCurrentProvider,
+                          onCheckSearch: _openSearchSettings,
+                          onRetry: _retryReply,
+                          onAdjustContext: () => _pushRoute<void>(
+                            appPageRoute(
+                              builder: (_) => const ChatContextScreen(),
+                            ),
+                          ),
+                          onNewTopic: _newTopic,
+                          onChangeModel: _changeModel,
+                        ),
+                      ChatComposer(
+                        attachments: _attachments,
+                        pickingAttachment: _pickingAttachment,
+                        onAddAttachment: _pickAttachment,
+                        onRemoveAttachment: _removeAttachment,
+                        controller: _input,
+                        focusNode: _inputFocus,
+                        voiceMode: _voiceMode,
+                        transcribing: _transcribing,
+                        voicePointerDown: _voicePointerDown,
+                        sending: _sending,
+                        starting: _starting,
+                        recording: _recording,
+                        hasProviders: _providers.isNotEmpty,
+                        onToggleVoiceMode: _toggleVoiceMode,
+                        onVoiceDown: _voiceDown,
+                        onVoiceMove: _voiceMove,
+                        onVoiceUp: _voiceUp,
+                        onVoiceCancel: _voiceCancel,
+                        onSend: _send,
+                        onStop: _stopReply,
+                      ),
+                    ],
+                  ),
+          ),
         ),
       ),
     );

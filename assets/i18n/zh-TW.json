@@ -618,5 +618,7 @@
   "i18n.system_speech_voice_hint": "僅列出裝置上目前語言可用的音色。手錶可跟隨手機或另選手錶音色；指定音色在裝置上無法使用時會回退到預設音色。",
   "i18n.watch_system_dictation_recommendation": "若希望獲得更連貫的手錶語音操作體驗，建議設定自己的語音辨識服務。Apple Watch 系統聽寫必須使用 Apple 輸入介面；設定自訂辨識服務後，可使用長按錄音、滑動取消及轉文字確認等操作。",
   "i18n.wish_wall": "心願牆",
-  "i18n.attachment_image_failed": "無法處理這張圖片，請嘗試重新儲存後加入。"
+  "i18n.attachment_image_failed": "無法處理這張圖片，請嘗試重新儲存後加入。",
+  "i18n.attachment_drop_here": "放開以加入圖片或檔案",
+  "i18n.attachment_drop_files_only": "請拖入圖片或檔案，暫不支援資料夾。"
 }
