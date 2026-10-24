@@ -41,13 +41,15 @@ macOS 与 Windows 一起构建归档：在 Mac 上运行 `./release.sh --platfor
 
 仅通过 GitHub 构建 Windows：`./release.sh --github-windows`，完成后下载 Windows 安装程序和 ZIP 至本次归档目录，不构建本机应用包。
 
-Windows 安装程序命名为 `AI-Link-Setup-<版本号>+<构建号>.exe`，版本号来自 `pubspec.yaml`，构建号为 Git 提交次数。安装包包含完整程序和经微软数字签名校验的 Visual C++ x64 运行库，安装时需要管理员权限，提供开始菜单入口、可选桌面快捷方式与卸载入口；同一个 AppId 用于覆盖升级，卸载不清理用户聊天数据。安装程序本身尚未配置代码签名。GitHub runner 自动安装 Inno Setup；Windows 本机构建需先安装 Inno Setup，再运行 `./release.sh --platform windows`。单独运行 `flutter build windows` 仍只生成程序目录。
+Windows 子目录原始安装程序命名为 `AI-Link-Setup-<版本号>+<构建号>.exe`，版本号来自 `pubspec.yaml`，构建号为 Git 提交次数。安装包包含完整程序和经微软数字签名校验的 Visual C++ x64 运行库，安装时需要管理员权限，提供开始菜单入口、可选桌面快捷方式与卸载入口；同一个 AppId 用于覆盖升级，卸载不清理用户聊天数据。安装程序本身尚未配置代码签名。GitHub runner 自动安装 Inno Setup；Windows 本机构建需先安装 Inno Setup，再运行 `./release.sh --platform windows`。单独运行 `flutter build windows` 仍只生成程序目录。
 
 构建全部平台：在 Mac 上运行 `./release.sh --build-all`，构建 Android 手机/Wear OS APK 与 AAB、iOS/Apple Watch IPA、macOS DMG/ZIP，以及 GitHub Actions Windows ZIP，统一归档并生成校验和。需要完整 Android/Xcode 环境、正式签名与 GitHub Actions 权限；缺少 iOS 分发签名会直接报错，不跳过 iOS。这两个独立参数互斥，且不能与 `--platform` 或 `--test` 同用；默认不上传官网或商店。
 
 首次使用前需将 `.github/workflows/ai-link-windows.yml` 和代码提交、推送到 GitHub（工作流需先存在于默认分支），启用仓库 Actions，并安装 GitHub CLI、运行 `gh auth login`，账号需要触发 Actions 的权限。联合构建要求工作区干净且当前分支已推送；Windows runner 排队、测试或构建失败会使本次发布失败，已完成的 macOS 产物会保留。`--platform macos` 和 `--platform windows` 仍分别执行单平台本机构建；`all` 仍为原有 Android、iOS 和 macOS 范围。
 
 使用细粒度 Personal Access Token 时，需选择本仓库并授予 **Actions: Read and write**。`GH_TOKEN`、`GITHUB_TOKEN` 环境变量（按此优先级）会覆盖 `gh auth login` 保存的凭据，修改授权时须确认实际生效的令牌。提交一致性通过 `git ls-remote origin` 校验，不额外要求令牌的 Git References/Contents API 权限；运行进度使用 Actions API 查询，兼容细粒度令牌。
+
+每次归档目录的根目录集中存放最终包，统一命名为 `AI-Link-<平台>-<版本号>-<提交哈希>+<构建号>.<格式>`：Android 手机为 `phone`、手表为 `wear`，macOS 为 `macos`（DMG/ZIP），Windows 为 `windows`（安装版 EXE/便携 ZIP），iOS 为 `ios`（包含配套 Apple Watch 的 IPA）。macOS、Windows 和 iOS 子目录继续保留原始包及支持文件；根目录的 `SHA256SUMS` 和结束汇总均指向根目录最终包，App Store 上传也使用根目录 IPA。Windows 子目录原始安装包仍保留 `AI-Link-Setup-<版本号>+<构建号>.exe` 名称。
 
 ```bash
 flutter pub get

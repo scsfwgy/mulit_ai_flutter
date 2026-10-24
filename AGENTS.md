@@ -192,6 +192,8 @@ iOS Debug 使用 `com.maxhall.ailink.debug` 和「AI Link Debug」，watchOS Deb
 
 Windows 安装包：`scripts/package_windows.ps1` 调用 Inno Setup 编译 `windows/installer/ai-link.iss`，生成 `AI-Link-Setup-<版本>+<构建号>.exe`，与完整 ZIP 一起归档及计算校验和。GitHub 工作流自动安装 Inno Setup，本机构建需自行安装。微软 VC++ 运行库从官方地址下载并校验 Authenticode 签名后封装进安装包；安装需要管理员权限。安装 AppId 固定为 `com.maxhall.ailink.windows`，升级复用安装位置，卸载不删除用户数据库和密钥目录。安装包自身没有代码签名。下载脚本必须同时核对元数据、完整 ZIP 和带版本号 EXE，不能将缺失安装包的构建写成成功。
 
+最终分发包须集中复制到每次归档目录根目录，命名统一为 `AI-Link-<phone|wear|macos|windows|ios>-<版本号>-<提交哈希>+<构建号>.<格式>`；macOS/Windows/iOS 子目录原始包继续保留。`archive_final_package` 负责复制及加入根目录产物清单，`SHA256SUMS` 与结束汇总引用该清单，App Store 上传引用根目录 IPA。Windows 根目录 `.exe` 是安装包，子目录仍使用 `AI-Link-Setup-<版本号>+<构建号>.exe` 原名。
+
 提交代码前先检查 `git status`、变更范围和 `git diff --check`。只提交本次工作涉及的文件；`build/`、`.dart_tool/` 等构建产物由 `.gitignore` 排除。
 
 Git 提交信息统一使用简体中文。标题简明概括本次改动和新增内容；有需要注意的事项时，在正文中简要说明。不要写与实际变更无关的内容。

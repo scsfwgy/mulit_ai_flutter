@@ -274,6 +274,9 @@ if not args.check:
             self.assertIn("buildStatus=COMPLETE\n", info.read_text())
             archive = info.parent / "windows/AI-Link-1.0.1+10-windows.zip"
             self.assertTrue((info.parent / "windows/AI-Link-Setup-1.0.1+10.exe").is_file())
+            self.assertEqual((info.parent / "AI-Link-windows-1.0.1-abcd1234+10.zip").read_bytes(), archive.read_bytes())
+            self.assertEqual((info.parent / "AI-Link-windows-1.0.1-abcd1234+10.exe").read_bytes(),
+                             (info.parent / "windows/AI-Link-Setup-1.0.1+10.exe").read_bytes())
             with zipfile.ZipFile(archive) as bundle:
                 self.assertTrue({"AI-Link/mulit_ai_flutter.exe", "AI-Link/flutter_windows.dll",
                                  "AI-Link/data/icudtl.dat"}.issubset(bundle.namelist()))
@@ -295,6 +298,9 @@ if not args.check:
             self.assertTrue((info.parent / "windows/AI-Link-1.0.1+10-windows.zip").is_file())
             self.assertTrue((info.parent / "windows/AI-Link-Setup-1.0.1+10.exe").is_file())
             self.assertEqual(len((info.parent / "SHA256SUMS").read_text().splitlines()), 4)
+            for name in ("AI-Link-macos-1.0.1-abcd1234+10.dmg", "AI-Link-macos-1.0.1-abcd1234+10.zip",
+                         "AI-Link-windows-1.0.1-abcd1234+10.exe", "AI-Link-windows-1.0.1-abcd1234+10.zip"):
+                self.assertTrue((info.parent / name).is_file(), name)
             self.assertIn("Windows：成功", result.stdout)
 
     def test_github_windows_builds_only_remote_windows(self):
@@ -314,6 +320,7 @@ if not args.check:
             self.assertIn("windowsStatus=COMPLETE", info.read_text())
             self.assertTrue((info.parent / "windows/AI-Link-Setup-1.0.1+10.exe").is_file())
             self.assertEqual(len((info.parent / "SHA256SUMS").read_text().splitlines()), 2)
+            self.assertTrue((info.parent / "AI-Link-windows-1.0.1-abcd1234+10.exe").is_file())
 
     def test_build_all_archives_every_platform_without_uploading(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -330,6 +337,18 @@ if not args.check:
             info = next((root / "release-artifacts").rglob("release-info.txt"))
             self.assertTrue((info.parent / "windows/AI-Link-Setup-1.0.1+10.exe").is_file())
             self.assertEqual(len((info.parent / "SHA256SUMS").read_text().splitlines()), 9)
+            expected = {
+                f"AI-Link-{platform}-1.0.1-abcd1234+10.{extension}"
+                for platform, extensions in (("phone", ("apk", "aab")), ("wear", ("apk", "aab")),
+                                             ("macos", ("dmg", "zip")), ("windows", ("exe", "zip")),
+                                             ("ios", ("ipa",)))
+                for extension in extensions
+            }
+            self.assertEqual({file.name for file in info.parent.iterdir() if file.name.startswith('AI-Link-')}, expected)
+            recorded = {line.split(maxsplit=1)[1].strip() for line in (info.parent / "SHA256SUMS").read_text().splitlines()}
+            self.assertEqual(recorded, expected)
+            self.assertEqual((info.parent / "AI-Link-ios-1.0.1-abcd1234+10.ipa").read_bytes(),
+                             (info.parent / "ios/AI-Link-1.0.1+10.ipa").read_bytes())
             for platform in ("macosStatus", "windowsStatus", "iosWatchStatus", "buildStatus"):
                 self.assertIn(f"{platform}=COMPLETE", info.read_text())
 

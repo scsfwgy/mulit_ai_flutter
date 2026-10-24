@@ -457,6 +457,14 @@ archive_build() {
   compgen -G "$output/$format/dart-symbols/*.symbols" >/dev/null || fail "缺少 $format Dart 调试符号"
 }
 
+
+# 子目录保留原始归档；根目录仅汇集命名统一的最终分发包。
+archive_final_package() {
+  local source="$1" filename="$2"
+  cp "$source" "$output/$filename"
+  artifacts+=("$filename")
+}
+
 if (( build_android )); then
 android_status="构建中"
 apk_channel="official"
@@ -515,7 +523,8 @@ if (( build_macos )); then
   echo "构建 macOS Release APP/DMG/ZIP..."
   python3 scripts/apple_release.py --platform macos --output "$output/macos" \
     --version "$base_name" --build-number "$code"
-  artifacts+=("macos/AI-Link-$base_name+$code.dmg" "macos/AI-Link-$base_name+$code.zip")
+  archive_final_package "$output/macos/AI-Link-$base_name+$code.dmg" "AI-Link-macos-$version.dmg"
+  archive_final_package "$output/macos/AI-Link-$base_name+$code.zip" "AI-Link-macos-$version.zip"
   echo "macosStatus=COMPLETE" >> "$output/release-info.txt"
   macos_status="成功"
 fi
@@ -537,7 +546,8 @@ if (( build_windows )); then
       powershell.exe -NoProfile -Command "Compress-Archive -Path 'AI-Link' -DestinationPath '$archive' -Force"
     fi
   )
-  artifacts+=("windows/AI-Link-$base_name+$code-windows.zip" "windows/AI-Link-Setup-$base_name+$code.exe")
+  archive_final_package "$output/windows/AI-Link-$base_name+$code-windows.zip" "AI-Link-windows-$version.zip"
+  archive_final_package "$output/windows/AI-Link-Setup-$base_name+$code.exe" "AI-Link-windows-$version.exe"
   echo "windowsStatus=COMPLETE" >> "$output/release-info.txt"
   windows_status="成功"
 fi
@@ -546,7 +556,8 @@ if (( build_windows_remote )); then
   echo "通过 GitHub Actions 构建 Windows 并下载归档..."
   python3 scripts/windows_remote_release.py --output "$output/windows" \
     --version "$base_name" --build-number "$code"
-  artifacts+=("windows/AI-Link-$base_name+$code-windows.zip" "windows/AI-Link-Setup-$base_name+$code.exe")
+  archive_final_package "$output/windows/AI-Link-$base_name+$code-windows.zip" "AI-Link-windows-$version.zip"
+  archive_final_package "$output/windows/AI-Link-Setup-$base_name+$code.exe" "AI-Link-windows-$version.exe"
   echo "windowsStatus=COMPLETE" >> "$output/release-info.txt"
   windows_status="成功"
 fi
@@ -557,8 +568,8 @@ if (( build_ios )); then
     --version "$base_name" --build-number "$code")
   if [[ -n "$ios_export_options" ]]; then ios_command+=(--export-options-plist "$ios_export_options"); fi
   "${ios_command[@]}"
-  ios_ipa="$output/ios/AI-Link-$base_name+$code.ipa"
-  artifacts+=("ios/AI-Link-$base_name+$code.ipa")
+  archive_final_package "$output/ios/AI-Link-$base_name+$code.ipa" "AI-Link-ios-$version.ipa"
+  ios_ipa="$output/AI-Link-ios-$version.ipa"
   echo "iosWatchStatus=COMPLETE" >> "$output/release-info.txt"
   ios_status="成功"
 elif [[ -n "$ios_skip_reason" ]]; then
