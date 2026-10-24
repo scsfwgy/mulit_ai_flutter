@@ -41,6 +41,8 @@ macOS 与 Windows 一起构建归档：在 Mac 上运行 `./release.sh --platfor
 
 首次使用前需将 `.github/workflows/ai-link-windows.yml` 和代码提交、推送到 GitHub（工作流需先存在于默认分支），启用仓库 Actions，并安装 GitHub CLI、运行 `gh auth login`，账号需要触发 Actions 的权限。联合构建要求工作区干净且当前分支已推送；Windows runner 排队、测试或构建失败会使本次发布失败，已完成的 macOS 产物会保留。`--platform macos` 和 `--platform windows` 仍分别执行单平台本机构建；`all` 仍为原有 Android、iOS 和 macOS 范围。
 
+使用细粒度 Personal Access Token 时，需选择本仓库并授予 **Actions: Read and write**。`GH_TOKEN`、`GITHUB_TOKEN` 环境变量（按此优先级）会覆盖 `gh auth login` 保存的凭据，修改授权时须确认实际生效的令牌。提交一致性通过 `git ls-remote origin` 校验，不额外要求令牌的 Git References/Contents API 权限；运行进度使用 Actions API 查询，兼容细粒度令牌。
+
 ```bash
 flutter pub get
 flutter run
