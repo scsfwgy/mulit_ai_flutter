@@ -20,9 +20,8 @@ import 'package:mulit_ai_flutter/core/storefront_policy.dart';
 import 'package:mulit_ai_flutter/chat/attachment_picker.dart';
 import 'package:mulit_ai_flutter/chat/widgets/desktop_attachment_drop.dart';
 import 'package:mulit_ai_flutter/api/api_client.dart';
-import 'package:mulit_ai_flutter/chat/chat_context.dart';
 import 'package:mulit_ai_flutter/chat/chat_context_screen.dart';
-import 'package:mulit_ai_flutter/chat/memory_profile.dart';
+import 'package:mulit_ai_flutter/chat/memory_coordinator.dart';
 import 'package:mulit_ai_flutter/chat/chat_message_meta.dart';
 import 'package:mulit_ai_flutter/chat/chat_model_selector.dart';
 import 'package:mulit_ai_flutter/chat/chat_model_title.dart';
@@ -48,6 +47,7 @@ import 'package:mulit_ai_flutter/search/search_service.dart';
 import 'package:mulit_ai_flutter/search/search_settings_screen.dart';
 import 'package:mulit_ai_flutter/settings/privacy_screen.dart';
 import 'package:mulit_ai_flutter/settings/prompt_screen.dart';
+import 'package:mulit_ai_flutter/settings/memory_settings_screen.dart';
 import 'package:mulit_ai_flutter/settings/purchase_screen.dart';
 import 'package:mulit_ai_flutter/settings/settings_screen.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
@@ -197,9 +197,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   bool? _draftMemoryOverride;
   ModelApiClient? _activeClient;
   final _titleClients = <ModelApiClient>{};
-  final _memoryClients = <ModelApiClient>{};
-  Future<void> _memoryTail = Future<void>.value();
-  int _memoryJobs = 0;
+  final _memory = MemoryCoordinator();
   final _reply = ValueNotifier<String>('');
   bool _contextTrimmed = false;
   final _replyElapsedMs = ValueNotifier<int>(0);
@@ -328,9 +326,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     for (final client in _titleClients) {
       client.cancel();
     }
-    for (final client in _memoryClients) {
-      client.cancel();
-    }
+    _memory.dispose();
     _input.dispose();
     _chatScroll.dispose();
     super.dispose();
@@ -368,7 +364,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         _activeClient?.cancel();
       }
     }
-    for (final client in [..._titleClients, ..._memoryClients]) {
+    for (final client in _titleClients) {
       if (StorefrontPolicy.instance.blocks(
         client.provider.baseUrl,
         presetId: client.provider.presetId,
@@ -616,8 +612,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       !_transcribing &&
       !_playing &&
       _titleClients.isEmpty &&
-      _memoryJobs == 0 &&
-      _memoryClients.isEmpty;
+      !_memory.isBusy;
 
   void _closeTopics() {
     _scaffoldKey.currentState?.closeDrawer();
@@ -1789,101 +1784,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
 
   void _scheduleMemoryUpdate(ChatTopic? topic, List<ChatMessage> messages) {
     if (topic == null || _sending || _starting || _watchProcessing) return;
-    final captured = topic;
-    final snapshot = List<ChatMessage>.of(messages);
-    _memoryJobs++;
-    _memoryTail = _memoryTail.catchError((_) {}).then((_) async {
-      try {
-        if (mounted) await _mergeTopicMemory(captured, snapshot);
-      } finally {
-        _memoryJobs--;
-      }
-    });
-  }
-
-  Future<void> _mergeTopicMemory(
-    ChatTopic topic,
-    List<ChatMessage> messages,
-  ) async {
-    final store = ChatStore.instance;
-    if (!await store.chatUsesMemory(topic.id)) return;
-    final cursor = await store.memoryCursor(topic.id);
-    final window = ChatContext.parseWindow(
-      await store.setting(ChatContext.settingKey),
-    );
-    final request = buildMemoryMerge(
-      messages: messages,
-      cursorMessageId: cursor,
-      transcriptTokenBudget: memoryTranscriptTokenBudget(window),
-    );
-    if (request == null) return;
-    final revision = await store.memoryRevision();
-    final profile = await store.memoryProfile();
-    if (request.transcript.isEmpty) {
-      await store.advanceMemoryCursor(
-        revision: revision,
-        topicId: topic.id,
-        cursorMessageId: request.cursorMessageId,
-      );
-      return;
-    }
-    final providerId = topic.providerId;
-    if (providerId == null) return;
-    final provider = _providers
-        .where((item) => item.id == providerId)
-        .firstOrNull;
-    if (provider == null) return;
-    if (StorefrontPolicy.instance.blocks(
-      provider.baseUrl,
-      presetId: provider.presetId,
-      model: topic.model,
-    )) {
-      return;
-    }
-    final key = await store.apiKey(provider.id);
-    if (key == null || key.isEmpty || !await store.memoryEnabled()) return;
-    if (!mounted || !await ApplePurchases.instance.refresh()) return;
-    if (!await store.memoryEnabled()) return;
-    final client = ModelApiClient(provider, key);
-    _memoryClients.add(client);
-    var timedOut = false;
-    try {
-      final updated = await client
-          .mergeMemoryProfile(
-            topic.model,
-            profile,
-            request.transcript,
-            contextWindowTokens: window,
-          )
-          .timeout(
-            const Duration(seconds: 30),
-            onTimeout: () {
-              timedOut = true;
-              client.cancel();
-              return null;
-            },
-          );
-      if (updated == null) {
-        if (!timedOut) {
-          await store.advanceMemoryCursor(
-            revision: revision,
-            topicId: topic.id,
-            cursorMessageId: request.cursorMessageId,
-          );
-        }
-        return;
-      }
-      await store.saveMergedMemory(
-        revision: revision,
-        profile: updated,
-        topicId: topic.id,
-        cursorMessageId: request.cursorMessageId,
-      );
-    } catch (_) {
-      // Keep the previous profile and cursor so a later leave can retry.
-    } finally {
-      _memoryClients.remove(client);
-    }
+    unawaited(_memory.schedule(topic, messages));
   }
 
   Future<void> _generateTitle(

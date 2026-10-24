@@ -356,6 +356,7 @@ bool _matchesPresetName(ProviderPreset preset, String name) {
 const memoryProfileMaxChars = 800;
 
 const memoryEnabledSetting = 'memory_enabled';
+// Keep the original storage key so moving the setting does not reset it.
 const memoryInGlobalPromptSetting = 'memory_in_global_prompt';
 const memoryProfileSetting = 'memory_profile';
 const memoryRevisionSetting = 'memory_revision';
@@ -365,7 +366,7 @@ String memoryCursorSetting(int topicId) => 'memory_cursor_$topicId';
 String memoryTopicSetting(int topicId) => 'memory_topic_$topicId';
 
 /// Master off blocks every chat. Otherwise a topic override wins, and chats
-/// without one follow the global-prompt switch.
+/// without one follow the default-for-chats switch.
 bool topicUsesMemory({
   required bool enabled,
   required bool inGlobalPrompt,
@@ -1367,6 +1368,29 @@ class ChatStore {
           int.tryParse(await _settingValue(txn, memoryRevisionSetting) ?? '') ??
           0;
       if (current != revision) return;
+      if (!topicUsesMemory(
+        enabled: await _settingValue(txn, memoryEnabledSetting) == '1',
+        inGlobalPrompt:
+            await _settingValue(txn, memoryInGlobalPromptSetting) == '1',
+        topicOverride: switch (await _settingValue(
+          txn,
+          memoryTopicSetting(topicId),
+        )) {
+          '1' => true,
+          '0' => false,
+          _ => null,
+        },
+      )) {
+        return;
+      }
+      final topic = await txn.query(
+        'topics',
+        columns: ['id'],
+        where: 'id = ?',
+        whereArgs: [topicId],
+        limit: 1,
+      );
+      if (topic.isEmpty) return;
       if (profile != null) {
         final clipped = clipMemoryProfile(profile);
         if (clipped.isEmpty) return;

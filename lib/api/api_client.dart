@@ -290,6 +290,7 @@ class ModelApiClient {
     int contextWindowTokens = ChatContext.defaultWindowTokens,
     void Function(int omittedMessages)? onContextTrimmed,
     bool requireComplete = false,
+    bool allowEmpty = false,
     void Function(ReplyUsage usage)? onUsage,
     ({SearchProviderConfig config, String apiKey})? webSearch,
     void Function(List<SearchSource> sources)? onSearchResults,
@@ -378,7 +379,7 @@ class ModelApiClient {
           yield piece;
         }
       }
-      if (!received) {
+      if (!received && !allowEmpty) {
         throw ApiException(
           T('i18n.the_service_returned_no_text'),
           kind: ApiErrorKind.model,
@@ -504,15 +505,20 @@ class ModelApiClient {
       createdAt: 0,
     );
     final result = StringBuffer();
+    var remaining = memoryProfileMaxChars + 200;
     await for (final chunk in streamReply(
       [prompt],
       model,
       systemPrompt: memoryMergeInstruction,
       maxTokens: memoryMergeMaxTokens,
       contextWindowTokens: contextWindowTokens,
+      requireComplete: true,
+      allowEmpty: true,
     )) {
-      result.write(chunk);
-      if (result.length >= memoryProfileMaxChars + 200) break;
+      // Keep consuming the stream to verify completion, with bounded storage.
+      final runes = chunk.runes.take(remaining).toList();
+      result.write(String.fromCharCodes(runes));
+      remaining -= runes.length;
     }
     return normalizeMemoryProfile(result.toString());
   }

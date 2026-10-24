@@ -11,6 +11,7 @@ void main() {
     'memory profile stays local and does not enter the watch prompt',
     () async {
       final values = <String, String>{};
+      var topicExists = true;
       const channel = MethodChannel('com.tekartik.sqflite');
       final messenger =
           TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -33,6 +34,13 @@ void main() {
           if (sql.contains('model_prompts') || sql.contains('FROM messages')) {
             return <Map<String, Object?>>[];
           }
+          if (sql.contains('FROM topics')) {
+            return topicExists
+                ? [
+                    {'id': 7},
+                  ]
+                : <Map<String, Object?>>[];
+          }
           if (params.isEmpty) return <Map<String, Object?>>[];
           final key = params.first as String;
           return values.containsKey(key)
@@ -49,7 +57,10 @@ void main() {
           values.remove(params.single as String);
           return 1;
         }
-        if (call.method == 'update') return 1;
+        if (call.method == 'update') {
+          if (sql.contains('DELETE FROM topics')) topicExists = false;
+          return 1;
+        }
         throw StateError('Unexpected database operation: ${call.method} $sql');
       });
       addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
@@ -105,6 +116,38 @@ void main() {
       expect(await store.memoryProfile(), '喜欢喝茶');
       expect(await store.memoryCursor(7), 4);
 
+      // Results already in flight must respect both switches at commit time.
+      for (final scope in ['master', 'topic', 'default']) {
+        await store.setMemoryEnabled(scope != 'master');
+        await store.setMemoryInGlobalPrompt(false);
+        if (scope == 'default') {
+          await store.deleteSetting(memoryTopicSetting(7));
+        } else {
+          await store.setMemoryTopicOverride(7, scope != 'topic');
+        }
+        expect(
+          await store.saveMergedMemory(
+            revision: 1,
+            profile: '失效结果',
+            topicId: 7,
+            cursorMessageId: 9,
+          ),
+          isFalse,
+        );
+        expect(
+          await store.advanceMemoryCursor(
+            revision: 1,
+            topicId: 7,
+            cursorMessageId: 9,
+          ),
+          isFalse,
+        );
+        expect(await store.memoryProfile(), '喜欢喝茶');
+        expect(await store.memoryCursor(7), 4);
+      }
+      await store.setMemoryEnabled(true);
+      await store.setMemoryTopicOverride(7, true);
+
       await store.saveMemoryProfile('手改');
       expect(await store.memoryRevision(), 2);
       expect(
@@ -121,6 +164,17 @@ void main() {
       await store.deleteTopic(7);
       expect(await store.memoryCursor(7), 0);
       expect(await store.memoryTopicOverride(7), isNull);
+      await store.setMemoryInGlobalPrompt(true);
+      expect(
+        await store.saveMergedMemory(
+          revision: 2,
+          profile: '已删除话题的结果',
+          topicId: 7,
+          cursorMessageId: 99,
+        ),
+        isFalse,
+      );
+      expect(await store.memoryCursor(7), 0);
       expect(await store.memoryProfile(), '手改');
     },
   );

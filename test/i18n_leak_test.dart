@@ -6,6 +6,8 @@ import 'package:mulit_ai_flutter/provider/provider_screen.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
 import 'package:mulit_ai_flutter/search/search_settings_screen.dart';
 import 'package:mulit_ai_flutter/settings/privacy_screen.dart';
+import 'package:mulit_ai_flutter/settings/memory_settings_screen.dart';
+import 'package:mulit_ai_flutter/settings/prompt_screen.dart';
 import 'package:mulit_ai_flutter/settings/resource_library_screen.dart';
 import 'package:mulit_ai_flutter/settings/settings_screen.dart';
 import 'package:mulit_ai_flutter/voice/voice_settings_screen.dart';
@@ -79,6 +81,10 @@ void main() {
     '消息设置': MessageSettingsScreen.new,
     '关于': AboutScreen.new,
     '隐私与数据': PrivacyScreen.new,
+    '模型设置': () => ModelSettingsScreen(onPrivacy: () {}),
+    '跨会话记忆': MemorySettingsScreen.new,
+    '记忆编辑': () => const MemoryEditor(initial: ''),
+    '提示词设置': PromptSettingsScreen.new,
     '资源库': ResourceLibraryScreen.new,
     '服务列表': ProviderScreen.new,
     '服务编辑器': ProviderEditor.new,

@@ -35,6 +35,7 @@
 - `lib/chat/chat_model_selector.dart`：聊天页统一的服务与模型选择，支持最近使用、服务端列表和手动 ID。
 - `lib/chat/chat_scroll.dart`：流式回复时的底部跟随，用户滑离底部后保留阅读位置。
 - `lib/chat/chat_streaming_reply.dart`：生成中气泡独立订阅文本更新，避免每段流式文本重建聊天页与历史列表。
+- `lib/chat/memory_coordinator.dart`：跨会话记忆任务的串行排队、分批总结、权限检查、超时和释放；`memory_profile.dart` 保留资料总结的纯函数。写回时在 SQLite 事务内校验开关、资料版本和话题存在性。
 - `lib/chat/chat_context.dart` 与 `lib/chat/chat_context_screen.dart`：手机和桌面的上下文估算预算、最近完整轮次选择、超限提示与设置；不删除本机历史，规则和验证见 `doc/CHAT_CONTEXT.md`。
 - `lib/chat/chat_message_meta.dart`：气泡下的模型、耗时、Token 与字数展示；同时定义 `SpeechPlaybackState`。
 - `lib/chat/chat_loading_status.dart`：回复生成时的菊花与毫秒计时；计时器只更新状态行。
@@ -96,6 +97,7 @@
 - `lib/settings/settings_screen.dart`：模型设置、语言、换肤、关于及开源许可入口。
 - `lib/settings/resource_library_screen.dart`：按本地日期列出各话题消息上已保存的附件；图片可预览，长按可定位到原消息或分享。手机用底部操作表，桌面用贴在文件旁的小菜单，并可在访达、资源管理器或文件管理器中打开该文件。模型回复目前不落附件，库里只出现消息上已有的文件。
 - `lib/settings/prompt_screen.dart`：全局与单模型提示词设置。
+- `lib/settings/memory_settings_screen.dart`：模型设置中独立的跨会话记忆入口，管理总开关、对话默认使用、资料编辑及清空；不归属提示词设置。
 - `lib/settings/privacy_screen.dart`：本地数据与第三方请求说明、清空本地数据入口。
 - `lib/settings/purchase_screen.dart`：内购页面。
 - `lib/settings/startup_screen.dart`：共用 Flutter 动画启动页。

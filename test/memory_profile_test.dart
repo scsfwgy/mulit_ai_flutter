@@ -93,7 +93,7 @@ void main() {
       expect(clipped!.cursorMessageId, 2);
       expect(
         ChatContext.estimateTokens(clipped.transcript),
-        lessThanOrEqualTo(budget),
+        lessThanOrEqualTo(300),
       );
       expect(clipped.transcript, isNot(contains('第二条')));
       final packed = buildMemoryMerge(
@@ -158,6 +158,76 @@ void main() {
       memoryProfileMaxChars,
     );
   });
+
+  for (final protocol in ApiProtocol.values) {
+    for (final complete in [false, true]) {
+      for (final text in ['', '用户喜欢', '字' * 1200]) {
+        test(
+          'memory stream requires completion and allows empty results ($protocol, complete=$complete, chars=${text.length})',
+          () async {
+            final server = await HttpServer.bind(
+              InternetAddress.loopbackIPv4,
+              0,
+            );
+            addTearDown(() => server.close(force: true));
+            server.listen((request) async {
+              await request.drain<void>();
+              if (text.isNotEmpty) {
+                final event = protocol == ApiProtocol.anthropic
+                    ? {
+                        'type': 'content_block_delta',
+                        'delta': {'type': 'text_delta', 'text': text},
+                      }
+                    : {
+                        'choices': [
+                          {
+                            'delta': {'content': text},
+                          },
+                        ],
+                      };
+                request.response.write('data: ${jsonEncode(event)}\n\n');
+              }
+              if (complete) {
+                request.response.write(
+                  protocol == ApiProtocol.anthropic
+                      ? 'data: {"type":"message_stop"}\n\n'
+                      : 'data: [DONE]\n\n',
+                );
+              }
+              await request.response.close();
+            });
+            ModelApiClient client() => ModelApiClient(
+              ProviderConfig(
+                id: 1,
+                name: 'test',
+                baseUrl: 'http://127.0.0.1:${server.port}/v1',
+                model: 'demo',
+                protocol: protocol,
+              ),
+              'test-key',
+            );
+            final result = client().mergeMemoryProfile('demo', '旧资料', '用户：你好');
+            if (complete) {
+              expect(
+                await result,
+                text.isEmpty ? isNull : clipMemoryProfile(text),
+              );
+            } else {
+              await expectLater(result, throwsA(isA<ApiException>()));
+            }
+            if (complete && text.isEmpty) {
+              await expectLater(
+                client().streamReply([
+                  _message(1, 'user', 'hi'),
+                ], 'demo').join(),
+                throwsA(isA<ApiException>()),
+              );
+            }
+          },
+        );
+      }
+    }
+  }
 
   test(
     'memory merge sends the profile and new turns with a short output cap',

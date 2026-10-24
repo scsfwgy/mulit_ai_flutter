@@ -16,6 +16,7 @@ import 'package:mulit_ai_flutter/ui/ios_style.dart';
 import 'package:mulit_ai_flutter/settings/privacy_screen.dart';
 import 'package:mulit_ai_flutter/settings/resource_library_screen.dart';
 import 'package:mulit_ai_flutter/settings/prompt_screen.dart';
+import 'package:mulit_ai_flutter/settings/memory_settings_screen.dart';
 import 'package:mulit_ai_flutter/provider/provider_screen.dart';
 import 'package:mulit_ai_flutter/voice/voice_settings_screen.dart';
 import 'package:mulit_ai_flutter/search/search_settings_screen.dart';
@@ -567,6 +568,22 @@ class ModelSettingsScreen extends StatelessWidget {
     body: SafeArea(
       child: ListView(
         children: [
+          IosSection(
+            children: [
+              IosRow(
+                title: T('i18n.memory'),
+                subtitle: T('i18n.memory_settings_summary'),
+                leading: Icon(
+                  CupertinoIcons.person_crop_circle,
+                  color: IosColors.blue,
+                ),
+                onTap: () => Navigator.push<void>(
+                  context,
+                  appPageRoute(builder: (_) => const MemorySettingsScreen()),
+                ),
+              ),
+            ],
+          ),
           IosSection(
             footer: T('i18n.after_the_first_reply'),
             children: [

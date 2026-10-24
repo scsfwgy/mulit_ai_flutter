@@ -14,8 +14,6 @@ class PromptSettingsScreen extends StatefulWidget {
 
 class _PromptSettingsScreenState extends State<PromptSettingsScreen> {
   String _global = '';
-  bool _memoryEnabled = false;
-  String _memory = '';
   List<ProviderConfig> _providers = [];
   List<ModelPrompt> _modelPrompts = [];
 
@@ -30,54 +28,13 @@ class _PromptSettingsScreenState extends State<PromptSettingsScreen> {
       ChatStore.instance.globalPrompt(),
       ChatStore.instance.providers(),
       ChatStore.instance.modelPrompts(),
-      ChatStore.instance.memoryEnabled(),
-      ChatStore.instance.memoryProfile(),
     ]);
     if (!mounted) return;
     setState(() {
       _global = results[0] as String;
       _providers = results[1] as List<ProviderConfig>;
       _modelPrompts = results[2] as List<ModelPrompt>;
-      _memoryEnabled = results[3] as bool;
-      _memory = results[4] as String;
     });
-  }
-
-  Future<void> _setMemoryEnabled(bool enabled) async {
-    await ChatStore.instance.setMemoryEnabled(enabled);
-    if (mounted) setState(() => _memoryEnabled = enabled);
-  }
-
-  Future<void> _editMemory() async {
-    await Navigator.push<void>(
-      context,
-      appPageRoute(builder: (_) => MemoryEditor(initial: _memory)),
-    );
-    await _load();
-  }
-
-  Future<void> _clearMemory() async {
-    final confirmed = await showCupertinoDialog<bool>(
-      context: context,
-      builder: (context) => CupertinoAlertDialog(
-        title: Text(T('i18n.memory_clear')),
-        content: Text(T('i18n.memory_clear_detail')),
-        actions: [
-          CupertinoDialogAction(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(T('i18n.cancel')),
-          ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(T('i18n.clear')),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    await ChatStore.instance.saveMemoryProfile('');
-    await _load();
   }
 
   Future<void> _edit({ModelPrompt? modelPrompt, bool global = false}) async {
@@ -107,43 +64,6 @@ class _PromptSettingsScreenState extends State<PromptSettingsScreen> {
     body: SafeArea(
       child: ListView(
         children: [
-          IosSection(
-            title: T('i18n.memory'),
-            footer: T('i18n.memory_detail'),
-            children: [
-              IosRow(
-                title: T('i18n.memory'),
-                leading: Icon(
-                  CupertinoIcons.person_crop_circle,
-                  color: IosColors.blue,
-                ),
-                chevron: false,
-                trailing: CupertinoSwitch(
-                  value: _memoryEnabled,
-                  activeTrackColor: IosColors.blue,
-                  onChanged: _setMemoryEnabled,
-                ),
-              ),
-              IosRow(
-                title: T('i18n.memory_edit'),
-                subtitle: _memory.isEmpty
-                    ? T('i18n.not_set_short')
-                    : _preview(_memory),
-                leading: Icon(CupertinoIcons.pencil, color: IosColors.blue),
-                onTap: _editMemory,
-              ),
-              if (_memory.isNotEmpty)
-                IosRow(
-                  title: T('i18n.memory_clear'),
-                  leading: Icon(
-                    CupertinoIcons.delete,
-                    color: IosColors.destructive,
-                  ),
-                  chevron: false,
-                  onTap: _clearMemory,
-                ),
-            ],
-          ),
           IosSection(
             title: T('i18n.global'),
             footer: T('i18n.applied_to_every_model_request'),
@@ -209,105 +129,6 @@ class _PromptSettingsScreenState extends State<PromptSettingsScreen> {
   }
 }
 
-class MemoryEditor extends StatefulWidget {
-  const MemoryEditor({super.key, required this.initial});
-
-  final String initial;
-
-  @override
-  State<MemoryEditor> createState() => _MemoryEditorState();
-}
-
-class _MemoryEditorState extends State<MemoryEditor> {
-  late final TextEditingController _profile = TextEditingController(
-    text: widget.initial,
-  );
-  bool _busy = false;
-
-  @override
-  void dispose() {
-    _profile.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    if (_busy) return;
-    setState(() => _busy = true);
-    try {
-      await ChatStore.instance.saveMemoryProfile(_profile.text);
-      if (mounted) Navigator.pop(context);
-    } catch (error) {
-      if (mounted) {
-        setState(() => _busy = false);
-        showCupertinoDialog<void>(
-          context: context,
-          builder: (context) => CupertinoAlertDialog(
-            title: Text(T('i18n.unable_to_save')),
-            content: Text(T(error.toString())),
-            actions: [
-              CupertinoDialogAction(
-                onPressed: () => Navigator.pop(context),
-                child: Text(T('i18n.ok')),
-              ),
-            ],
-          ),
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: IosColors.background,
-    appBar: iosAppBar(
-      title: T('i18n.memory'),
-      leading: IosNavButton(
-        icon: CupertinoIcons.back,
-        onPressed: () => Navigator.pop(context),
-      ),
-    ),
-    body: SafeArea(
-      child: Column(
-        children: [
-          Expanded(
-            child: ListView(
-              children: [
-                IosSection(
-                  footer: T('i18n.memory_edit_footer'),
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: CupertinoTextField(
-                        controller: _profile,
-                        placeholder: T('i18n.memory_placeholder'),
-                        minLines: 11,
-                        maxLines: 11,
-                        textAlignVertical: TextAlignVertical.top,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: IosColors.background,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            child: IosPrimaryButton(
-              label: _busy ? T('i18n.saving') : T('i18n.save'),
-              onPressed: _busy ? null : _save,
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
 class PromptEditor extends StatefulWidget {
   const PromptEditor({
     super.key,
@@ -329,9 +150,6 @@ class _PromptEditorState extends State<PromptEditor> {
   late final TextEditingController _prompt;
   int? _providerId;
   bool _busy = false;
-  bool _memoryMaster = false;
-  bool _memoryInGlobal = false;
-  String _memory = '';
 
   bool get _global => widget.providers == null;
 
@@ -347,40 +165,6 @@ class _PromptEditorState extends State<PromptEditor> {
     _prompt = TextEditingController(
       text: widget.globalText ?? widget.existing?.prompt ?? '',
     );
-    if (_global) _loadMemory();
-  }
-
-  Future<void> _loadMemory() async {
-    final store = ChatStore.instance;
-    final results = await Future.wait<Object>([
-      store.memoryEnabled(),
-      store.memoryInGlobalPrompt(),
-      store.memoryProfile(),
-    ]);
-    if (!mounted) return;
-    setState(() {
-      _memoryMaster = results[0] as bool;
-      _memoryInGlobal = results[1] as bool;
-      _memory = results[2] as String;
-    });
-  }
-
-  Future<void> _setMemoryInGlobal(bool enabled) async {
-    await ChatStore.instance.setMemoryInGlobalPrompt(enabled);
-    if (mounted) setState(() => _memoryInGlobal = enabled);
-  }
-
-  Future<void> _editMemory() async {
-    await Navigator.push<void>(
-      context,
-      appPageRoute(builder: (_) => MemoryEditor(initial: _memory)),
-    );
-    await _loadMemory();
-  }
-
-  String _preview(String value) {
-    final line = value.replaceAll(RegExp(r'\s+'), ' ').trim();
-    return line.length > 36 ? '${line.substring(0, 36)}…' : line;
   }
 
   @override
@@ -541,30 +325,6 @@ class _PromptEditorState extends State<PromptEditor> {
                             placeholder: T('i18n.model_id'),
                             padding: const EdgeInsets.all(12),
                           ),
-                        ),
-                      ],
-                    ),
-                  if (_global)
-                    IosSection(
-                      footer: T('i18n.memory_in_global_prompt_footer'),
-                      children: [
-                        IosRow(
-                          title: T('i18n.memory_in_global_prompt'),
-                          chevron: false,
-                          trailing: CupertinoSwitch(
-                            value: _memoryMaster && _memoryInGlobal,
-                            activeTrackColor: IosColors.blue,
-                            onChanged: _memoryMaster
-                                ? _setMemoryInGlobal
-                                : null,
-                          ),
-                        ),
-                        IosRow(
-                          title: T('i18n.memory_edit'),
-                          subtitle: _memory.isEmpty
-                              ? T('i18n.not_set_short')
-                              : _preview(_memory),
-                          onTap: _editMemory,
                         ),
                       ],
                     ),
