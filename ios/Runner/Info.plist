@@ -33,7 +33,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>用于扫描模型服务配置或 API Key 二维码</string>
+	<string>用于拍照并发送给所选模型分析，或扫描模型服务配置与 API Key 二维码</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>用于选择图片并发送给你选择的模型服务进行分析</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>用于将录音识别为文字并发送给你选择的文字模型；部分设备或语言会由 Apple 处理语音。</string>
 	<key>NSMicrophoneUsageDescription</key>

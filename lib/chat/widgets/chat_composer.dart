@@ -1,6 +1,8 @@
 import 'package:flutter/cupertino.dart';
 
 import 'package:mulit_ai_flutter/core/app_platform.dart';
+import 'package:mulit_ai_flutter/core/chat_attachment.dart';
+import 'package:mulit_ai_flutter/chat/widgets/chat_attachments.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 
@@ -26,6 +28,10 @@ class ChatComposer extends StatelessWidget {
     required this.onVoiceCancel,
     required this.onSend,
     required this.onStop,
+    this.attachments = const [],
+    this.pickingAttachment = false,
+    this.onAddAttachment,
+    this.onRemoveAttachment,
   });
 
   final TextEditingController controller;
@@ -44,6 +50,26 @@ class ChatComposer extends StatelessWidget {
   final void Function(PointerCancelEvent event) onVoiceCancel;
   final VoidCallback onSend;
   final VoidCallback onStop;
+  final List<ChatAttachment> attachments;
+  final bool pickingAttachment;
+  final VoidCallback? onAddAttachment;
+  final ValueChanged<ChatAttachment>? onRemoveAttachment;
+
+  bool get _busy => starting || recording || transcribing || pickingAttachment;
+
+  Widget _attachmentButton() => CupertinoButton(
+    padding: EdgeInsets.zero,
+    minimumSize: const Size(44, 44),
+    onPressed: sending || _busy ? null : onAddAttachment,
+    child: pickingAttachment
+        ? const CupertinoActivityIndicator()
+        : Icon(
+            CupertinoIcons.add_circled,
+            size: 27,
+            color: IosColors.blue,
+            semanticLabel: T('i18n.attachment_add'),
+          ),
+  );
 
   @override
   Widget build(BuildContext context) => Container(
@@ -54,111 +80,160 @@ class ChatComposer extends StatelessWidget {
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
     child: SafeArea(
       top: false,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          CupertinoButton(
-            padding: EdgeInsets.zero,
-            minimumSize: const Size(46, 44),
-            onPressed: transcribing ? null : onToggleVoiceMode,
-            child: Icon(
-              voiceMode ? CupertinoIcons.keyboard : CupertinoIcons.mic,
-              color: transcribing ? IosColors.secondary : IosColors.blue,
-              size: 27,
-              semanticLabel: T(voiceMode ? 'i18n.switch_to_text_input' : 'i18n.switch_to_voice_input'),
-            ),
-          ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: voiceMode
-                ? Semantics(
-                    button: true,
-                    enabled: !transcribing,
-                    label: transcribing
-                        ? T('i18n.transcribing')
-                        : T('i18n.hold_to_speak_release'),
-                    child: Listener(
-                      behavior: HitTestBehavior.opaque,
-                      onPointerDown: transcribing ? null : onVoiceDown,
-                      onPointerMove: transcribing ? null : onVoiceMove,
-                      onPointerUp: transcribing ? null : onVoiceUp,
-                      onPointerCancel: transcribing ? null : onVoiceCancel,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 120),
-                        height: 44,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: voicePointerDown
-                              ? IosColors.blue.withValues(alpha: .22)
-                              : IosColors.assistant,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: IosColors.separator),
-                        ),
-                        child: Text(
-                          T(transcribing ? 'i18n.transcribing' : 'i18n.hold_to_talk'),
-                          style: TextStyle(
-                            color: transcribing
-                                ? IosColors.secondary
-                                : IosColors.label,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
+          if (attachments.isNotEmpty) ...[
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 124),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    ChatAttachments(
+                      attachments: attachments,
+                      onRemove: starting || pickingAttachment
+                          ? null
+                          : onRemoveAttachment,
                     ),
-                  )
-                : CupertinoTextField(
-                    controller: controller,
-                    focusNode: focusNode,
-                    minLines: 1,
-                    maxLines: 5,
-                    textAlignVertical: TextAlignVertical.center,
-                    textInputAction: isDesktopApp
-                        ? TextInputAction.newline
-                        : TextInputAction.send,
-                    onSubmitted: isDesktopApp ? null : (_) => onSend(),
-                    textCapitalization: TextCapitalization.sentences,
-                    placeholder: !hasProviders
-                        ? T('i18n.add_a_model_service_first')
-                        : T(isDesktopApp ? 'i18n.message_shift_enter' : 'i18n.message'),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 11,
-                    ),
-                    decoration: BoxDecoration(
-                      color: IosColors.surface,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: IosColors.separator),
-                    ),
-                  ),
-          ),
-          if (!voiceMode || sending) ...[
-            const SizedBox(width: 8),
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              minimumSize: const Size(40, 40),
-              onPressed: sending
-                  ? onStop
-                  : (starting || recording || transcribing ? null : onSend),
-              child: Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: sending
-                      ? IosColors.destructive
-                      : starting
-                      ? IosColors.secondary
-                      : IosColors.blue,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Icon(
-                  sending ? CupertinoIcons.stop_fill : CupertinoIcons.arrow_up,
-                  color: IosColors.onAccent,
-                  size: 21,
+                    const SizedBox(width: 8),
+                    _attachmentButton(),
+                  ],
                 ),
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text(
+                T('i18n.attachment_send_notice'),
+                style: TextStyle(color: IosColors.secondary, fontSize: 11),
+              ),
+            ),
           ],
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              CupertinoButton(
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(46, 44),
+                onPressed: transcribing ? null : onToggleVoiceMode,
+                child: Icon(
+                  voiceMode ? CupertinoIcons.keyboard : CupertinoIcons.mic,
+                  color: transcribing ? IosColors.secondary : IosColors.blue,
+                  size: 27,
+                  semanticLabel: T(
+                    voiceMode
+                        ? 'i18n.switch_to_text_input'
+                        : 'i18n.switch_to_voice_input',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: voiceMode
+                    ? Semantics(
+                        button: true,
+                        enabled: !transcribing,
+                        label: transcribing
+                            ? T('i18n.transcribing')
+                            : T('i18n.hold_to_speak_release'),
+                        child: Listener(
+                          behavior: HitTestBehavior.opaque,
+                          onPointerDown: transcribing ? null : onVoiceDown,
+                          onPointerMove: transcribing ? null : onVoiceMove,
+                          onPointerUp: transcribing ? null : onVoiceUp,
+                          onPointerCancel: transcribing ? null : onVoiceCancel,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 120),
+                            height: 44,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: voicePointerDown
+                                  ? IosColors.blue.withValues(alpha: .22)
+                                  : IosColors.assistant,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: IosColors.separator),
+                            ),
+                            child: Text(
+                              T(
+                                transcribing
+                                    ? 'i18n.transcribing'
+                                    : 'i18n.hold_to_talk',
+                              ),
+                              style: TextStyle(
+                                color: transcribing
+                                    ? IosColors.secondary
+                                    : IosColors.label,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      )
+                    : CupertinoTextField(
+                        controller: controller,
+                        focusNode: focusNode,
+                        minLines: 1,
+                        maxLines: 5,
+                        textAlignVertical: TextAlignVertical.center,
+                        textInputAction: isDesktopApp
+                            ? TextInputAction.newline
+                            : TextInputAction.send,
+                        onSubmitted: isDesktopApp ? null : (_) => onSend(),
+                        textCapitalization: TextCapitalization.sentences,
+                        placeholder: !hasProviders
+                            ? T('i18n.add_a_model_service_first')
+                            : T(
+                                isDesktopApp
+                                    ? 'i18n.message_shift_enter'
+                                    : 'i18n.message',
+                              ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 11,
+                        ),
+                        decoration: BoxDecoration(
+                          color: IosColors.surface,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: IosColors.separator),
+                        ),
+                      ),
+              ),
+              const SizedBox(width: 8),
+              ValueListenableBuilder<TextEditingValue>(
+                valueListenable: controller,
+                builder: (context, value, _) {
+                  final hasContent =
+                      (!voiceMode && value.text.trim().isNotEmpty) ||
+                      attachments.isNotEmpty;
+                  if (!sending && !hasContent) return _attachmentButton();
+                  return CupertinoButton(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    minimumSize: const Size(56, 36),
+                    color: sending ? IosColors.destructive : IosColors.blue,
+                    disabledColor: IosColors.secondary,
+                    borderRadius: BorderRadius.circular(6),
+                    onPressed: sending ? onStop : (_busy ? null : onSend),
+                    child: sending
+                        ? Icon(
+                            CupertinoIcons.stop_fill,
+                            color: IosColors.onAccent,
+                            size: 21,
+                          )
+                        : Text(
+                            T('i18n.send'),
+                            style: TextStyle(
+                              color: IosColors.onAccent,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
+                            ),
+                          ),
+                  );
+                },
+              ),
+            ],
+          ),
         ],
       ),
     ),

@@ -102,6 +102,10 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
                 detail: T('i18n.chats_prompts_and_api_keys'),
               ),
               _PrivacyRow(
+                title: T('i18n.attachment_privacy'),
+                detail: T('i18n.attachment_privacy_detail'),
+              ),
+              _PrivacyRow(
                 title: T('i18n.web_search'),
                 detail: T(
                   isDesktopApp

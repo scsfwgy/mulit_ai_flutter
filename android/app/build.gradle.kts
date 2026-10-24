@@ -115,6 +115,7 @@ flutter {
 }
 
 dependencies {
+    implementation("androidx.activity:activity:1.13.0")
     implementation(platform("com.google.firebase:firebase-bom:34.19.0"))
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.android.gms:play-services-wearable:20.0.1")

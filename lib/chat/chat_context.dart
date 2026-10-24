@@ -44,12 +44,15 @@ abstract final class ChatContext {
     required String systemPrompt,
     required int windowTokens,
     int outputTokens = replyReserveTokens,
+    List<int>? attachmentTokens,
   }) {
     if (messages.isEmpty) return messages;
     final budget = windowTokens - outputTokens - 256;
     var used = estimateTokens(systemPrompt) + 8;
-    int cost(Map<String, String> message) =>
-        estimateTokens(message['content'] ?? '') + 8;
+    int cost(int index) =>
+        estimateTokens(messages[index]['content'] ?? '') +
+        8 +
+        (attachmentTokens?[index] ?? 0);
     final starts = <int>[
       for (var i = 0; i < messages.length; i++)
         if (messages[i]['role'] == 'user') i,
@@ -58,14 +61,14 @@ abstract final class ChatContext {
     if (starts.isEmpty) starts.add(0);
     var start = starts.last;
     for (var i = start; i < messages.length; i++) {
-      used += cost(messages[i]);
+      used += cost(i);
     }
     if (used > budget) throw const ChatContextException(limitMessageKey);
     for (var turn = starts.length - 2; turn >= 0; turn--) {
       final candidate = starts[turn];
       var turnCost = 0;
       for (var i = candidate; i < start; i++) {
-        turnCost += cost(messages[i]);
+        turnCost += cost(i);
       }
       if (used + turnCost > budget) break;
       used += turnCost;

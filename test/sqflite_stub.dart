@@ -6,7 +6,7 @@ import 'package:sqflite/sqflite.dart';
 ///
 /// 用途：让依赖 `ChatStore` 的页面在 widget 测试里渲染出「空状态」，而不必
 /// 复刻 SQLite 语义。`PRAGMA user_version` 返回的值与 `ChatStore` 的
-/// `version: 5` 一致，因此不会触发建表或迁移。
+/// `version: 6` 一致，因此不会触发建表或迁移。
 ///
 /// [settings] 可选：提供 `settings` 表的初始键值。传入的 Map 会被**按引用**
 /// 持有，测试中途修改它即可模拟「手机改了设置」（例如切换界面语言）后后台
@@ -35,7 +35,7 @@ void installEmptyDatabaseStub({
         final sql = args['sql'] as String? ?? '';
         if (sql.contains('user_version')) {
           return [
-            {'user_version': 5},
+            {'user_version': 6},
           ];
         }
         if (providers != null && sql.contains('FROM providers')) {

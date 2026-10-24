@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.wear.remote.interactions.RemoteActivityHelper
 import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.CapabilityClient
@@ -22,6 +23,12 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "between_models/attachments")
+            .setMethodCallHandler { call, result ->
+                if (call.method == "supportsLimitedPhotoPicker") {
+                    result.success(ActivityResultContracts.PickVisualMedia.isPhotoPickerAvailable(this))
+                } else result.notImplemented()
+            }
         WatchUpdateBridge.messenger = flutterEngine.dartExecutor.binaryMessenger
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "between_models/watch_updates")
             .setMethodCallHandler { call, result ->

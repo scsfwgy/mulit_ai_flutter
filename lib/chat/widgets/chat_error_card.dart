@@ -79,7 +79,10 @@ class ChatErrorCard extends StatelessWidget {
                 ),
               if (action == ChatErrorAction.retry ||
                   action == ChatErrorAction.search ||
-                  (action == ChatErrorAction.context && canRetryFromLastUser))
+                  ((action == ChatErrorAction.context ||
+                          action == ChatErrorAction.model ||
+                          action == ChatErrorAction.request) &&
+                      canRetryFromLastUser))
                 CupertinoButton(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
                   minimumSize: const Size(0, 32),

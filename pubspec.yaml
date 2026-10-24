@@ -50,6 +50,11 @@ dependencies:
   path_provider: ^2.1.5
   http: ^1.5.0
   uuid: ^4.6.0
+  image_picker: ^1.2.4
+  image_picker_android: ^0.8.13
+  image_picker_platform_interface: ^2.11.2
+  image: ^4.12.0
+  file_selector: ^1.1.0
 
 dev_dependencies:
   integration_test:
@@ -73,6 +78,7 @@ flutter:
   assets:
     - assets/branding/ai_link_icon_source.png
     - assets/provider_icons/
+    - assets/licenses/luban.txt
     # 每语言一份文案配置；新增语言只需在此目录增加同名 JSON。
     - assets/i18n/
 

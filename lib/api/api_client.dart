@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:mulit_ai_flutter/core/storefront_policy.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/core/attachment_store.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
 import 'package:mulit_ai_flutter/chat/chat_context.dart';
@@ -68,16 +69,19 @@ class ModelApiClient {
     this.provider,
     this.apiKey, {
     this.bodyIdleTimeout = const Duration(seconds: 120),
-  }) {
+    AttachmentStore? attachmentStore,
+  }) : _attachmentStore = attachmentStore ?? AttachmentStore.instance {
     StorefrontPolicy.instance.addListener(_storefrontChanged);
   }
   final ProviderConfig provider;
   final String apiKey;
   final Duration bodyIdleTimeout;
+  final AttachmentStore _attachmentStore;
   bool _observingStorefront = true;
   bool _requestSent = false;
   bool _cancelled = false;
   String? _requestedModel;
+  bool _hasAttachments = false;
   SearchClient? _searchClient;
   final HttpClient _client = HttpClient()
     ..connectionTimeout = const Duration(seconds: 20);
@@ -128,7 +132,7 @@ class ModelApiClient {
     '${provider.protocol == ApiProtocol.anthropic ? 'messages' : 'chat/completions'}',
   );
 
-  Map<String, Object?> _body(
+  Future<Map<String, Object?>> _body(
     List<ChatMessage> history,
     String model,
     String systemPrompt,
@@ -137,7 +141,7 @@ class ModelApiClient {
     SearchResult? search,
     int contextWindowTokens,
     void Function(int omittedMessages)? onContextTrimmed,
-  ) {
+  ) async {
     final messages = history
         .map(
           (message) => {
@@ -165,15 +169,78 @@ class ModelApiClient {
       systemPrompt: systemPrompt,
       windowTokens: contextWindowTokens,
       outputTokens: maxTokens ?? ChatContext.replyReserveTokens,
+      attachmentTokens: history
+          .map(
+            (m) => m.attachments.fold(0, (sum, a) => sum + a.estimatedTokens),
+          )
+          .toList(),
     );
     onContextTrimmed?.call(messages.length - selected.length);
+    final selectedHistory = history
+        .skip(messages.length - selected.length)
+        .toList();
+    final attachments = selectedHistory.expand((m) => m.attachments).toList();
+    _hasAttachments = attachments.isNotEmpty;
+    if (attachments.fold(0, (sum, a) => sum + a.size) >
+        AttachmentStore.maxTotalBytes) {
+      throw const AttachmentException('i18n.attachment_history_limit');
+    }
+    final wireMessages = <Map<String, Object?>>[];
+    for (var i = 0; i < selected.length; i++) {
+      final message = selected[i];
+      final local = selectedHistory[i];
+      if (local.attachments.isEmpty) {
+        wireMessages.add(message);
+        continue;
+      }
+      final parts = <Map<String, Object?>>[];
+      for (final attachment in local.attachments) {
+        final bytes = await _attachmentStore.read(attachment);
+        if (attachment.isText) {
+          parts.add({
+            'type': 'text',
+            'text':
+                'Attached file: ${attachment.name}\n<file_content>\n${utf8.decode(bytes)}\n</file_content>',
+          });
+        } else if (provider.protocol == ApiProtocol.anthropic) {
+          parts.add({
+            'type': attachment.isImage ? 'image' : 'document',
+            'source': {
+              'type': 'base64',
+              'media_type': attachment.mimeType,
+              'data': base64Encode(bytes),
+            },
+          });
+        } else if (attachment.isImage) {
+          parts.add({
+            'type': 'image_url',
+            'image_url': {
+              'url':
+                  'data:${attachment.mimeType};base64,${base64Encode(bytes)}',
+            },
+          });
+        } else {
+          parts.add({
+            'type': 'file',
+            'file': {
+              'filename': attachment.name,
+              'file_data': 'data:application/pdf;base64,${base64Encode(bytes)}',
+            },
+          });
+        }
+      }
+      if (message['content']!.isNotEmpty) {
+        parts.add({'type': 'text', 'text': message['content']});
+      }
+      wireMessages.add({'role': message['role'], 'content': parts});
+    }
     if (provider.protocol == ApiProtocol.anthropic) {
       return {
         'model': model,
         'max_tokens': maxTokens ?? 4096,
         'stream': true,
         if (systemPrompt.isNotEmpty) 'system': systemPrompt,
-        'messages': selected,
+        'messages': wireMessages,
       };
     }
     return {
@@ -184,7 +251,7 @@ class ModelApiClient {
       'messages': [
         if (systemPrompt.isNotEmpty)
           {'role': 'system', 'content': systemPrompt},
-        ...selected,
+        ...wireMessages,
       ],
     };
   }
@@ -294,6 +361,13 @@ class ModelApiClient {
       if (requireComplete && !finished) {
         throw ApiException(T('i18n.the_model_reply_did'));
       }
+    } on AttachmentException catch (error) {
+      throw ApiException(
+        error.toString(),
+        kind: error.key == 'i18n.attachment_history_limit'
+            ? ApiErrorKind.context
+            : ApiErrorKind.other,
+      );
     } on ChatContextException catch (error) {
       throw ApiException(T(error.message), kind: ApiErrorKind.context);
     } on FormatException {
@@ -336,7 +410,7 @@ class ModelApiClient {
     await _requireService(model: model);
     if (_cancelled) throw ApiException(T('i18n.reply_stopped'));
     // Validate the mandatory newest turn before opening or sending a request.
-    final body = _body(
+    final body = await _body(
       history,
       model,
       systemPrompt,
@@ -346,6 +420,7 @@ class ModelApiClient {
       contextWindowTokens,
       onContextTrimmed,
     );
+    if (_cancelled) throw ApiException(T('i18n.reply_stopped'));
     final request = await _client
         .postUrl(_chatUri)
         .timeout(const Duration(seconds: 25));
@@ -479,7 +554,9 @@ class ModelApiClient {
       final raw = await utf8.decoder.bind(_readBody(response)).join();
       final json = jsonDecode(raw);
       final data = json is Map ? json['data'] : null;
-      if (data is! List) throw ApiException(T('i18n.this_service_does_not_provide'));
+      if (data is! List) {
+        throw ApiException(T('i18n.this_service_does_not_provide'));
+      }
       return data
           .whereType<Map>()
           .map((item) => item['id'])
@@ -533,6 +610,21 @@ class ModelApiClient {
         kind: ApiErrorKind.context,
       );
     }
+    if (_hasAttachments && (status == 400 || status == 415 || status == 422)) {
+      final detail = raw.toLowerCase();
+      if (RegExp(
+            r'(image|vision|file|pdf|document|multimodal|content.?type|content.?block)',
+          ).hasMatch(detail) &&
+          RegExp(
+            r'(not support|unsupported|does not|not allowed|not permitted|invalid.*type|unknown.*type)',
+          ).hasMatch(detail)) {
+        return ApiException(
+          T('i18n.attachment_model_unsupported'),
+          kind: ApiErrorKind.model,
+        );
+      }
+      return ApiException(F('i18n.attachment_request_failed', [status]));
+    }
     return ApiException(
       F('i18n.request_failed', [status, _errorMessage(raw)]),
       kind: status == 401 || status == 403
@@ -557,7 +649,9 @@ class ModelApiClient {
       // Some compatible APIs return plain text errors.
     }
     for (final value in {apiKey, Uri.encodeComponent(apiKey)}) {
-      if (value.isNotEmpty) message = message.replaceAll(value, T('i18n.redacted'));
+      if (value.isNotEmpty) {
+        message = message.replaceAll(value, T('i18n.redacted'));
+      }
     }
     final compact = message.replaceAll(RegExp(r'\s+'), ' ').trim();
     return compact.length > 240 ? '${compact.substring(0, 240)}…' : compact;

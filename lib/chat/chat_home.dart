@@ -5,6 +5,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
+import 'package:file_selector/file_selector.dart' as files;
+import 'package:image_picker/image_picker.dart';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -14,6 +16,7 @@ import 'package:record/record.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:mulit_ai_flutter/core/storefront_policy.dart';
+import 'package:mulit_ai_flutter/chat/attachment_picker.dart';
 import 'package:mulit_ai_flutter/api/api_client.dart';
 import 'package:mulit_ai_flutter/chat/chat_context_screen.dart';
 import 'package:mulit_ai_flutter/chat/chat_message_meta.dart';
@@ -33,6 +36,8 @@ import 'package:mulit_ai_flutter/core/app_platform.dart';
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/core/apple_purchases.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/core/chat_attachment.dart';
+import 'package:mulit_ai_flutter/core/attachment_store.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/provider/provider_screen.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
@@ -49,6 +54,8 @@ import 'package:mulit_ai_flutter/voice/voice_recording.dart';
 import 'package:mulit_ai_flutter/voice/voice_recording_overlay.dart';
 import 'package:mulit_ai_flutter/voice/voice_settings_screen.dart';
 import 'package:mulit_ai_flutter/watch/watch_chat.dart';
+
+enum _AttachmentSource { camera, image, file }
 
 class ChatHome extends StatefulWidget {
   const ChatHome({super.key, this.onReady});
@@ -120,6 +127,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           section: section,
         ).then((cleared) async {
           if (cleared == true) {
+            await _discardDraftAttachments();
             await AppPreferences.instance.load();
             await _load();
           }
@@ -133,6 +141,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   }
 
   final _input = TextEditingController();
+  List<ChatAttachment> _attachments = [];
+  bool _pickingAttachment = false;
   final _inputFocus = FocusNode();
   final _recorder = AudioRecorder();
   final _player = AudioPlayer();
@@ -240,7 +250,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         });
       }
     });
-    _load();
+    unawaited(_load().then((_) => _recoverAttachments()));
   }
 
   Future<void> _removeStaleVoiceFiles(DateTime startedAt) async {
@@ -263,6 +273,11 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    if (!_starting) {
+      unawaited(
+        AttachmentStore.instance.delete(_attachments).catchError((_) {}),
+      );
+    }
     if (isDesktopApp) _desktopMenu.setMethodCallHandler(null);
     _desktopRevision.dispose();
     _watchUpdates.setMethodCallHandler(null);
@@ -347,7 +362,10 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       }
     }
     if (_speechClient case final client?) {
-      if (StorefrontPolicy.instance.blocks(client.config.baseUrl, model: client.config.ttsModel)) {
+      if (StorefrontPolicy.instance.blocks(
+        client.config.baseUrl,
+        model: client.config.ttsModel,
+      )) {
         client.close();
       }
     }
@@ -400,6 +418,13 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   Future<void> _load() async {
     final initialLoad = _loading;
     try {
+      if (initialLoad) {
+        try {
+          await ChatStore.instance.removeOrphanAttachments(DateTime.now());
+        } catch (_) {
+          // Retry orphan cleanup on the next launch; never block chat startup.
+        }
+      }
       bool watchProcessing = false;
       try {
         if (supportsWatchCompanion) {
@@ -428,10 +453,14 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       final canSpeak =
           (supportsSystemVoice && ttsId == systemVoiceId) ||
           speechService != null &&
-          !StorefrontPolicy.instance.blocks(speechService.baseUrl, model: speechService.ttsModel) &&
-          speechService.ttsModel.trim().isNotEmpty &&
-          speechService.voice.trim().isNotEmpty &&
-          (await store.voiceApiKey(speechService))?.trim().isNotEmpty == true;
+              !StorefrontPolicy.instance.blocks(
+                speechService.baseUrl,
+                model: speechService.ttsModel,
+              ) &&
+              speechService.ttsModel.trim().isNotEmpty &&
+              speechService.voice.trim().isNotEmpty &&
+              (await store.voiceApiKey(speechService))?.trim().isNotEmpty ==
+                  true;
       final topics = await ChatStore.instance.topics();
       final savedSelection = _loading
           ? await ChatStore.instance.lastChatSelection()
@@ -445,7 +474,16 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       if (!mounted) return;
       setState(() {
         _providers = providers;
-        _restrictedProviderIds = allProviders.where((p) => StorefrontPolicy.instance.blocks(p.baseUrl, presetId: p.presetId, model: p.model)).map((p) => p.id).toSet();
+        _restrictedProviderIds = allProviders
+            .where(
+              (p) => StorefrontPolicy.instance.blocks(
+                p.baseUrl,
+                presetId: p.presetId,
+                model: p.model,
+              ),
+            )
+            .map((p) => p.id)
+            .toSet();
         _searchEnabled = searchEnabled;
         _canSpeak = canSpeak;
         _watchProcessing = watchProcessing;
@@ -533,7 +571,10 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     final cleared = await _pushRoute<bool>(
       appPageRoute(builder: (_) => PrivacyScreen(canClearData: _canClearData)),
     );
-    if (cleared == true) await AppPreferences.instance.load();
+    if (cleared == true) {
+      await _discardDraftAttachments();
+      await AppPreferences.instance.load();
+    }
   }
 
   Future<void> _openVoiceSettings() async {
@@ -547,6 +588,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   void _openTopics() => _scaffoldKey.currentState?.openDrawer();
 
   bool _canClearData() =>
+      !_pickingAttachment &&
       !_sending &&
       !_watchProcessing &&
       !_starting &&
@@ -576,6 +618,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   }
 
   Future<void> _newTopic() async {
+    if (_pickingAttachment || _starting && !_sending) return;
     _showDesktopChat();
     if (_providers.isEmpty) {
       await _openProviders();
@@ -588,6 +631,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     final model = previous == null
         ? provider.model
         : _currentModel ?? provider.model;
+    await _discardDraftAttachments();
+    if (!mounted) return;
     setState(() {
       _topic = null;
       _draftProviderId = provider.id;
@@ -605,9 +650,11 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   }
 
   Future<void> _selectTopic(int id) async {
+    if (_pickingAttachment || _starting && !_sending) return;
     final topic = _topics.where((item) => item.id == id).firstOrNull;
     if (topic == null) return;
     final messages = await ChatStore.instance.messages(id);
+    await _discardDraftAttachments();
     if (!mounted) return;
     setState(() {
       _topic = topic;
@@ -628,11 +675,15 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
 
   Future<void> _changeModel() async {
     final topic = _topic;
+    final retryWithAttachments =
+        _error != null &&
+        _messages.lastOrNull?.role == 'user' &&
+        _messages.any((m) => m.attachments.isNotEmpty);
     if (_providers.isEmpty) {
       await _openModelSettings();
       return;
     }
-    if (_sending || _starting) {
+    if (_sending || _starting || _pickingAttachment) {
       _notify(T('i18n.stop_the_current_response_before'));
       return;
     }
@@ -665,8 +716,12 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       await _load();
       if (mounted) {
         setState(() {
-          _error = null;
-          _errorAction = ChatErrorAction.none;
+          _error = retryWithAttachments
+              ? T('i18n.attachment_model_changed_retry')
+              : null;
+          _errorAction = retryWithAttachments
+              ? ChatErrorAction.retry
+              : ChatErrorAction.none;
         });
       }
     }
@@ -736,8 +791,11 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   Future<void> _startRecording() async {
     if (_preparingVoiceRecording) return;
     _preparingVoiceRecording = true;
-    try { await _prepareRecording(); }
-    finally { _preparingVoiceRecording = false; }
+    try {
+      await _prepareRecording();
+    } finally {
+      _preparingVoiceRecording = false;
+    }
   }
 
   Future<void> _prepareRecording() async {
@@ -864,7 +922,9 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     var sendAfterTranscription = false;
     try {
       await _recorder.stop();
-      if (recording == null) throw VoiceException(T('i18n.audio_capture_failed_try_again'));
+      if (recording == null) {
+        throw VoiceException(T('i18n.audio_capture_failed_try_again'));
+      }
       final data = await recording.finish();
       if (!await _ensurePurchaseAccess() ||
           transcriptionGeneration != _transcriptionGeneration) {
@@ -1039,13 +1099,18 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     String? path;
     try {
       if (await usesSystemVoice(ChatStore.instance, 'voice_tts_id')) {
-        final voiceIdentifier = await ChatStore.instance.setting(systemSpeechVoiceSetting);
+        final voiceIdentifier = await ChatStore.instance.setting(
+          systemSpeechVoiceSetting,
+        );
         if (!mounted || generation != _speechGeneration) return;
         _systemSpeechPlaying = true;
         setState(() => _speechState = SpeechPlaybackState.playing);
         try {
-          await SystemVoice.speak(readableMarkdown(markdown), _speechLocale,
-            voiceIdentifier: voiceIdentifier);
+          await SystemVoice.speak(
+            readableMarkdown(markdown),
+            _speechLocale,
+            voiceIdentifier: voiceIdentifier,
+          );
         } finally {
           _systemSpeechPlaying = false;
           if (mounted && generation == _speechGeneration) {
@@ -1088,7 +1153,11 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           _speechState = SpeechPlaybackState.idle;
           _speechMessageId = null;
         });
-        _notify(error is VoiceException ? T(error.message) : T('i18n.could_not_read_aloud_try'));
+        _notify(
+          error is VoiceException
+              ? T(error.message)
+              : T('i18n.could_not_read_aloud_try'),
+        );
       }
     } finally {
       client?.close();
@@ -1106,9 +1175,171 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _discardDraftAttachments() async {
+    final pending = _attachments;
+    _attachments = [];
+    try {
+      await AttachmentStore.instance.delete(pending);
+    } catch (_) {
+      // Unreferenced files are retried by startup cleanup.
+    }
+  }
+
+  Future<void> _removeAttachment(ChatAttachment attachment) async {
+    setState(() => _attachments.remove(attachment));
+    try {
+      await AttachmentStore.instance.delete([attachment]);
+    } catch (_) {
+      if (mounted) _notify(T('i18n.attachment_cleanup_pending'));
+    }
+  }
+
+  Future<void> _importAttachments(
+    List<XFile> selected, {
+    bool imageOnly = false,
+  }) async {
+    if (selected.isEmpty) return;
+    final imported = <ChatAttachment>[];
+    try {
+      if (_attachments.length + selected.length > AttachmentStore.maxCount) {
+        throw const AttachmentException('i18n.attachment_count_limit');
+      }
+      for (final selectedFile in selected) {
+        imported.add(
+          await AttachmentStore.instance.importFile(
+            selectedFile.path,
+            selectedFile.name,
+            imageOnly: imageOnly,
+          ),
+        );
+      }
+      AttachmentStore.validateSelection([..._attachments, ...imported]);
+      if (!mounted) return;
+      setState(() {
+        _attachments.addAll(imported);
+        _voiceMode = false;
+      });
+      imported.clear();
+    } finally {
+      await AttachmentStore.instance.delete(imported);
+    }
+  }
+
+  Future<void> _recoverAttachments() async {
+    if (!supportsImagePickerRecovery || !mounted) return;
+    setState(() => _pickingAttachment = true);
+    try {
+      final recovered = await ImagePicker().retrieveLostData();
+      if (recovered.exception != null) {
+        throw const AttachmentException('i18n.attachment_pick_failed');
+      }
+      if (recovered.files case final selected?) {
+        await _importAttachments(selected, imageOnly: true);
+      }
+    } catch (_) {
+      if (mounted) _notify(T('i18n.attachment_pick_failed'));
+    } finally {
+      if (mounted) setState(() => _pickingAttachment = false);
+    }
+  }
+
+  Future<void> _pickAttachment() async {
+    if (_pickingAttachment ||
+        _sending ||
+        _starting ||
+        _recording ||
+        _transcribing) {
+      return;
+    }
+    _inputFocus.unfocus();
+    final remaining = AttachmentStore.maxCount - _attachments.length;
+    if (remaining <= 0) {
+      _notify(T('i18n.attachment_count_limit'));
+      return;
+    }
+    setState(() => _pickingAttachment = true);
+    try {
+      final source = await showAppModalPopup<_AttachmentSource>(
+        context: context,
+        builder: (context) => CupertinoActionSheet(
+          title: Text(T('i18n.attachment_add')),
+          message: Text(T('i18n.attachment_formats')),
+          actions: [
+            for (final source in _AttachmentSource.values)
+              CupertinoActionSheetAction(
+                onPressed: () => Navigator.pop(context, source),
+                child: Text(
+                  T(switch (source) {
+                    _AttachmentSource.image => 'i18n.attachment_images',
+                    _AttachmentSource.camera => 'i18n.attachment_camera',
+                    _AttachmentSource.file => 'i18n.attachment_files',
+                  }),
+                ),
+              ),
+          ],
+          cancelButton: CupertinoActionSheetAction(
+            onPressed: () => Navigator.pop(context),
+            child: Text(T('i18n.cancel')),
+          ),
+        ),
+      );
+      if (source == null || !mounted) return;
+      final List<XFile> selected;
+      switch (source) {
+        case _AttachmentSource.image:
+          selected = await pickChatImages(remaining);
+        case _AttachmentSource.camera:
+          if (!supportsCameraCapture) {
+            throw const AttachmentException(
+              'i18n.attachment_camera_unavailable',
+            );
+          }
+          final photo = await ImagePicker().pickImage(
+            source: ImageSource.camera,
+            requestFullMetadata: false,
+          );
+          selected = photo == null ? [] : [photo];
+        case _AttachmentSource.file:
+          final file = await files.openFile(
+            acceptedTypeGroups: [
+              files.XTypeGroup(
+                label: T('i18n.attachment_files'),
+                extensions: [
+                  'pdf',
+                  'jpg',
+                  'jpeg',
+                  'png',
+                  'gif',
+                  'webp',
+                  ...AttachmentStore.textExtensions,
+                ],
+                uniformTypeIdentifiers: ['public.data'],
+              ),
+            ],
+          );
+          selected = file == null ? [] : [file];
+      }
+      await _importAttachments(
+        selected,
+        imageOnly: source != _AttachmentSource.file,
+      );
+    } catch (error) {
+      if (mounted) {
+        _notify(
+          error is AttachmentException
+              ? error.toString()
+              : T('i18n.attachment_pick_failed'),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _pickingAttachment = false);
+    }
+  }
+
   Future<void> _send() async {
     final content = _input.text.trim();
-    if (content.isEmpty ||
+    if ((content.isEmpty && _attachments.isEmpty) ||
+        _pickingAttachment ||
         _starting ||
         _sending ||
         _recording ||
@@ -1141,7 +1372,11 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     final provider = _providers.where((p) => p.id == providerId).firstOrNull;
     if (provider == null) {
       setState(() {
-        _error = T(_restrictedProviderIds.contains(providerId) ? 'i18n.openai_storefront_unavailable' : 'i18n.the_service_for_this_chat');
+        _error = T(
+          _restrictedProviderIds.contains(providerId)
+              ? 'i18n.openai_storefront_unavailable'
+              : 'i18n.the_service_for_this_chat',
+        );
         _errorAction = ChatErrorAction.model;
       });
       return;
@@ -1167,12 +1402,16 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       return;
     }
     ChatTopic topic;
+    final attachments = List<ChatAttachment>.of(_attachments);
+    AttachmentStore.validateSelection(attachments);
     if (_topic == null) {
       final id = await ChatStore.instance.createTopicWithMessage(
         provider,
         model,
         content,
+        attachments: attachments,
       );
+      _attachments = [];
       final topics = await ChatStore.instance.topics();
       topic = topics.firstWhere((item) => item.id == id);
       if (!mounted) return;
@@ -1191,11 +1430,17 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         content,
         modelId: model,
         provider: provider,
+        attachments: attachments,
       );
+      _attachments = [];
       if (first) {
         await ChatStore.instance.updateTopic(
           topic.id,
-          title: initialTopicTitle(content),
+          title: initialTopicTitle(
+            content.isEmpty
+                ? attachments.map((a) => a.name).join(', ')
+                : content,
+          ),
         );
       }
     }
@@ -1220,7 +1465,11 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           .firstOrNull;
       if (provider == null) {
         setState(() {
-          _error = T(_restrictedProviderIds.contains(topic.providerId) ? 'i18n.openai_storefront_unavailable' : 'i18n.the_service_was_deleted_choose');
+          _error = T(
+            _restrictedProviderIds.contains(topic.providerId)
+                ? 'i18n.openai_storefront_unavailable'
+                : 'i18n.the_service_was_deleted_choose',
+          );
           _errorAction = ChatErrorAction.model;
         });
         return;
@@ -1266,7 +1515,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       _sendingTopicId = topic.id;
       _reply.value = '';
       _replySources = const [];
-      _searching = _searchEnabled;
+      _searching = _searchEnabled && history.last.content.trim().isNotEmpty;
       _contextTrimmed = false;
       _replyElapsedMs.value = 0;
       _error = null;
@@ -1288,7 +1537,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     int? firstTokenMs;
     ReplyUsage? usage;
     List<SearchSource> sources = const [];
-    final searchEnabled = _searchEnabled;
+    final searchEnabled =
+        _searchEnabled && history.last.content.trim().isNotEmpty;
     try {
       await _refreshTopics();
       ({SearchProviderConfig config, String apiKey})? webSearch;
@@ -1398,7 +1648,13 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       }
       if (shouldGenerateTitle && mounted) {
         unawaited(
-          _generateTitle(topic, provider, key, history.first.content, answer),
+          _generateTitle(
+            topic,
+            provider,
+            key,
+            history.first.titleContent,
+            answer,
+          ),
         );
       }
       if (completed &&
@@ -1633,6 +1889,10 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                         onChangeModel: _changeModel,
                       ),
                     ChatComposer(
+                      attachments: _attachments,
+                      pickingAttachment: _pickingAttachment,
+                      onAddAttachment: _pickAttachment,
+                      onRemoveAttachment: _removeAttachment,
                       controller: _input,
                       focusNode: _inputFocus,
                       voiceMode: _voiceMode,
@@ -1718,6 +1978,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           return MessageBubble(
             role: message.role,
             content: message.content,
+            attachments: message.attachments,
             messageId: messageId,
             searchSources: message.searchSources,
             providerName: message.providerName,

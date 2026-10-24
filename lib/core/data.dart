@@ -8,6 +8,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'package:mulit_ai_flutter/core/storefront_policy.dart';
+import 'package:mulit_ai_flutter/core/chat_attachment.dart';
+import 'package:mulit_ai_flutter/core/attachment_store.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
 
@@ -499,6 +501,7 @@ class ChatMessage {
     this.inputTokens,
     this.outputTokens,
     this.searchSources = const [],
+    this.attachments = const [],
   });
   final int id;
   final int topicId;
@@ -514,6 +517,10 @@ class ChatMessage {
   final int? inputTokens;
   final int? outputTokens;
   final List<SearchSource> searchSources;
+  final List<ChatAttachment> attachments;
+
+  String get titleContent =>
+      content.isNotEmpty ? content : attachments.map((a) => a.name).join(', ');
 
   factory ChatMessage.fromMap(Map<String, Object?> map) => ChatMessage(
     id: map['id'] as int,
@@ -530,6 +537,7 @@ class ChatMessage {
     inputTokens: map['input_tokens'] as int?,
     outputTokens: map['output_tokens'] as int?,
     searchSources: SearchSource.decode(map['search_sources'] as String?),
+    attachments: ChatAttachment.decode(map['attachments'] as String?),
   );
 }
 
@@ -660,7 +668,7 @@ class ChatStore {
     final path = p.join(await getDatabasesPath(), 'model_chat.db');
     _database = await openDatabase(
       path,
-      version: 5,
+      version: 6,
       onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: (db, _) async {
         await db.execute('''CREATE TABLE providers (
@@ -692,7 +700,8 @@ class ChatStore {
           total_ms INTEGER,
           input_tokens INTEGER,
           output_tokens INTEGER,
-          search_sources TEXT
+          search_sources TEXT,
+          attachments TEXT
         )''');
         await db.execute(
           'CREATE INDEX messages_topic ON messages(topic_id, id)',
@@ -732,6 +741,9 @@ class ChatStore {
           await db.execute(
             'ALTER TABLE messages ADD COLUMN search_sources TEXT',
           );
+        }
+        if (oldVersion < 6) {
+          await db.execute('ALTER TABLE messages ADD COLUMN attachments TEXT');
         }
       },
     );
@@ -1059,6 +1071,7 @@ class ChatStore {
       await transaction.delete('providers');
     });
     await _withSecureStorage(() => _secrets.deleteAll());
+    await AttachmentStore.instance.clear();
   }
 
   Future<String> globalPrompt() async {
@@ -1232,9 +1245,12 @@ class ChatStore {
   Future<int> createTopicWithMessage(
     ProviderConfig provider,
     String model,
-    String content,
-  ) async {
-    final title = initialTopicTitle(content);
+    String content, {
+    List<ChatAttachment> attachments = const [],
+  }) async {
+    final title = initialTopicTitle(
+      content.isEmpty ? attachments.map((a) => a.name).join(', ') : content,
+    );
     final now = DateTime.now().millisecondsSinceEpoch;
     return (await db).transaction((transaction) async {
       final topicId = await transaction.insert('topics', {
@@ -1252,6 +1268,7 @@ class ChatStore {
         'provider_name': provider.name,
         'provider_preset_id': presetForProvider(provider)?.id,
         'model_id': model,
+        'attachments': ChatAttachment.encode(attachments),
       });
       return topicId;
     });
@@ -1411,8 +1428,26 @@ class ChatStore {
     return count == 1;
   }
 
-  Future<void> deleteTopic(int id) async =>
-      (await db).delete('topics', where: 'id = ?', whereArgs: [id]);
+  Future<void> deleteTopic(int id) async {
+    final attachments = (await messages(id))
+        .expand((m) => m.attachments)
+        .toList();
+    await (await db).delete('topics', where: 'id = ?', whereArgs: [id]);
+    await AttachmentStore.instance.delete(attachments);
+  }
+
+  Future<void> removeOrphanAttachments(DateTime before) async {
+    final rows = await (await db).query(
+      'messages',
+      columns: ['attachments'],
+      where: 'attachments IS NOT NULL',
+    );
+    final retained = rows
+        .expand((row) => ChatAttachment.decode(row['attachments'] as String?))
+        .map((a) => a.fileName)
+        .toSet();
+    await AttachmentStore.instance.removeOrphans(retained, before);
+  }
 
   Future<List<ChatMessage>> messages(int topicId) async =>
       (await (await db).query(
@@ -1433,28 +1468,39 @@ class ChatStore {
     int? inputTokens,
     int? outputTokens,
     List<SearchSource> searchSources = const [],
+    List<ChatAttachment> attachments = const [],
   }) async {
-    final database = await db;
-    final id = await database.insert('messages', {
-      'topic_id': topicId,
-      'role': role,
-      'content': content,
-      'created_at': DateTime.now().millisecondsSinceEpoch,
-      'provider_id': provider?.id,
-      'provider_name': provider?.name,
-      'provider_preset_id': provider == null
-          ? null
-          : presetForProvider(provider)?.id,
-      'model_id': modelId,
-      'first_token_ms': firstTokenMs,
-      'total_ms': totalMs,
-      'input_tokens': inputTokens,
-      'output_tokens': outputTokens,
-      'search_sources': searchSources.isEmpty
-          ? null
-          : jsonEncode(searchSources.map((source) => source.toJson()).toList()),
+    return (await db).transaction((transaction) async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final id = await transaction.insert('messages', {
+        'topic_id': topicId,
+        'role': role,
+        'content': content,
+        'created_at': now,
+        'provider_id': provider?.id,
+        'provider_name': provider?.name,
+        'provider_preset_id': provider == null
+            ? null
+            : presetForProvider(provider)?.id,
+        'model_id': modelId,
+        'first_token_ms': firstTokenMs,
+        'total_ms': totalMs,
+        'input_tokens': inputTokens,
+        'output_tokens': outputTokens,
+        'search_sources': searchSources.isEmpty
+            ? null
+            : jsonEncode(
+                searchSources.map((source) => source.toJson()).toList(),
+              ),
+        'attachments': ChatAttachment.encode(attachments),
+      });
+      await transaction.update(
+        'topics',
+        {'updated_at': now},
+        where: 'id = ?',
+        whereArgs: [topicId],
+      );
+      return id;
     });
-    await updateTopic(topicId);
-    return id;
   }
 }

@@ -17,8 +17,18 @@ import 'package:mulit_ai_flutter/settings/startup_screen.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 import 'package:mulit_ai_flutter/watch/watch_chat.dart';
 
+bool _compressionLicenseRegistered = false;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (!_compressionLicenseRegistered) {
+    _compressionLicenseRegistered = true;
+    LicenseRegistry.addLicense(() async* {
+      yield LicenseEntryWithLineBreaks([
+        'Luban',
+      ], await rootBundle.loadString('assets/licenses/luban.txt'));
+    });
+  }
   assert(() {
     // Inspector paint diagnostics can persist across hot restarts in debug.
     debugPaintBaselinesEnabled = false;

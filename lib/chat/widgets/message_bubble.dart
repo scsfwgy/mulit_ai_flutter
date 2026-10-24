@@ -5,6 +5,8 @@ import 'package:flutter/material.dart' show SelectableText;
 import 'package:mulit_ai_flutter/chat/assistant_markdown.dart';
 import 'package:mulit_ai_flutter/chat/chat_loading_status.dart';
 import 'package:mulit_ai_flutter/chat/chat_message_meta.dart';
+import 'package:mulit_ai_flutter/chat/widgets/chat_attachments.dart';
+import 'package:mulit_ai_flutter/core/chat_attachment.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
 import 'package:mulit_ai_flutter/search/search_sources.dart';
@@ -36,6 +38,7 @@ class MessageBubble extends StatelessWidget {
     this.inputTokens,
     this.outputTokens,
     this.searchSources = const [],
+    this.attachments = const [],
     this.onSpeak,
   });
 
@@ -51,6 +54,7 @@ class MessageBubble extends StatelessWidget {
   final int? inputTokens;
   final int? outputTokens;
   final List<SearchSource> searchSources;
+  final List<ChatAttachment> attachments;
 
   /// 生成中气泡的首段可见文字耗时；生成过程中持续更新。
   final ValueListenable<int> replyElapsedMs;
@@ -96,6 +100,10 @@ class MessageBubble extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (attachments.isNotEmpty) ...[
+                          ChatAttachments(attachments: attachments),
+                          if (content.isNotEmpty) const SizedBox(height: 8),
+                        ],
                         if (content.isEmpty)
                           const SizedBox.shrink()
                         else if (user)

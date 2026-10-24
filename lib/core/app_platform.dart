@@ -21,3 +21,7 @@ bool get supportsWatchCompanion =>
       TargetPlatform.android,
       TargetPlatform.iOS,
     ].contains(defaultTargetPlatform);
+
+bool get supportsCameraCapture => supportsWatchCompanion;
+bool get supportsImagePickerRecovery =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
