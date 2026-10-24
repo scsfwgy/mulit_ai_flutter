@@ -1280,23 +1280,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   }
 
   Future<List<XFile>> _selectAttachmentFile() async {
-    final file = await files.openFile(
-      acceptedTypeGroups: [
-        files.XTypeGroup(
-          label: T('i18n.attachment_files'),
-          extensions: [
-            'pdf',
-            'jpg',
-            'jpeg',
-            'png',
-            'gif',
-            'webp',
-            ...AttachmentStore.textExtensions,
-          ],
-          uniformTypeIdentifiers: ['public.data'],
-        ),
-      ],
-    );
+    final file = await files.openFile();
     return file == null ? [] : [file];
   }
 

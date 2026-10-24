@@ -53,14 +53,14 @@ void main() {
       expect(bytes.length, lessThan(original.length));
       final decoded = img.decodeJpg(bytes)!;
       expect((decoded.width, decoded.height), (600, 900));
-    image.exif.imageIfd.orientation = 1;
-    final lowQuality = img.encodeJpg(
-      img.copyResize(image, width: 1200, height: 800),
+      image.exif.imageIfd.orientation = 1;
+      final lowQuality = img.encodeJpg(
+        img.copyResize(image, width: 1200, height: 800),
         quality: 20,
       );
-    expect(lowQuality.length, greaterThan(100 * 1024));
+      expect(lowQuality.length, greaterThan(100 * 1024));
       final fallback = await compressChatImage(lowQuality, 'image/jpeg');
-    expect(identical(fallback.$1, lowQuality), isTrue);
+      expect(identical(fallback.$1, lowQuality), isTrue);
     },
   );
 
@@ -107,7 +107,7 @@ void main() {
         'ai-link-image-compression-',
       );
       addTearDown(() => root.delete(recursive: true));
-      final image = img.Image(width: 2000, height: 1500, numChannels: 4);
+      final image = img.Image(width: 3600, height: 2700, numChannels: 4);
       img.fill(image, color: img.ColorRgba8(100, 150, 200, 255));
       final original = img.encodePng(image, level: 0);
       expect(original.length, greaterThan(AttachmentStore.maxFileBytes));
@@ -125,7 +125,7 @@ void main() {
         expect(saved.length, lessThan(original.length));
         expect(saved.length, lessThanOrEqualTo(AttachmentStore.maxFileBytes));
         final decoded = img.decodeImage(saved)!;
-        expect((decoded.width, decoded.height), (1000, 750));
+        expect((decoded.width, decoded.height), (1800, 1350));
         expect(
           attachment.fileName,
           endsWith(attachment.mimeType == 'image/png' ? '.png' : '.jpg'),

@@ -41,29 +41,37 @@ void main() {
   );
 
   test(
-    'rejects unsupported, binary text, invalid UTF-8, empty and oversize files',
+    'accepts any non-empty file and still rejects empty or oversize files',
     () async {
-      for (final example in [
-        ('office.docx', [80, 75, 3, 4]),
-        ('binary.txt', [0, 1, 2]),
-        ('encoding.txt', [255, 254]),
-        ('empty.txt', <int>[]),
-        ('no-extension', [97]),
-      ]) {
-        await expectLater(
-          imported(example.$1, example.$2),
-          throwsA(isA<AttachmentException>()),
-        );
-      }
+      final docx = await imported('office.docx', [80, 75, 3, 4, 20]);
+      expect(docx.isGenericFile, isTrue);
+      expect(docx.mimeType, 'application/octet-stream');
+      expect(docx.name, 'office.docx');
+      expect(docx.fileName, endsWith('.bin'));
+      expect(await store.read(docx), [80, 75, 3, 4, 20]);
+      expect((await imported('binary.txt', [0, 1, 2])).isGenericFile, isTrue);
+      expect(
+        (await imported('encoding.txt', [255, 254])).isGenericFile,
+        isTrue,
+      );
+      final plain = await imported('no-extension', [97]);
+      expect(plain.isText, isTrue);
+      expect(utf8.decode(await store.read(plain)), 'a');
+      await expectLater(
+        imported('empty.txt', <int>[]),
+        throwsA(isA<AttachmentException>()),
+      );
       final large = File('${root.path}/large.pdf');
       final handle = await large.open(mode: FileMode.write);
       await handle.truncate(AttachmentStore.maxFileBytes + 1);
       await handle.close();
+      final owned = await store.directory;
+      final before = await owned.list().length;
       await expectLater(
         store.importFile(large.path, 'large.pdf'),
         throwsA(isA<AttachmentException>()),
       );
-      expect(await (await store.directory).exists(), isFalse);
+      expect(await owned.list().length, before);
     },
   );
 
@@ -121,31 +129,68 @@ void main() {
     expect(await File('${root.path}/retained.txt').exists(), isTrue);
   });
 
-  test('nine mixed attachments are allowed and each may reach 10 MB', () {
-    final mixed = [
-      for (var i = 0; i < 9; i++)
-        ChatAttachment(
-          name: i.isEven ? 'photo.jpg' : 'report.pdf',
-          fileName: '',
-          mimeType: i.isEven ? 'image/jpeg' : 'application/pdf',
-          size: AttachmentStore.maxFileBytes,
-          estimatedTokens: 1,
-        ),
-    ];
-    expect(() => AttachmentStore.validateSelection(mixed), returnsNormally);
+  test('DeepSeek file parts are flat and other hosts stay nested', () {
+    expect(chatFileUsesFlatPart('https://api.deepseek.com'), isTrue);
+    expect(chatFileUsesFlatPart('https://api.deepseek.com/v1'), isTrue);
+    expect(chatFileUsesFlatPart('https://api.openai.com/v1'), isFalse);
+    final flat = chatFileContent(
+      filename: 'notes.docx',
+      mimeType: 'application/octet-stream',
+      base64Data: 'YQ==',
+      flat: true,
+    );
+    expect(flat.containsKey('file'), isFalse);
+    expect(flat['filename'], 'notes.docx');
+    expect(flat['file_data'], 'data:application/octet-stream;base64,YQ==');
+    final nested = chatFileContent(
+      filename: 'report.pdf',
+      mimeType: 'application/pdf',
+      base64Data: 'YQ==',
+      flat: false,
+    );
     expect(
-      () => AttachmentStore.validateSelection([...mixed, mixed.first]),
+      (nested['file'] as Map)['file_data'],
+      'data:application/pdf;base64,YQ==',
+    );
+  });
+
+  test('one file may reach 30 MB and a message stays within 90 MB', () {
+    ChatAttachment sized(int size) => ChatAttachment(
+      name: 'report.pdf',
+      fileName: '',
+      mimeType: 'application/pdf',
+      size: size,
+      estimatedTokens: 1,
+    );
+    expect(
+      () => AttachmentStore.validateSelection([
+        sized(AttachmentStore.maxFileBytes),
+      ]),
+      returnsNormally,
+    );
+    expect(
+      () => AttachmentStore.validateSelection(
+        List.filled(3, sized(AttachmentStore.maxFileBytes)),
+      ),
+      returnsNormally,
+    );
+    expect(
+      () => AttachmentStore.validateSelection(
+        List.filled(4, sized(AttachmentStore.maxFileBytes)),
+      ),
+      throwsA(isA<AttachmentException>()),
+    );
+    final nine = [
+      for (var i = 0; i < 9; i++) sized(AttachmentStore.maxTotalBytes ~/ 9),
+    ];
+    expect(() => AttachmentStore.validateSelection(nine), returnsNormally);
+    expect(
+      () => AttachmentStore.validateSelection([...nine, nine.first]),
       throwsA(isA<AttachmentException>()),
     );
     expect(
       () => AttachmentStore.validateSelection([
-        const ChatAttachment(
-          name: 'large.pdf',
-          fileName: '',
-          mimeType: 'application/pdf',
-          size: AttachmentStore.maxFileBytes + 1,
-          estimatedTokens: 1,
-        ),
+        sized(AttachmentStore.maxFileBytes + 1),
       ]),
       throwsA(isA<AttachmentException>()),
     );
@@ -174,6 +219,7 @@ void main() {
           'data.csv',
           utf8.encode('name,value\nA,12'),
         );
+        final binary = await imported('notes.docx', [80, 75, 3, 4]);
         final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
         addTearDown(() => server.close(force: true));
         final requests = <Map<String, dynamic>>[];
@@ -211,7 +257,7 @@ void main() {
           attachments: attachments,
         );
         final history = [
-          message('user', '', [image, pdf, text]),
+          message('user', '', [image, pdf, text, binary]),
           message('assistant', 'seen'),
           message('user', 'Follow up'),
         ];
@@ -232,7 +278,7 @@ void main() {
         final messages = requests.last['messages'] as List;
         expect(messages, hasLength(3));
         final parts = messages.first['content'] as List;
-        expect(parts, hasLength(3));
+        expect(parts, hasLength(4));
         if (protocol == ApiProtocol.openAi) {
           expect(parts[0]['type'], 'image_url');
           expect(
@@ -244,6 +290,11 @@ void main() {
             parts[1]['file']['file_data'],
             startsWith('data:application/pdf;base64,'),
           );
+          expect(parts[3]['file']['filename'], 'notes.docx');
+          expect(
+            parts[3]['file']['file_data'],
+            startsWith('data:application/octet-stream;base64,'),
+          );
           expect(requests, hasLength(2));
           expect(requests[0]['messages'], requests[1]['messages']);
           expect(requests[1].containsKey('stream_options'), isFalse);
@@ -252,6 +303,8 @@ void main() {
           expect(parts[0]['source']['media_type'], 'image/png');
           expect(parts[1]['type'], 'document');
           expect(parts[1]['source']['media_type'], 'application/pdf');
+          expect(parts[3]['type'], 'document');
+          expect(parts[3]['source']['media_type'], 'application/octet-stream');
         }
         expect(parts[2]['text'], contains('name,value\nA,12'));
         expect(messages.last, {'role': 'user', 'content': 'Follow up'});
@@ -324,6 +377,52 @@ void main() {
     await send(ApiErrorKind.auth);
     expect(count, 2);
   });
+
+  test(
+    'a schema rejection of the file block is a model capability error',
+    () async {
+      final file = await imported('notes.bin', [0, 1, 2, 3, 4]);
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      server.listen((request) async {
+        await request.drain<void>();
+        request.response.statusCode = 400;
+        request.response.write(
+          '{"error":{"message":"unknown field `file`, expected `file_data`"}}',
+        );
+        await request.response.close();
+      });
+      await expectLater(
+        ModelApiClient(
+          ProviderConfig(
+            id: 1,
+            name: 'local',
+            baseUrl: 'http://127.0.0.1:${server.port}/v1',
+            model: 'deepseek-flash',
+            protocol: ApiProtocol.openAi,
+          ),
+          'local-test-key',
+          attachmentStore: store,
+        ).streamReply([
+          ChatMessage(
+            id: 1,
+            topicId: 1,
+            role: 'user',
+            content: '看一下',
+            createdAt: 0,
+            attachments: [file],
+          ),
+        ], 'deepseek-flash').join(),
+        throwsA(
+          isA<ApiException>().having(
+            (error) => error.kind,
+            'kind',
+            ApiErrorKind.model,
+          ),
+        ),
+      );
+    },
+  );
 
   test('context trims attachment turns before reading files; missing current files fail before HTTP', () async {
     final missing = ChatAttachment(

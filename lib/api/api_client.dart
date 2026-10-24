@@ -26,6 +26,26 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
+/// DeepSeek's chat file block is flat. Other OpenAI-compatible hosts nest it.
+bool chatFileUsesFlatPart(String baseUrl) =>
+    Uri.tryParse(baseUrl)?.host.toLowerCase() == 'api.deepseek.com';
+
+Map<String, Object?> chatFileContent({
+  required String filename,
+  required String mimeType,
+  required String base64Data,
+  required bool flat,
+}) {
+  final dataUrl = 'data:$mimeType;base64,$base64Data';
+  if (flat) {
+    return {'type': 'file', 'filename': filename, 'file_data': dataUrl};
+  }
+  return {
+    'type': 'file',
+    'file': {'filename': filename, 'file_data': dataUrl},
+  };
+}
+
 class ReplyUsage {
   const ReplyUsage({this.inputTokens, this.outputTokens});
 
@@ -99,7 +119,11 @@ class ModelApiClient {
   }
 
   void _storefrontChanged() {
-    if (StorefrontPolicy.instance.blocks(provider.baseUrl, presetId: provider.presetId, model: _requestedModel)) {
+    if (StorefrontPolicy.instance.blocks(
+      provider.baseUrl,
+      presetId: provider.presetId,
+      model: _requestedModel,
+    )) {
       cancel();
     }
   }
@@ -220,13 +244,14 @@ class ModelApiClient {
             },
           });
         } else {
-          parts.add({
-            'type': 'file',
-            'file': {
-              'filename': attachment.name,
-              'file_data': 'data:application/pdf;base64,${base64Encode(bytes)}',
-            },
-          });
+          parts.add(
+            chatFileContent(
+              filename: attachment.name,
+              mimeType: attachment.mimeType,
+              base64Data: base64Encode(bytes),
+              flat: chatFileUsesFlatPart(provider.baseUrl),
+            ),
+          );
         }
       }
       if (message['content']!.isNotEmpty) {
@@ -548,7 +573,10 @@ class ModelApiClient {
       if (response.statusCode < 200 || response.statusCode >= 300) {
         final raw = await _readErrorBody(response);
         throw ApiException(
-          F('i18n.model_fetch_failed', [response.statusCode, _errorMessage(raw)]),
+          F('i18n.model_fetch_failed', [
+            response.statusCode,
+            _errorMessage(raw),
+          ]),
         );
       }
       final raw = await utf8.decoder.bind(_readBody(response)).join();
@@ -561,7 +589,12 @@ class ModelApiClient {
           .whereType<Map>()
           .map((item) => item['id'])
           .whereType<String>()
-          .where((id) => id.isNotEmpty && !(StorefrontPolicy.instance.restricted && StorefrontPolicy.isOpenAIModel(id)))
+          .where(
+            (id) =>
+                id.isNotEmpty &&
+                !(StorefrontPolicy.instance.restricted &&
+                    StorefrontPolicy.isOpenAIModel(id)),
+          )
           .toSet()
           .toList()
         ..sort();
@@ -616,7 +649,7 @@ class ModelApiClient {
             r'(image|vision|file|pdf|document|multimodal|content.?type|content.?block)',
           ).hasMatch(detail) &&
           RegExp(
-            r'(not support|unsupported|does not|not allowed|not permitted|invalid.*type|unknown.*type)',
+            r'(not support|unsupported|does not|not allowed|not permitted|invalid.*(type|image|file|content)|unknown.*(type|field)|missing field|deserialize)',
           ).hasMatch(detail)) {
         return ApiException(
           T('i18n.attachment_model_unsupported'),

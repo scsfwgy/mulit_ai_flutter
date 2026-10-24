@@ -17,6 +17,7 @@ class ChatAttachment {
   bool get isImage => mimeType.startsWith('image/');
   bool get isPdf => mimeType == 'application/pdf';
   bool get isText => mimeType == 'text/plain';
+  bool get isGenericFile => !isImage && !isPdf && !isText;
 
   Map<String, Object> toJson() => {
     'name': name,

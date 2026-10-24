@@ -7,7 +7,7 @@
 - Android 与 iOS 手机端共用 Flutter 的 iOS 风格页面，不按运行平台切换两套页面；Wear OS 与 Apple Watch 使用各自的原生界面。Apple 平台代码待完整 Xcode 构建及配对设备验证。
 - 已实现文本聊天、流式回复、Markdown 回复、多话题、模型服务预设、自定义 API、表单、JSON 与扫码导入配置，以及全局和单模型提示词。
 - 当前协议是 OpenAI 兼容 Chat Completions 和 Claude Messages。新增平台时先判断能否复用协议适配器，再增加专用实现。
-- 已实现手机/桌面的图片、拍照入口（手机）和基础文件发送：图片/PDF 按协议直发，UTF-8 文本与代码文件本地读取；Office 文件、工具调用、跨设备云同步和历史导入导出尚未实现。附件流程与验证边界见 `doc/CHAT_ATTACHMENTS.md`。正式上传签名已在本机配置，但尚未在 Play Console 注册或上架；不要把 Android 构建成功写成 iOS 或商店发布成功。
+- 已实现手机/桌面的图片、拍照入口（手机）和文件发送：图片/PDF 按协议直发，UTF-8 文本本地读取，其它格式不限后缀并原样发送，是否支持由模型或接口决定。不在本地解析 Office 文档。工具调用、跨设备云同步和历史导入导出尚未实现。附件流程与验证边界见 `doc/CHAT_ATTACHMENTS.md`。正式上传签名已在本机配置，但尚未在 Play Console 注册或上架；不要把 Android 构建成功写成 iOS 或商店发布成功。
 - 产品功能路线与 RikkaHub 对照来源见 `TODO.md`；实施前重新核对现状与参考项目的最新说明。
 
 ## 代码地图
@@ -46,7 +46,7 @@
 ### 核心数据（core/）
 
 - `lib/core/data.dart`：服务配置、话题、消息模型；SQLite 和密钥存储。
-- `lib/core/chat_attachment.dart` 与 `lib/core/attachment_store.dart`：附件元数据与私有文件管理，SQLite v6 只新增可空 `attachments` 列；附件正文不写 Base64 入库。类型由文件内容校验，文本须为 UTF-8；每条图片与文件合计最多 9 个，单个附件 10 MB（图片按压缩后计算），已选请求上下文总计 90 MB；相册在选择时按剩余数量限制，不支持限量的系统使用单选累加，图片统一参考 Luban 压缩。取消草稿、删除话题、清空数据及启动时孤儿清理须同步处理文件，不能删除用户选择的原文件。
+- `lib/core/chat_attachment.dart` 与 `lib/core/attachment_store.dart`：附件元数据与私有文件管理，SQLite v6 只新增可空 `attachments` 列；附件正文不写 Base64 入库。类型由文件内容识别：已知图片、PDF 与合法 UTF-8 文本按类型发送，其它非空文件原样保存为通用文件，是否支持由模型或接口返回决定；相册和拍照仍只接受 JPEG、PNG、GIF、WebP。每条图片与文件合计最多 9 个，单个附件 30 MB（图片按压缩后计算），单条消息与已选请求上下文总计 90 MB；相册在选择时按剩余数量限制，不支持限量的系统使用单选累加，图片统一参考 Luban 压缩。取消草稿、删除话题、清空数据及启动时孤儿清理须同步处理文件，不能删除用户选择的原文件。
 - `lib/core/app_preferences.dart`：本地语言、白天/黑夜/跟随系统和主题色偏好；语言枚举与文案表已迁到 `lib/i18n/`，此处仅 re-export 保持旧导入路径可用。
 - `lib/core/apple_purchases.dart`：Apple 内购状态与刷新。
 

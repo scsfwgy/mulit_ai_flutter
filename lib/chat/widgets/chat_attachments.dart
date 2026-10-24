@@ -131,12 +131,16 @@ class _AttachmentPreview extends StatelessWidget {
       ),
     ),
     body: SafeArea(
-      child: attachment.isPdf
+      child: attachment.isPdf || attachment.isGenericFile
           ? Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Text(
-                  T('i18n.attachment_pdf_preview'),
+                  T(
+                    attachment.isPdf
+                        ? 'i18n.attachment_pdf_preview'
+                        : 'i18n.attachment_file_preview',
+                  ),
                   style: TextStyle(color: IosColors.secondary),
                 ),
               ),

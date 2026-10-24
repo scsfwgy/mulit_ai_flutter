@@ -22,42 +22,10 @@ class AttachmentStore {
   AttachmentStore([this._directory]);
   static final instance = AttachmentStore();
   static const maxCount = 9;
-  static const maxFileBytes = 10 * 1024 * 1024;
-  static const maxTotalBytes = maxCount * maxFileBytes;
+  static const maxFileBytes = 30 * 1024 * 1024;
+  static const maxTotalBytes = 90 * 1024 * 1024;
   // Source photos may exceed the upload limit before compression.
   static const maxImageSourceBytes = 64 * 1024 * 1024;
-  static const textExtensions = [
-    'txt',
-    'md',
-    'markdown',
-    'csv',
-    'tsv',
-    'json',
-    'jsonl',
-    'yaml',
-    'yml',
-    'xml',
-    'html',
-    'htm',
-    'css',
-    'js',
-    'ts',
-    'jsx',
-    'tsx',
-    'py',
-    'dart',
-    'java',
-    'kt',
-    'swift',
-    'c',
-    'h',
-    'cpp',
-    'rs',
-    'go',
-    'sql',
-    'sh',
-    'log',
-  ];
   Directory? _directory;
 
   Future<Directory> get directory async => _directory ??= Directory(
@@ -65,11 +33,21 @@ class AttachmentStore {
   );
 
   Future<File> file(ChatAttachment attachment) async {
-    if (!RegExp(r'^[a-f0-9-]{36}\.(jpg|png|gif|webp|pdf|txt)$')
+    if (!RegExp(r'^[a-f0-9-]{36}\.(jpg|png|gif|webp|pdf|txt|bin)$')
         .hasMatch(attachment.fileName)) {
       throw const AttachmentException('i18n.attachment_unavailable');
     }
     return File(p.join((await directory).path, attachment.fileName));
+  }
+
+  static String? _utf8Text(List<int> bytes) {
+    try {
+      final text = utf8.decode(bytes);
+      if (text.contains(RegExp(r'[\x00-\x08\x0b\x0c\x0e-\x1f]'))) return null;
+      return text;
+    } on FormatException {
+      return null;
+    }
   }
 
   static String? _binaryMime(List<int> bytes) {
@@ -126,18 +104,16 @@ class AttachmentStore {
         throw const AttachmentException('i18n.attachment_empty');
       }
       var mime = _binaryMime(bytes);
-      var tokens = mime == 'application/pdf' ? 4096 : 2048;
-      if (mime == null &&
-          !imageOnly &&
-          textExtensions.contains(
-            p.extension(name).replaceFirst('.', '').toLowerCase(),
-          )) {
-        final text = utf8.decode(bytes);
-        if (text.contains(RegExp(r'[\x00-\x08\x0b\x0c\x0e-\x1f]'))) {
-          throw const AttachmentException('i18n.attachment_text_encoding');
+      var tokens = mime == null || mime == 'application/pdf' ? 4096 : 2048;
+      if (mime == null && !imageOnly) {
+        final text = _utf8Text(bytes);
+        if (text != null) {
+          mime = 'text/plain';
+          tokens = ChatContext.estimateTokens(text) + 32;
+        } else {
+          // Unknown bytes are sent as a file. The model or API reports support.
+          mime = 'application/octet-stream';
         }
-        mime = 'text/plain';
-        tokens = ChatContext.estimateTokens(text) + 32;
       }
       if (mime == null || imageOnly && !mime.startsWith('image/')) {
         throw const AttachmentException('i18n.attachment_unsupported_type');
@@ -160,7 +136,8 @@ class AttachmentStore {
         'image/gif' => 'gif',
         'image/webp' => 'webp',
         'application/pdf' => 'pdf',
-        _ => 'txt',
+        'text/plain' => 'txt',
+        _ => 'bin',
       };
       final attachment = ChatAttachment(
         name: p
@@ -205,7 +182,9 @@ class AttachmentStore {
     try {
       final bytes = await _read(await file(attachment), maxFileBytes);
       if (bytes.length != attachment.size ||
-          !attachment.isText && _binaryMime(bytes) != attachment.mimeType) {
+          !attachment.isText &&
+              !attachment.isGenericFile &&
+              _binaryMime(bytes) != attachment.mimeType) {
         throw const AttachmentException('i18n.attachment_unavailable');
       }
       if (attachment.isText) utf8.decode(bytes);

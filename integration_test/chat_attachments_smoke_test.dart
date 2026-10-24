@@ -301,9 +301,16 @@ void main() {
       }
       selectedFiles = [unsupported.path];
       await pick(T('i18n.attachment_files'));
-      expect(find.text(T('i18n.attachment_unsupported_type')), findsOneWidget);
       composer = tester.widget<ChatComposer>(find.byType(ChatComposer));
-      expect(composer.attachments, hasLength(3));
+      expect(composer.attachments, hasLength(4));
+      expect(
+        composer.attachments.any(
+          (a) =>
+              a.name == 'qa-unsupported.docx' &&
+              a.mimeType == 'application/octet-stream',
+        ),
+        isTrue,
+      );
       for (final a in composer.attachments) {
         ownedFiles.add(await AttachmentStore.instance.file(a));
       }
@@ -316,7 +323,7 @@ void main() {
       topicId = (await store.topics())
           .firstWhere((t) => !existingTopics.contains(t.id))
           .id;
-      expect((await store.messages(topicId)).single.attachments, hasLength(3));
+      expect((await store.messages(topicId)).single.attachments, hasLength(4));
       await settle();
       expect(find.text(photoName), findsOneWidget);
       await binding.takeScreenshot('ios-attachment-error');
@@ -341,7 +348,7 @@ void main() {
       await tester.tap(find.text(T('i18n.send')));
       await waitForReply(3);
       expect(requests.length, 3);
-      expect(requests.last['messages'][0]['content'], hasLength(3));
+      expect(requests.last['messages'][0]['content'], hasLength(4));
       expect((await store.messages(topicId)), hasLength(4));
       await tester.pumpWidget(const SizedBox());
       await app.main();
