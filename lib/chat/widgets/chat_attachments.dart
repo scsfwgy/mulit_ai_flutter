@@ -49,7 +49,7 @@ class _AttachmentTile extends StatelessWidget {
             padding: const EdgeInsets.all(8),
             onPressed: () => Navigator.of(context).push(
               appPageRoute<void>(
-                builder: (_) => _AttachmentPreview(attachment: attachment),
+                builder: (_) => ChatAttachmentPreview(attachment: attachment),
               ),
             ),
             child: Column(
@@ -116,8 +116,8 @@ class _AttachmentTile extends StatelessWidget {
   );
 }
 
-class _AttachmentPreview extends StatelessWidget {
-  const _AttachmentPreview({required this.attachment});
+class ChatAttachmentPreview extends StatelessWidget {
+  const ChatAttachmentPreview({super.key, required this.attachment});
   final ChatAttachment attachment;
 
   @override

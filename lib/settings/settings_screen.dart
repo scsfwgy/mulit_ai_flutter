@@ -14,6 +14,7 @@ import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 import 'package:mulit_ai_flutter/settings/privacy_screen.dart';
+import 'package:mulit_ai_flutter/settings/resource_library_screen.dart';
 import 'package:mulit_ai_flutter/settings/prompt_screen.dart';
 import 'package:mulit_ai_flutter/provider/provider_screen.dart';
 import 'package:mulit_ai_flutter/voice/voice_settings_screen.dart';
@@ -32,6 +33,14 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final _preferences = AppPreferences.instance;
+
+  Future<void> _openLibrary() async {
+    final file = await Navigator.push<StoredChatFile>(
+      context,
+      appPageRoute(builder: (_) => const ResourceLibraryScreen()),
+    );
+    if (file != null && mounted) Navigator.pop(context, file);
+  }
 
   Future<void> _chooseLanguage() async {
     final choice = await showAppModalPopup<AppLanguage>(
@@ -94,6 +103,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(28, 18, 28, 28),
       children: [
+        IosSection(
+          children: [
+            IosRow(
+              title: T('i18n.resource_library'),
+              leading: Icon(CupertinoIcons.folder, color: IosColors.blue),
+              onTap: _openLibrary,
+            ),
+          ],
+        ),
         IosSection(
           children: [
             IosRow(
@@ -241,6 +259,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ],
                         )
                       : const SizedBox.shrink(),
+                ),
+                IosSection(
+                  children: [
+                    IosRow(
+                      title: T('i18n.resource_library'),
+                      leading: Icon(
+                        CupertinoIcons.folder,
+                        color: IosColors.blue,
+                      ),
+                      onTap: _openLibrary,
+                    ),
+                  ],
                 ),
                 IosSection(
                   children: [
@@ -458,9 +488,7 @@ class _MessageSettingsScreenState extends State<MessageSettingsScreen> {
         child: ListView(
           children: [
             IosSection(
-              footer: T(
-                'i18n.your_messages_show_the_model',
-              ),
+              footer: T('i18n.your_messages_show_the_model'),
               children: [
                 IosRow(
                   title: T('i18n.simple_mode'),
@@ -705,7 +733,8 @@ class _AboutScreenState extends State<AboutScreen> {
 
   Future<void> _openUrl(String url) async {
     try {
-      if (await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication)) return;
+      if (await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication))
+        return;
     } catch (_) {
       // Keep unavailable browsers from surfacing as unhandled platform errors.
     }
@@ -725,8 +754,9 @@ class _AboutScreenState extends State<AboutScreen> {
     }
     await Clipboard.setData(const ClipboardData(text: address));
     if (mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(T('i18n.email_address_copied'))));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(T('i18n.email_address_copied'))));
     }
   }
 
@@ -787,7 +817,10 @@ class _AboutScreenState extends State<AboutScreen> {
                 title: T('i18n.stored_locally'),
                 detail: T('i18n.chats_and_messages_are_stored'),
               ),
-              _AboutNote(title: T('i18n.direct_requests'), detail: T('i18n.requests_go_directly')),
+              _AboutNote(
+                title: T('i18n.direct_requests'),
+                detail: T('i18n.requests_go_directly'),
+              ),
               IosRow(
                 title: T('i18n.privacy_policy'),
                 subtitle: 'tools24.uk/app/ai-link/privacy',
@@ -809,8 +842,12 @@ class _AboutScreenState extends State<AboutScreen> {
               ),
               IosRow(
                 title: T('i18n.wish_wall'),
-                leading: Icon(CupertinoIcons.text_bubble, color: IosColors.blue),
-                onTap: () => _openUrl('https://www.tools24.uk/app/ai-link/wishes'),
+                leading: Icon(
+                  CupertinoIcons.text_bubble,
+                  color: IosColors.blue,
+                ),
+                onTap: () =>
+                    _openUrl('https://www.tools24.uk/app/ai-link/wishes'),
               ),
               const ApiKeyHelpRow(url: apiKeyTutorialUrl),
               IosRow(

@@ -29,6 +29,12 @@ class ChatScrollController {
     return false;
   }
 
+  void stopFollowing() {
+    _dragging = false;
+    _followingLatest = false;
+    _scheduledScroll++;
+  }
+
   void scrollToLatest({bool force = false}) {
     if (force) {
       _dragging = false;

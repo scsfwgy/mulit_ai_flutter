@@ -182,6 +182,9 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   StreamSubscription<void>? _playbackCompletion;
   Timer? _recordTimer;
   final _chatScroll = ChatScrollController();
+  final _revealKey = GlobalKey();
+  int? _revealMessageId;
+  Timer? _revealTimer;
   List<ProviderConfig> _providers = [];
   Set<int> _restrictedProviderIds = {};
   List<ChatTopic> _topics = [];
@@ -275,6 +278,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _revealTimer?.cancel();
     if (!_starting) {
       unawaited(
         AttachmentStore.instance.delete(_attachments).catchError((_) {}),
@@ -529,10 +533,15 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   }
 
   Future<void> _openSettings() async {
-    await _pushRoute<void>(
+    final file = await _pushRoute<StoredChatFile>(
       appPageRoute(builder: (_) => SettingsScreen(canClearData: _canClearData)),
       section: DesktopSection.settings,
     );
+    if (file != null) {
+      _showDesktopChat();
+      await _selectTopic(file.topicId, messageId: file.messageId);
+      return;
+    }
     await _load();
   }
 
@@ -651,11 +660,27 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _selectTopic(int id) async {
+  Future<void> _selectTopic(int id, {int? messageId}) async {
+    if (messageId != null && (_sending || _starting || _pickingAttachment)) {
+      _notify(T('i18n.stop_the_current_response_before'));
+      return;
+    }
     if (_pickingAttachment || _starting && !_sending) return;
-    final topic = _topics.where((item) => item.id == id).firstOrNull;
-    if (topic == null) return;
+    var topic = _topics.where((item) => item.id == id).firstOrNull;
+    if (topic == null && messageId != null) {
+      _topics = await ChatStore.instance.topics();
+      topic = _topics.where((item) => item.id == id).firstOrNull;
+    }
+    if (topic == null) {
+      if (messageId != null && mounted) _notify(T('i18n.library_missing'));
+      return;
+    }
     final messages = await ChatStore.instance.messages(id);
+    if (messageId != null &&
+        messages.every((message) => message.id != messageId)) {
+      if (mounted) _notify(T('i18n.library_missing'));
+      return;
+    }
     await _discardDraftAttachments();
     if (!mounted) return;
     setState(() {
@@ -666,13 +691,60 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       _error = null;
       _errorAction = ChatErrorAction.none;
       _reply.value = '';
+      _revealMessageId = messageId;
     });
     if (topic.providerId case final providerId?) {
       await ChatStore.instance.saveLastChatSelection(
         ChatSelection(providerId, topic.model),
       );
     }
-    _chatScroll.scrollToLatest(force: true);
+    if (messageId == null) {
+      _chatScroll.scrollToLatest(force: true);
+    } else {
+      _chatScroll.stopFollowing();
+      await _revealMessage(messageId);
+    }
+  }
+
+  Future<void> _revealMessage(int messageId) async {
+    _revealTimer?.cancel();
+    var reset = false;
+    for (var attempt = 0; attempt < 40; attempt++) {
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted || _revealMessageId != messageId) return;
+      final target = _revealKey.currentContext;
+      if (target != null && target.mounted) {
+        await Scrollable.ensureVisible(
+          target,
+          alignment: 0.2,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+        _revealTimer = Timer(const Duration(seconds: 2), () {
+          if (mounted && _revealMessageId == messageId) {
+            setState(() => _revealMessageId = null);
+          }
+        });
+        return;
+      }
+      final controller = _chatScroll.controller;
+      if (!controller.hasClients) continue;
+      final position = controller.position;
+      if (!reset && position.pixels != 0) {
+        reset = true;
+        controller.jumpTo(0);
+        continue;
+      }
+      final step = position.viewportDimension == 0
+          ? 400.0
+          : position.viewportDimension;
+      final next = (position.pixels + step).clamp(
+        0.0,
+        position.maxScrollExtent,
+      );
+      if (next <= position.pixels) return;
+      controller.jumpTo(next);
+    }
   }
 
   Future<void> _changeModel() async {
@@ -2010,37 +2082,44 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           }
           final message = _messages[index];
           final messageId = message.id;
-          return MessageBubble(
-            role: message.role,
-            content: message.content,
-            attachments: message.attachments,
-            messageId: messageId,
-            searchSources: message.searchSources,
-            providerName: message.providerName,
-            providerPresetId: message.providerPresetId,
-            modelId: message.modelId,
-            firstTokenMs: message.firstTokenMs,
-            totalMs: message.totalMs,
-            inputTokens: message.inputTokens,
-            outputTokens: message.outputTokens,
-            replyElapsedMs: _replyElapsedMs,
-            searching: _searching,
-            contextTrimmed: _contextTrimmed,
-            speechState: messageId == _speechMessageId
-                ? _speechState
-                : SpeechPlaybackState.idle,
-            speechEnabled:
-                !_playing ||
-                (messageId == _speechMessageId &&
-                    _speechState == SpeechPlaybackState.playing),
-            onSpeak: message.role == 'user' || !_canSpeak
-                ? null
-                : () => _playSpeech(message.content, messageId: messageId),
-            onCopy: () => _copyBubble(
-              message.content,
-              renderMarkdown: message.role != 'user',
+          final highlighted = message.id == _revealMessageId;
+          return ColoredBox(
+            key: highlighted ? _revealKey : null,
+            color: highlighted
+                ? IosColors.blue.withValues(alpha: .12)
+                : const Color(0x00000000),
+            child: MessageBubble(
+              role: message.role,
+              content: message.content,
+              attachments: message.attachments,
+              messageId: messageId,
+              searchSources: message.searchSources,
+              providerName: message.providerName,
+              providerPresetId: message.providerPresetId,
+              modelId: message.modelId,
+              firstTokenMs: message.firstTokenMs,
+              totalMs: message.totalMs,
+              inputTokens: message.inputTokens,
+              outputTokens: message.outputTokens,
+              replyElapsedMs: _replyElapsedMs,
+              searching: _searching,
+              contextTrimmed: _contextTrimmed,
+              speechState: messageId == _speechMessageId
+                  ? _speechState
+                  : SpeechPlaybackState.idle,
+              speechEnabled:
+                  !_playing ||
+                  (messageId == _speechMessageId &&
+                      _speechState == SpeechPlaybackState.playing),
+              onSpeak: message.role == 'user' || !_canSpeak
+                  ? null
+                  : () => _playSpeech(message.content, messageId: messageId),
+              onCopy: () => _copyBubble(
+                message.content,
+                renderMarkdown: message.role != 'user',
+              ),
+              onOpenLink: _openMarkdownLink,
             ),
-            onOpenLink: _openMarkdownLink,
           );
         },
       ),

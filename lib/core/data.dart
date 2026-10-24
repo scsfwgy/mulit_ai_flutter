@@ -541,6 +541,22 @@ class ChatMessage {
   );
 }
 
+class StoredChatFile {
+  const StoredChatFile({
+    required this.attachment,
+    required this.topicId,
+    required this.topicTitle,
+    required this.messageId,
+    required this.createdAt,
+  });
+
+  final ChatAttachment attachment;
+  final int topicId;
+  final String topicTitle;
+  final int messageId;
+  final int createdAt;
+}
+
 class CachedModelList {
   const CachedModelList({
     required this.baseUrl,
@@ -807,7 +823,10 @@ class ChatStore {
     final items = raw == null
         ? <SearchProviderConfig>[]
         : (jsonDecode(raw) as List)
-              .map((item) => SearchProviderConfig.fromJson(item as Map<String, dynamic>))
+              .map(
+                (item) =>
+                    SearchProviderConfig.fromJson(item as Map<String, dynamic>),
+              )
               .toList();
     for (final provider in await providers()) {
       if (_supportsDeepSeekSearch(provider) &&
@@ -829,9 +848,11 @@ class ChatStore {
   Future<SearchProviderConfig?> selectedSearchProvider() async {
     final id = await setting('search_provider_id');
     final items = await searchProviders();
-    return items.where((item) => id == null
-            ? item.textProviderId != null
-            : item.id == id).firstOrNull;
+    return items
+        .where(
+          (item) => id == null ? item.textProviderId != null : item.id == id,
+        )
+        .firstOrNull;
   }
 
   bool _supportsDeepSeekSearch(ProviderConfig provider) {
@@ -840,14 +861,19 @@ class ChatStore {
         uri.scheme == 'https' &&
         uri.host == 'api.deepseek.com' &&
         uri.port == 443 &&
-        uri.userInfo.isEmpty && !uri.hasQuery && !uri.hasFragment;
+        uri.userInfo.isEmpty &&
+        !uri.hasQuery &&
+        !uri.hasFragment;
   }
 
   Future<String?> searchApiKey(SearchProviderConfig config) async {
     if (config.textProviderId case final id?) {
-      final provider = (await providers()).where((item) => item.id == id).firstOrNull;
+      final provider = (await providers())
+          .where((item) => item.id == id)
+          .firstOrNull;
       // A text key may only be reused for its official search endpoint.
-      if (provider == null || !_supportsDeepSeekSearch(provider) ||
+      if (provider == null ||
+          !_supportsDeepSeekSearch(provider) ||
           config.service != SearchService.deepseek ||
           config.endpoint != SearchService.deepseek.endpoint) {
         return null;
@@ -876,7 +902,8 @@ class ChatStore {
     if (linked && (await searchApiKey(config))?.trim().isNotEmpty != true) {
       throw FormatException(T('i18n.search_text_key_unavailable'));
     }
-    if (!linked && key.isEmpty &&
+    if (!linked &&
+        key.isEmpty &&
         (previous == null ||
             previous.textProviderId != null ||
             previous.service != config.service ||
@@ -888,7 +915,9 @@ class ChatStore {
       throw FormatException(T('i18n.api_keys_cannot_contain_line'));
     }
     if (linked) {
-      await _withSecureStorage(() => _secrets.delete(key: 'search_${config.id}'));
+      await _withSecureStorage(
+        () => _secrets.delete(key: 'search_${config.id}'),
+      );
     } else if (key.isNotEmpty) {
       await _withSecureStorage(
         () => _secrets.write(key: 'search_${config.id}', value: key),
@@ -1456,6 +1485,33 @@ class ChatStore {
         whereArgs: [topicId],
         orderBy: 'id',
       )).map(ChatMessage.fromMap).toList();
+
+  Future<List<StoredChatFile>> libraryFiles() async {
+    final rows = await (await db).rawQuery('''
+      SELECT messages.id AS message_id,
+             messages.topic_id AS topic_id,
+             messages.created_at AS created_at,
+             messages.attachments AS attachments,
+             topics.title AS topic_title
+      FROM messages
+      JOIN topics ON topics.id = messages.topic_id
+      WHERE messages.attachments IS NOT NULL
+      ORDER BY messages.created_at DESC, messages.id DESC
+    ''');
+    return [
+      for (final row in rows)
+        for (final attachment in ChatAttachment.decode(
+          row['attachments'] as String?,
+        ))
+          StoredChatFile(
+            attachment: attachment,
+            topicId: row['topic_id'] as int,
+            topicTitle: row['topic_title'] as String,
+            messageId: row['message_id'] as int,
+            createdAt: row['created_at'] as int,
+          ),
+    ];
+  }
 
   Future<int> addMessage(
     int topicId,
