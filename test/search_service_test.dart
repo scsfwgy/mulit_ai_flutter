@@ -53,6 +53,7 @@ void main() {
   for (final (code, retrySafe) in [
     (61, true), // macOS ECONNREFUSED.
     (111, true), // Linux ECONNREFUSED.
+    (1225, true), // Windows async ConnectEx ERROR_CONNECTION_REFUSED.
     (10061, true), // Windows WSAECONNREFUSED.
     (54, false), // macOS connection reset.
     (10054, false), // Windows connection reset.
@@ -97,11 +98,23 @@ void main() {
 
   test('refused search connection can safely switch watch routes', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final port = server.port;
     final search = SearchClient(
       config(server, SearchService.tavily),
       'fake-key',
     );
     await server.close(force: true);
+    SocketException? connectionError;
+    try {
+      final socket = await Socket.connect(
+        InternetAddress.loopbackIPv4,
+        port,
+      );
+      socket.destroy();
+      fail('Closed server unexpectedly accepted a connection');
+    } on SocketException catch (error) {
+      connectionError = error;
+    }
     await expectLater(
       search.search('question'),
       throwsA(
@@ -113,6 +126,9 @@ void main() {
               true,
             ),
       ),
+      reason:
+          'Host connection error: ${connectionError.osError?.errorCode} '
+          '(${connectionError.message})',
     );
   });
   for (final service in SearchService.values) {

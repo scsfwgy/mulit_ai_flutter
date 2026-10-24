@@ -204,8 +204,8 @@ class SearchClient {
       throw SearchException(
         T('i18n.could_not_connect'),
         networkFailure: true,
-        // Connection refused: macOS 61, Linux 111, Windows 10061.
-        retrySafe: [8, 61, 111, 10061].contains(error.osError?.errorCode),
+        // Windows reports Win32 1225 for async ConnectEx, or Winsock 10061.
+        retrySafe: [8, 61, 111, 1225, 10061].contains(error.osError?.errorCode),
       );
     } on HandshakeException {
       throw SearchException(T('i18n.the_search_service_https_certificate'));
