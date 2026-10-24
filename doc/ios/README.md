@@ -24,6 +24,7 @@
 | `python3 scripts/appstore_upload.py --check-online` | 检查配置，并向 Apple 校验凭据与 App 记录（联网） |
 | `./release.sh --push-ios` | 只构建 iOS 并上传（未指定 `--platform` 时按开关推导为 iOS） |
 | `./release.sh --push-mobile` | 同 `--push-android --push-ios`：官网 + Google Play + App Store Connect，不构建 macOS |
+| `./release.sh --push-all` | 全端构建并上传：官网（含 Mac DMG 与 Windows 安装包地址）+ Google Play + App Store Connect |
 | `./release.sh --platform all --push-ios` | 显式构建全部平台，但只上传 iOS |
 
 `--push-ios` 会在构建前先做联网预检：凭据文件缺失、私钥与密钥 ID 不配对、Issuer ID 无效或网络不通时直接退出，不会白跑一次 iOS 构建。上传前还会解包 IPA，核对手机 `com.maxhall.ailink` 与手表 `com.maxhall.ailink.watchkitapp` 的 Bundle ID、`CFBundleShortVersionString` 与 `CFBundleVersion` 都与本次构建一致，避免上传上一次的产物。结果写入归档目录的 `release-info.txt`（`appstoreStatus=...`），失败时保留完整日志 `appstore-upload.log`。

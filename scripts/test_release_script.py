@@ -392,7 +392,9 @@ if not args.check:
                       ["--github-windows", "--platform", "macos"],
                       ["--platform", "android", "--build-all"],
                       ["--github-windows", "--test"], ["--build-all", "--test"],
-                      ["--github-windows", "--push-android"], ["--github-windows", "--push-ios"]):
+                      ["--github-windows", "--push-android"], ["--github-windows", "--push-ios"],
+                      ["--github-windows", "--push-all"], ["--platform", "all", "--push-all"],
+                      ["--platform", "macos", "--push-all"]):
             with self.subTest(flags=flags):
                 result = subprocess.run(["/bin/bash", str(RELEASE_SCRIPT), *flags],
                                         capture_output=True, text=True)
@@ -492,6 +494,47 @@ if not args.check:
             self.assertIn("playStatus=COMMITTED|test-edit\n", info)
             self.assertIn("appstoreStatus=UPLOADED|", info)
 
+    def test_push_all_uploads_every_platform_including_desktop_links(self):
+        for flags, website_failure in ((["--push-all"], False),
+                                       (["--build-all", "--push-all"], False),
+                                       (["--push-all"], True)):
+            with self.subTest(flags=flags, website_failure=website_failure), tempfile.TemporaryDirectory() as directory:
+                root, env = self.mock_release_root(directory, flags, website_failure)
+                result = subprocess.run(["/bin/bash", "release.sh", *flags], cwd=root,
+                                        env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, int(website_failure), result.stderr)
+                calls = (root / "calls").read_text()
+                self.assertLess(calls.index("windows check"), calls.index("flutter pub get"))
+                for build in ("apple ios 1.0.1+10", "apple macos 1.0.1+10", "windows 1.0.1+10"):
+                    self.assertIn(build, calls)
+                self.assertIn("--macos-dmg", calls)
+                self.assertIn("AI-Link-macos-1.0.1-abcd1234+10.dmg", calls)
+                self.assertIn("--windows-exe", calls)
+                self.assertIn("AI-Link-windows-1.0.1-abcd1234+10.exe", calls)
+                info = next((root / "release-artifacts").rglob("release-info.txt"))
+                if website_failure:
+                    self.assertNotIn("python -u scripts/play_upload.py", calls)
+                    self.assertIn("websiteStatus=FAILED", info.read_text())
+                    self.assertIn("失败原因：官网下载同步未完成", result.stdout)
+                    continue
+                self.assertLess(calls.index("--macos-dmg"),
+                                calls.index("python -u scripts/play_upload.py"))
+                self.assertIn("python -u scripts/appstore_upload.py", calls)
+                text = info.read_text()
+                self.assertIn("websiteStatus=CONFIRMED\n", text)
+                self.assertIn("playStatus=COMMITTED|test-edit\n", text)
+                self.assertIn("appstoreStatus=UPLOADED|", text)
+                self.assertEqual(len(list(info.parent.glob("AI-Link-*"))), 9)
+
+    def test_push_all_requires_ios_distribution_signing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, env = self.mock_release_root(directory, ["--push-all"], ios_signing=False)
+            result = subprocess.run(["/bin/bash", "release.sh", "--push-all"], cwd=root,
+                                    env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("没有 iOS Distribution", result.stderr)
+            self.assertFalse((root / "calls").exists())
+
     def test_ios_upload_failure_is_recorded(self):
         with tempfile.TemporaryDirectory() as directory:
             root, env = self.mock_release_root(directory, ["--push-ios"], appstore_failure=True)
@@ -551,7 +594,7 @@ if not args.check:
             self.assertEqual(result.returncode, 2, result.stderr)
 
     def test_test_packages_cannot_be_published(self):
-        for flag in ("--push-android", "--push-website", "--push-ios", "--push-mobile"):
+        for flag in ("--push-android", "--push-website", "--push-ios", "--push-mobile", "--push-all"):
             result = subprocess.run(["/bin/bash", str(RELEASE_SCRIPT), "--test", flag],
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 2)

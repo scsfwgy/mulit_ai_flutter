@@ -9,6 +9,7 @@ from threading import Thread
 from types import SimpleNamespace
 from unittest.mock import patch
 from urllib.error import HTTPError
+from urllib.parse import quote
 
 import website_release as publisher
 
@@ -57,7 +58,45 @@ class WebsiteReleaseTest(unittest.TestCase):
                         self.assertEqual(len(uploads), 2)
                         self.assertTrue(all(key.startswith("ai-link/release/") for key in uploads))
                         self.assertTrue(data["wearDownloadUrl"].endswith(wear.name))
+                        self.assertNotIn("macosDownloadUrl", data)
                         publish.assert_called_once_with("endpoint", "token", data)
+
+    def test_desktop_installers_are_uploaded_with_the_phone_release(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            phone, wear = (root / name for name in ("AI-Link-phone-1.apk", "AI-Link-wear-1.apk"))
+            macos = root / "AI-Link-macos-1.0.1-abcd+10.dmg"
+            windows = root / "AI-Link-windows-1.0.1-abcd+10.exe"
+            phone.write_bytes(b"phone APK")
+            wear.write_bytes(b"wear APK")
+            macos.write_bytes(b"macos dmg")
+            windows.write_bytes(b"windows exe")
+            seen = []
+            def put(key, path, headers):
+                seen.append((key, headers))
+                return SimpleNamespace(etag=hashlib.md5(Path(path).read_bytes()).hexdigest())
+            bucket = SimpleNamespace(put_object_from_file=put)
+            sdk = SimpleNamespace(Auth=lambda *args: None, Bucket=lambda *args: bucket)
+            with patch.dict("sys.modules", {"oss2": sdk}), patch.object(publisher, "publish") as publish:
+                data = publisher.release("endpoint", "token", CONFIG, phone, wear, "1.0.1-abcd", 10, 1000010,
+                                         macos, windows)
+            self.assertEqual([item[0] for item in seen], [
+                "ai-link/release/" + phone.name, "ai-link/release/" + wear.name,
+                "ai-link/release/" + macos.name, "ai-link/release/" + windows.name])
+            self.assertNotIn("Content-Disposition", seen[0][1])
+            self.assertEqual(seen[2][1]["Content-Type"], "application/x-apple-diskimage")
+            self.assertIn(macos.name, seen[2][1]["Content-Disposition"])
+            self.assertEqual(seen[3][1]["Content-Type"], "application/vnd.microsoft.portable-executable")
+            self.assertTrue(data["macosDownloadUrl"].endswith(quote(macos.name, safe="")))
+            self.assertTrue(data["windowsDownloadUrl"].endswith(quote(windows.name, safe="")))
+            self.assertEqual(data["macosDownloadSize"], len(b"macos dmg"))
+            self.assertEqual(data["windowsDownloadSha256"], hashlib.sha256(b"windows exe").hexdigest())
+            publish.assert_called_once_with("endpoint", "token", data)
+            with patch.dict("sys.modules", {"oss2": sdk}), patch.object(publisher, "publish") as publish:
+                with self.assertRaises(ValueError):
+                    publisher.release("endpoint", "token", CONFIG, phone, wear, "1.0.1-abcd", 10, 1000010,
+                                      macos, None)
+                publish.assert_not_called()
 
     def test_put_get_readback_and_redirect_secret_protection(self):
         for mode in ("success", "mismatch", "redirect"):

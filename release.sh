@@ -6,6 +6,8 @@
 #   --push-android   官网 + Google Play：APK 到官网，手机与 Wear OS 两个 AAB 到 Play  需要 Android
 #   --push-ios       IPA 上传 App Store Connect（TestFlight，不自动提审）            需要 iOS
 #   --push-mobile    官网 + Google Play + App Store Connect，同 --push-android --push-ios  需要 Android 与 iOS
+#   --push-all       全端：官网（含 Mac/Windows 下载地址）+ Google Play + App Store Connect
+#                    需要 Android、iOS、macOS，以及 GitHub Actions 上的 Windows
 #
 # 常用组合：
 #   ./release.sh                             全平台构建并本地归档，不上传
@@ -13,6 +15,7 @@
 #   ./release.sh --push-android              Android：官网 + Google Play
 #   ./release.sh --push-ios                  iOS：构建并上传 App Store Connect
 #   ./release.sh --push-mobile               Android 与 iOS 一起发布（不含 macOS）
+#   ./release.sh --push-all                  全端构建并上传；Mac/Windows 安装包生成官网下载地址
 #   ./release.sh --platform macos            只构建 macOS
 #   ./release.sh --platform desktop          本机 macOS + GitHub Actions Windows，统一归档
 #   ./release.sh --platform windows          只在 Windows 主机上构建 Windows 安装程序和 ZIP
@@ -39,17 +42,18 @@ ios_export_options="${IOS_EXPORT_OPTIONS_PLIST:-}"
 push_android=0
 push_website=0
 push_ios=0
+push_desktop=0
 play_track="internal"
 wear_track=""
 json_key="${PLAY_SERVICE_ACCOUNT_JSON:-$repo_root/localConfig/google-play-service-account.json}"
 
 usage() {
-  echo "用法：./release.sh [--platform all|mobile|android|ios|macos|windows|desktop | --github-windows | --build-all] [--test] [--push-android|--push-website|--push-ios|--push-mobile] [--ios-export-options 路径] [--play-track internal|alpha|beta|production] [--wear-track wear:轨道名] [--json-key 路径]"
+  echo "用法：./release.sh [--platform all|mobile|android|ios|macos|windows|desktop | --github-windows | --build-all] [--test] [--push-android|--push-website|--push-ios|--push-mobile|--push-all] [--ios-export-options 路径] [--play-track internal|alpha|beta|production] [--wear-track wear:轨道名] [--json-key 路径]"
   echo "  （无参数）        构建 Android/Wear OS APK/AAB、iOS/Apple Watch IPA 与归档、macOS APP/DMG/ZIP；仅本地归档"
   echo "  --platform      只构建所选平台；all 为 Android、iOS 与 macOS，mobile 为 Android + iOS（不含 macOS）；Apple 平台需 Mac/Xcode，本机无 iOS 分发证书时自动跳过 iOS"
   echo "                  windows 不包含在 all 里，且只能在 Windows 主机上构建"
   echo "                  desktop 为本机 macOS + GitHub Actions Windows；需要 gh 登录及已提交、推送的干净工作区"
-  echo "                  不指定时按发布开关推导：--push-android/--push-website 取 Android，--push-ios 取 iOS，--push-mobile 或两者同时给出则取 mobile"
+  echo "                  不指定时按发布开关推导：--push-android/--push-website 取 Android，--push-ios 取 iOS，--push-mobile 或两者同时给出则取 mobile，--push-all 取全端（含远程 Windows）"
   echo "  --github-windows  仅通过 GitHub Actions 构建 Windows 并下载带版本号的 Setup.exe 和 ZIP；需要已推送的干净分支与 Actions 读写权限"
   echo "  --build-all       构建 Android/Wear OS、iOS/Apple Watch、macOS 和 GitHub Windows；需 Mac、Android/Apple 签名及 Actions 权限，缺少 iOS 分发签名时报错"
   echo "                    这两个参数互斥，且均不能与 --platform 或 --test 同用；默认仅本地归档，不上传商店"
@@ -60,6 +64,7 @@ usage() {
   echo "  --push-ios      默认只构建 iOS；把正式签名 IPA 上传到 App Store Connect（TestFlight）；不自动提交审核"
   echo "                  凭据见 localConfig/appstore-connect.env，模板 scripts/appstore_connect.env.example"
   echo "  --push-mobile   同 --push-android --push-ios：同步官网，并上传 Google Play 与 App Store Connect；不构建 macOS"
+  echo "  --push-all      构建 Android、iOS、macOS 和 GitHub Windows；APK、Mac DMG 与 Windows 安装包同步官网并生成下载地址，同时上传 Google Play 与 App Store Connect"
   echo "  --play-track    手机轨道；Wear OS 自动使用 wear:<轨道>"
   echo "  --wear-track    指定已有手表轨道，可与手机轨道名称不同"
   echo "  --json-key      服务账号 JSON 路径；也可设 PLAY_SERVICE_ACCOUNT_JSON"
@@ -83,6 +88,7 @@ while [[ $# -gt 0 ]]; do
     --push-website) push_website=1; shift ;;
     --push-ios) push_ios=1; shift ;;
     --push-mobile) push_android=1; push_website=1; push_ios=1; shift ;;
+    --push-all) push_android=1; push_website=1; push_ios=1; push_desktop=1; shift ;;
     --play-track)
       [[ $# -ge 2 ]] || { echo "--play-track 缺少轨道" >&2; exit 2; }
       play_track="$2"; shift 2 ;;
@@ -114,14 +120,17 @@ if [[ "$wear_track" != wear:* || -z "${wear_track#wear:}" || "${wear_track#wear:
   echo "--wear-track 必须使用完整的 wear:<轨道名>" >&2
   exit 2
 fi
-if (( push_android || push_website || push_ios )) && [[ "$profile" == "test" ]]; then
-  echo "测试签名的调试包不可发布到官网、Google Play 或 App Store Connect；请去掉 --test。" >&2
+if (( push_android || push_website || push_ios || push_desktop )) && [[ "$profile" == "test" ]]; then
+  echo "测试签名的调试包不可发布到官网、Google Play、App Store Connect 或全端下载；请去掉 --test。" >&2
   exit 2
 fi
 # 未指定 --platform 时按发布开关推导要构建的平台：官网/Google Play 需要 Android，App Store Connect 需要 iOS。
 # 两者同时发布只构建 Android 与 iOS，不额外构建 macOS；macOS 请显式用 --platform macos|all。
+# --push-all 还要本机 macOS 与 GitHub Actions Windows，用来生成电脑端下载地址。
 if [[ -z "$platform" ]]; then
-  if (( push_ios )) && (( push_android || push_website )); then
+  if (( push_desktop )); then
+    platform="all-github"
+  elif (( push_ios )) && (( push_android || push_website )); then
     platform="mobile"
   elif (( push_ios )); then
     platform="ios"
@@ -157,6 +166,10 @@ if (( build_windows )); then
 fi
 if [[ "$profile" == "test" && "$platform" != "android" ]]; then
   echo "--test 仅支持 Android 手机与 Wear OS；Apple 调试请使用 install-dev.sh。" >&2
+  exit 2
+fi
+if (( push_desktop && ! (build_android && build_ios && build_macos && (build_windows || build_windows_remote)) )); then
+  echo "--push-all 需要同时构建 Android、iOS、macOS 和 Windows：请单独使用 ./release.sh --push-all，或与 --build-all 一起使用。" >&2
   exit 2
 fi
 if (( (push_android || push_website) && ! build_android )); then
@@ -371,6 +384,8 @@ android_status="未构建"
 macos_status="未构建"
 ios_status="未构建"
 windows_status="未构建"
+macos_dmg=""
+windows_exe=""
 website_status="未执行"
 play_status="未执行"
 appstore_status="未执行"
@@ -529,6 +544,7 @@ if (( build_macos )); then
     --version "$base_name" --build-number "$code"
   archive_final_package "$output/macos/AI-Link-$base_name+$code.dmg" "AI-Link-macos-$version.dmg"
   archive_final_package "$output/macos/AI-Link-$base_name+$code.zip" "AI-Link-macos-$version.zip"
+  macos_dmg="$output/AI-Link-macos-$version.dmg"
   echo "macosStatus=COMPLETE" >> "$output/release-info.txt"
   macos_status="成功"
 fi
@@ -552,6 +568,7 @@ if (( build_windows )); then
   )
   archive_final_package "$output/windows/AI-Link-$base_name+$code-windows.zip" "AI-Link-windows-$version.zip"
   archive_final_package "$output/windows/AI-Link-Setup-$base_name+$code.exe" "AI-Link-windows-$version.exe"
+  windows_exe="$output/AI-Link-windows-$version.exe"
   echo "windowsStatus=COMPLETE" >> "$output/release-info.txt"
   windows_status="成功"
 fi
@@ -562,6 +579,7 @@ if (( build_windows_remote )); then
     --version "$base_name" --build-number "$code"
   archive_final_package "$output/windows/AI-Link-$base_name+$code-windows.zip" "AI-Link-windows-$version.zip"
   archive_final_package "$output/windows/AI-Link-Setup-$base_name+$code.exe" "AI-Link-windows-$version.exe"
+  windows_exe="$output/AI-Link-windows-$version.exe"
   echo "windowsStatus=COMPLETE" >> "$output/release-info.txt"
   windows_status="成功"
 fi
@@ -585,11 +603,20 @@ fi
 echo "buildStatus=COMPLETE" >> "$output/release-info.txt"
 
 if (( push_website )); then
-  echo "上传手机与 Wear OS APK 到 OSS 并同步 AI Link 官网..."
-  if ! "$python_bin" scripts/website_release.py \
-    --phone-apk "$phone_apk" --wear-apk "$wear_apk" \
-    --version "$name" --version-code "$code" --wear-version-code "$watch_code" \
-    --manifest-out "$output/website-release.json"; then
+  website_command=("$python_bin" scripts/website_release.py
+    --phone-apk "$phone_apk" --wear-apk "$wear_apk"
+    --version "$name" --version-code "$code" --wear-version-code "$watch_code"
+    --manifest-out "$output/website-release.json")
+  if (( push_desktop )); then
+    if [[ ! -s "$macos_dmg" || ! -s "$windows_exe" ]]; then
+      fail "缺少 macOS DMG 或 Windows 安装包，无法同步官网。"
+    fi
+    echo "上传手机、Wear OS、macOS 与 Windows 安装包到 OSS 并同步 AI Link 官网..."
+    website_command+=(--macos-dmg "$macos_dmg" --windows-exe "$windows_exe")
+  else
+    echo "上传手机与 Wear OS APK 到 OSS 并同步 AI Link 官网..."
+  fi
+  if ! "${website_command[@]}"; then
     echo "websiteStatus=FAILED" >> "$output/release-info.txt"
     website_status="失败"
     fail "官网下载同步未完成；Google Play 未上传。"

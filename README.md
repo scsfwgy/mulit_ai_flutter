@@ -43,7 +43,7 @@ macOS 与 Windows 一起构建归档：在 Mac 上运行 `./release.sh --platfor
 
 Windows 子目录原始安装程序命名为 `AI-Link-Setup-<版本号>+<构建号>.exe`，版本号来自 `pubspec.yaml`，构建号为 Git 提交次数。安装包包含完整程序和经微软数字签名校验的 Visual C++ x64 运行库，安装时需要管理员权限，提供开始菜单入口、可选桌面快捷方式与卸载入口；同一个 AppId 用于覆盖升级，卸载不清理用户聊天数据。安装程序本身尚未配置代码签名。GitHub runner 自动安装 Inno Setup；Windows 本机构建需先安装 Inno Setup，再运行 `./release.sh --platform windows`。单独运行 `flutter build windows` 仍只生成程序目录。
 
-构建全部平台：在 Mac 上运行 `./release.sh --build-all`，构建 Android 手机/Wear OS APK 与 AAB、iOS/Apple Watch IPA、macOS DMG/ZIP，以及 GitHub Actions Windows ZIP，统一归档并生成校验和。需要完整 Android/Xcode 环境、正式签名与 GitHub Actions 权限；缺少 iOS 分发签名会直接报错，不跳过 iOS。这两个独立参数互斥，且不能与 `--platform` 或 `--test` 同用；默认不上传官网或商店。
+构建全部平台：在 Mac 上运行 `./release.sh --build-all`，构建 Android 手机/Wear OS APK 与 AAB、iOS/Apple Watch IPA、macOS DMG/ZIP，以及 GitHub Actions Windows ZIP，统一归档并生成校验和。需要完整 Android/Xcode 环境、正式签名与 GitHub Actions 权限；缺少 iOS 分发签名会直接报错，不跳过 iOS。这两个独立参数互斥，且不能与 `--platform` 或 `--test` 同用；默认不上传官网或商店。`./release.sh --push-all` 使用同一套全端构建，并上传官网（含 Mac DMG 与 Windows 安装包下载地址）、Google Play 和 App Store Connect。
 
 首次使用前需将 `.github/workflows/ai-link-windows.yml` 和代码提交、推送到 GitHub（工作流需先存在于默认分支），启用仓库 Actions，并安装 GitHub CLI、运行 `gh auth login`，账号需要触发 Actions 的权限。联合构建要求工作区干净且当前分支已推送；Windows runner 排队、测试或构建失败会使本次发布失败，已完成的 macOS 产物会保留。`--platform macos` 和 `--platform windows` 仍分别执行单平台本机构建；`all` 仍为原有 Android、iOS 和 macOS 范围。
 
@@ -177,7 +177,7 @@ adb -s emulator-5554 shell cmd connectivity set-chain3-enabled false
 
 正式版「AI Link」使用 `com.maxhall.ailink`；普通 Debug 与 `./release.sh --test` 均为「AI Link Debug」，使用 `com.maxhall.ailink.debug`，可与正式版同时安装。两者的服务、密钥与聊天记录各自独立，不自动迁移。旧测试包 `com.example.mulit_ai_flutter` 和此前占用正式包名的测试包也不会自动迁移；不要为了测试新包而卸载或清空旧包。iOS Debug 同样使用 `com.maxhall.ailink.debug` 与「AI Link Debug」，配套 watchOS Debug 使用 `com.maxhall.ailink.debug.watchkitapp`；Apple 平台仍待发布签名及配对真机端到端验证。
 
-本机已配置正式上传密钥；独立测试密钥及配置已入库，测试密码视为公开信息。运行 `./release.sh` 生成正式签名的手机、手表 APK 和 AAB；运行 `./release.sh --test` 生成测试签名的手机、手表 APK。默认仅本地归档，`--push-website` 上传两端 APK 到 OSS 并同步 AI Link 官网，`--push-android` 同时同步官网和 Google Play，`--push-mobile` 同步官网并上传 Google Play 与 App Store Connect。官网发布需先部署同级 HomeTools 的 `/api/v1/ai-link/release` 接口，并在 `localConfig/.env.local` 配置发布密钥和 OSS 配置路径，示例见 `scripts/website_release.env.example` 与 `scripts/oss_config.example.json`。两端必须使用同一套签名；正式密钥与密码须离线备份且绝不入库，测试签名包与正式包独立安装；普通 Debug 与 `--test` 包共用测试签名，可以相互覆盖更新并保留测试数据。发布版本与 Tools24 一致：基础版本加 8 位 Git 哈希，手机 versionCode 使用 Git 提交次数，手表加 1,000,000。两端启用 R8 优化与资源裁剪，手机启用 Dart 混淆；APK/AAB 分别保存映射和符号。详见 [上架清单](doc/google_play/README.md)。
+本机已配置正式上传密钥；独立测试密钥及配置已入库，测试密码视为公开信息。运行 `./release.sh` 生成正式签名的手机、手表 APK 和 AAB；运行 `./release.sh --test` 生成测试签名的手机、手表 APK。默认仅本地归档，`--push-website` 上传两端 APK 到 OSS 并同步 AI Link 官网，`--push-android` 同时同步官网和 Google Play，`--push-mobile` 同步官网并上传 Google Play 与 App Store Connect，`--push-all` 再把 macOS DMG 与 Windows 安装包的下载地址一并写入官网。官网发布需先部署同级 HomeTools 的 `/api/v1/ai-link/release` 接口，并在 `localConfig/.env.local` 配置发布密钥和 OSS 配置路径，示例见 `scripts/website_release.env.example` 与 `scripts/oss_config.example.json`。两端必须使用同一套签名；正式密钥与密码须离线备份且绝不入库，测试签名包与正式包独立安装；普通 Debug 与 `--test` 包共用测试签名，可以相互覆盖更新并保留测试数据。发布版本与 Tools24 一致：基础版本加 8 位 Git 哈希，手机 versionCode 使用 Git 提交次数，手表加 1,000,000。两端启用 R8 优化与资源裁剪，手机启用 Dart 混淆；APK/AAB 分别保存映射和符号。详见 [上架清单](doc/google_play/README.md)。
 
 ## 开发验证
 
