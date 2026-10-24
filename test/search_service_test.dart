@@ -32,7 +32,69 @@ const question = ChatMessage(
   createdAt: 0,
 );
 
+class _SocketErrorClient implements HttpClient {
+  _SocketErrorClient(this.error);
+  final SocketException error;
+
+  @override
+  Duration? connectionTimeout;
+
+  @override
+  Future<HttpClientRequest> postUrl(Uri url) async => throw error;
+
+  @override
+  void close({bool force = false}) {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 void main() {
+  for (final (code, retrySafe) in [
+    (61, true), // macOS ECONNREFUSED.
+    (111, true), // Linux ECONNREFUSED.
+    (10061, true), // Windows WSAECONNREFUSED.
+    (54, false), // macOS connection reset.
+    (10054, false), // Windows connection reset.
+    (60, false), // macOS timeout.
+    (10060, false), // Windows timeout.
+    (null, false), // No confirmed failure before sending.
+  ]) {
+    test('search socket error $code retry safety is $retrySafe', () async {
+      await HttpOverrides.runZoned(
+        () async {
+          final search = SearchClient(
+            const SearchProviderConfig(
+              id: 'socket-test',
+              name: 'Search',
+              service: SearchService.tavily,
+              endpoint: 'http://127.0.0.1/search',
+            ),
+            'fake-key',
+          );
+          await expectLater(
+            search.search('question'),
+            throwsA(
+              isA<SearchException>()
+                  .having(
+                    (error) => error.networkFailure,
+                    'network failure',
+                    true,
+                  )
+                  .having((error) => error.retrySafe, 'retry safe', retrySafe),
+            ),
+          );
+        },
+        createHttpClient: (_) => _SocketErrorClient(
+          SocketException(
+            'socket failure',
+            osError: code == null ? null : OSError('socket failure', code),
+          ),
+        ),
+      );
+    });
+  }
+
   test('refused search connection can safely switch watch routes', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final search = SearchClient(
