@@ -9,7 +9,7 @@
 - `zh-CN/LISTING.md`、`en-US/LISTING.md`：商店文案草稿；上线前按实际功能复核。
 - `wear/`：Wear OS 480×480 模拟器真实界面截图（中英、明暗及设置页），作为审核素材候选；最终上架前仍需核对签名版和实际配置。
 - `zh-CN/phone/`、`en-US/phone/`：各 4 张 1080×1920 的真实手机模拟器截图，已转换为无透明通道的 JPEG。截图来自隔离的 Pixel 10 Pro 模拟器和本地测试签名包，作为商店详情草稿；发布前仍需用最终上传签名版本复核应用界面，并补充真实聊天画面。
-- `../../release.sh`：先运行分析、测试；默认构建并归档正式签名的手机与 Wear OS APK/AAB，`--test` 只构建本地测试签名的两端 APK。`--push-website` 将正式 APK 上传 OSS 并更新 AI Link 官网，`--push-release` 再通过 Google Play API 上传两个 AAB，默认进入内部测试轨道。每次归档记录 SHA-256、签名证书、版本号与官网/Play 状态；APK/AAB 分别保存 R8 映射和 Dart 符号。
+- `../../release.sh`：先运行分析、测试；默认构建并归档正式签名的手机与 Wear OS APK/AAB，`--test` 只构建本地测试签名的两端 APK。`--push-website` 将正式 APK 上传 OSS 并更新 AI Link 官网，`--push-android` 再通过 Google Play API 上传两个 AAB，默认进入内部测试轨道。每次归档记录 SHA-256、签名证书、版本号与官网/Play 状态；APK/AAB 分别保存 R8 映射和 Dart 符号。
 - `../../android/key.properties.example` 和 `../../android/key.test.properties.example`：两套签名配置模板。测试密钥 `localConfig/ai-link-test.jks` 与实际配置 `android/key.test.properties` 已入库，便于共同测试；正式密钥 `localConfig/ai-link-upload.jks` 和实际配置 `android/key.properties` 仅在本机，始终被 Git 忽略。同一套构建中的手机与手表必须使用同一密钥。
 - 官方网站：<https://www.tools24.uk/app/ai-link>；中英文隐私政策：<https://www.tools24.uk/app/ai-link/privacy>。两页已公开可访问；应用内“数据与隐私”和“关于”分别提供入口。
 
@@ -19,9 +19,9 @@
 ./release.sh                                      # 本地构建正式手机与手表 APK/AAB
 ./release.sh --test                               # 只构建测试手机与手表 APK
 ./release.sh --push-website                       # 同步官网两端 APK 下载，不上传 Play
-./release.sh --push-release --play-track internal # 同步官网并上传手机及 Wear OS 内部测试轨道
+./release.sh --push-android --play-track internal # 同步官网并上传手机及 Wear OS 内部测试轨道
 ./release.sh --push-mobile                         # 同步官网，并上传 Google Play 与 App Store Connect
-./release.sh --push-release --play-track alpha --wear-track 'wear:手表内部测试V2' # 两端指定不同的已有测试轨道
+./release.sh --push-android --play-track alpha --wear-track 'wear:手表内部测试V2' # 两端指定不同的已有测试轨道
 ```
 
 官网同步采用 Tools24 相同的 OSS → HomeTools 发布接口流程，但 AI Link 使用独立接口与 Redis key，不能把 `WEBSITE_RELEASE_URL` 指向 Tools24 的 `/api/v1/app/release`。

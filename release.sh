@@ -3,14 +3,14 @@
 #
 # 发布开关（可组合；未指定 --platform 时按开关推导需要构建的平台）：
 #   --push-website   APK 同步 AI Link 官网（OSS + HomeTools 发布接口）              需要 Android
-#   --push-release   官网 + Google Play：APK 到官网，手机与 Wear OS 两个 AAB 到 Play  需要 Android
+#   --push-android   官网 + Google Play：APK 到官网，手机与 Wear OS 两个 AAB 到 Play  需要 Android
 #   --push-ios       IPA 上传 App Store Connect（TestFlight，不自动提审）            需要 iOS
-#   --push-mobile    官网 + Google Play + App Store Connect，同 --push-release --push-ios  需要 Android 与 iOS
+#   --push-mobile    官网 + Google Play + App Store Connect，同 --push-android --push-ios  需要 Android 与 iOS
 #
 # 常用组合：
 #   ./release.sh                             全平台构建并本地归档，不上传
 #   ./release.sh --test                      测试签名 APK（仅 Android 手机与 Wear OS）
-#   ./release.sh --push-release              Android：官网 + Google Play
+#   ./release.sh --push-android              Android：官网 + Google Play
 #   ./release.sh --push-ios                  iOS：构建并上传 App Store Connect
 #   ./release.sh --push-mobile               Android 与 iOS 一起发布（不含 macOS）
 #   ./release.sh --platform macos            只构建 macOS
@@ -27,6 +27,7 @@
 #
 # 上传结果同时写入归档目录的 release-info.txt，结束时统一打印汇总。
 set -Eeuo pipefail
+release_started_at=$SECONDS
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$repo_root"
@@ -35,7 +36,7 @@ profile="release"
 platform=""
 requested_build=""
 ios_export_options="${IOS_EXPORT_OPTIONS_PLIST:-}"
-push_release=0
+push_android=0
 push_website=0
 push_ios=0
 play_track="internal"
@@ -43,22 +44,22 @@ wear_track=""
 json_key="${PLAY_SERVICE_ACCOUNT_JSON:-$repo_root/localConfig/google-play-service-account.json}"
 
 usage() {
-  echo "用法：./release.sh [--platform all|mobile|android|ios|macos|windows|desktop | --github-windows | --build-all] [--test] [--push-release|--push-website|--push-ios|--push-mobile] [--ios-export-options 路径] [--play-track internal|alpha|beta|production] [--wear-track wear:轨道名] [--json-key 路径]"
+  echo "用法：./release.sh [--platform all|mobile|android|ios|macos|windows|desktop | --github-windows | --build-all] [--test] [--push-android|--push-website|--push-ios|--push-mobile] [--ios-export-options 路径] [--play-track internal|alpha|beta|production] [--wear-track wear:轨道名] [--json-key 路径]"
   echo "  （无参数）        构建 Android/Wear OS APK/AAB、iOS/Apple Watch IPA 与归档、macOS APP/DMG/ZIP；仅本地归档"
   echo "  --platform      只构建所选平台；all 为 Android、iOS 与 macOS，mobile 为 Android + iOS（不含 macOS）；Apple 平台需 Mac/Xcode，本机无 iOS 分发证书时自动跳过 iOS"
   echo "                  windows 不包含在 all 里，且只能在 Windows 主机上构建"
   echo "                  desktop 为本机 macOS + GitHub Actions Windows；需要 gh 登录及已提交、推送的干净工作区"
-  echo "                  不指定时按发布开关推导：--push-release/--push-website 取 Android，--push-ios 取 iOS，--push-mobile 或两者同时给出则取 mobile"
+  echo "                  不指定时按发布开关推导：--push-android/--push-website 取 Android，--push-ios 取 iOS，--push-mobile 或两者同时给出则取 mobile"
   echo "  --github-windows  仅通过 GitHub Actions 构建 Windows 并下载带版本号的 Setup.exe 和 ZIP；需要已推送的干净分支与 Actions 读写权限"
   echo "  --build-all       构建 Android/Wear OS、iOS/Apple Watch、macOS 和 GitHub Windows；需 Mac、Android/Apple 签名及 Actions 权限，缺少 iOS 分发签名时报错"
   echo "                    这两个参数互斥，且均不能与 --platform 或 --test 同用；默认仅本地归档，不上传商店"
   echo "  --ios-export-options  iOS 本地 IPA 导出 plist；也可设 IOS_EXPORT_OPTIONS_PLIST"
   echo "  --test          构建本地测试签名的手机和 Wear OS APK；不上传"
-  echo "  --push-release  默认只构建 Android；APK 同步官网，同时上传两个 AAB 到 Google Play"
+  echo "  --push-android  默认只构建 Android；APK 同步官网，同时上传两个 AAB 到 Google Play"
   echo "  --push-website  默认只构建 Android；APK 同步 AI Link 官网；不上传 Google Play"
   echo "  --push-ios      默认只构建 iOS；把正式签名 IPA 上传到 App Store Connect（TestFlight）；不自动提交审核"
   echo "                  凭据见 localConfig/appstore-connect.env，模板 scripts/appstore_connect.env.example"
-  echo "  --push-mobile   同 --push-release --push-ios：同步官网，并上传 Google Play 与 App Store Connect；不构建 macOS"
+  echo "  --push-mobile   同 --push-android --push-ios：同步官网，并上传 Google Play 与 App Store Connect；不构建 macOS"
   echo "  --play-track    手机轨道；Wear OS 自动使用 wear:<轨道>"
   echo "  --wear-track    指定已有手表轨道，可与手机轨道名称不同"
   echo "  --json-key      服务账号 JSON 路径；也可设 PLAY_SERVICE_ACCOUNT_JSON"
@@ -78,10 +79,10 @@ while [[ $# -gt 0 ]]; do
       [[ $# -ge 2 ]] || { echo "--ios-export-options 缺少路径" >&2; exit 2; }
       ios_export_options="$2"; shift 2 ;;
     --test) profile="test"; shift ;;
-    --push-release) push_release=1; push_website=1; shift ;;
+    --push-android) push_android=1; push_website=1; shift ;;
     --push-website) push_website=1; shift ;;
     --push-ios) push_ios=1; shift ;;
-    --push-mobile) push_release=1; push_website=1; push_ios=1; shift ;;
+    --push-mobile) push_android=1; push_website=1; push_ios=1; shift ;;
     --play-track)
       [[ $# -ge 2 ]] || { echo "--play-track 缺少轨道" >&2; exit 2; }
       play_track="$2"; shift 2 ;;
@@ -113,18 +114,18 @@ if [[ "$wear_track" != wear:* || -z "${wear_track#wear:}" || "${wear_track#wear:
   echo "--wear-track 必须使用完整的 wear:<轨道名>" >&2
   exit 2
 fi
-if (( push_release || push_website || push_ios )) && [[ "$profile" == "test" ]]; then
+if (( push_android || push_website || push_ios )) && [[ "$profile" == "test" ]]; then
   echo "测试签名的调试包不可发布到官网、Google Play 或 App Store Connect；请去掉 --test。" >&2
   exit 2
 fi
 # 未指定 --platform 时按发布开关推导要构建的平台：官网/Google Play 需要 Android，App Store Connect 需要 iOS。
 # 两者同时发布只构建 Android 与 iOS，不额外构建 macOS；macOS 请显式用 --platform macos|all。
 if [[ -z "$platform" ]]; then
-  if (( push_ios )) && (( push_release || push_website )); then
+  if (( push_ios )) && (( push_android || push_website )); then
     platform="mobile"
   elif (( push_ios )); then
     platform="ios"
-  elif (( push_release || push_website )); then
+  elif (( push_android || push_website )); then
     platform="android"
   else
     platform="all"
@@ -158,7 +159,7 @@ if [[ "$profile" == "test" && "$platform" != "android" ]]; then
   echo "--test 仅支持 Android 手机与 Wear OS；Apple 调试请使用 install-dev.sh。" >&2
   exit 2
 fi
-if (( (push_release || push_website) && ! build_android )); then
+if (( (push_android || push_website) && ! build_android )); then
   echo "官网/Google Play 上传需要构建 Android：请用 --platform android|mobile|all。" >&2
   exit 2
 fi
@@ -275,7 +276,7 @@ ensure_publish_dependencies() {
   "$python_bin" scripts/website_release.py --check
 }
 # Google Play 与 App Store Connect 都在境外，共用同一份 HTTP 代理设置。
-if (( push_release || push_ios )); then
+if (( push_android || push_ios )); then
   resolve_http_proxy() {
     local configured="${http_proxy:-${HTTP_PROXY:-${https_proxy:-${HTTPS_PROXY:-}}}}" candidate
     if [[ -n "$configured" ]]; then printf '%s' "$configured"; return; fi
@@ -300,7 +301,7 @@ if (( push_release || push_ios )); then
     echo "已为发布接口配置 HTTP 代理。"
   fi
 fi
-if (( push_release )); then
+if (( push_android )); then
   [[ -f "$json_key" ]] || { echo "服务账号密钥不存在：$json_key" >&2; exit 2; }
   if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
     echo "警告：工作区有未提交文件，本次上传产物可能无法由 HEAD 精确复现。" >&2
@@ -309,7 +310,7 @@ if (( push_release )); then
   "${publish_env[@]}" "$python_bin" scripts/play_upload.py \
     --json-key "$json_key" --track "$play_track" --wear-track "$wear_track" --check-tracks
 fi
-if (( push_website && ! push_release )); then ensure_publish_dependencies; fi
+if (( push_website && ! push_android )); then ensure_publish_dependencies; fi
 # 先校验 App Store Connect 凭据与 App 记录，避免 iOS 构建完成后才发现凭据或 Issuer ID 有误。
 if (( push_ios )); then
   [[ -f "$asc_config" ]] || {
@@ -350,7 +351,7 @@ aab_cert_sha256() {
 }
 
 history="release-history"
-if (( push_release || push_website )); then history="release-publish-history"; fi
+if (( push_android || push_website )); then history="release-publish-history"; fi
 stamp="$(date +%Y%m%d%H%M%S)-$$"
 output="$repo_root/release-artifacts/$history/$version/$stamp"
 mkdir -p "$output"
@@ -378,13 +379,16 @@ failed_command=""
 summary_printed=0
 
 print_summary() {
-  local item
+  local item elapsed_seconds
   if (( summary_printed )); then return 0; fi
   summary_printed=1
+  elapsed_seconds=$((SECONDS - release_started_at))
+  echo "elapsedSeconds=$elapsed_seconds" >> "$output/release-info.txt"
   echo
   echo "================= 本次发布汇总 ================="
   echo "版本：$version    提交：$git_hash"
   echo "归档目录：$output"
+  printf '总耗时：%02d:%02d:%02d（%s 秒）\n' "$((elapsed_seconds / 3600))" "$((elapsed_seconds / 60 % 60))" "$((elapsed_seconds % 60))" "$elapsed_seconds"
   echo
   echo "构建结果"
   echo "  Android 手机 / Wear OS：$android_status"
@@ -596,7 +600,7 @@ else
   echo "websiteStatus=NOT_UPLOADED" >> "$output/release-info.txt"
 fi
 
-if (( push_release )); then
+if (( push_android )); then
   echo "上传手机到 ${play_track}，Wear OS 到 ${wear_track} ..."
   upload_log="$output/play-upload.log"
   if ! "${publish_env[@]}" "$python_bin" -u scripts/play_upload.py \

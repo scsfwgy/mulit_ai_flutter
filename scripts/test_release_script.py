@@ -13,6 +13,32 @@ class ReleaseScriptTest(unittest.TestCase):
     def test_bash_syntax(self):
         subprocess.run(["/bin/bash", "-n", str(RELEASE_SCRIPT)], check=True)
 
+    def test_summary_prints_and_records_total_elapsed_time_once(self):
+        source = RELEASE_SCRIPT.read_text()
+        summary = source[source.index('print_summary() {'):source.index('\nfail() {')]
+        with tempfile.TemporaryDirectory() as directory:
+            env = os.environ.copy()
+            env.update(output=directory, version="1.1.5+90", git_hash="abcd1234",
+                       android_status="成功", macos_status="成功", windows_status="成功",
+                       ios_status="成功", ios_skip_reason="", website_status="未执行",
+                       play_status="未执行", appstore_status="未执行", failure_reason="")
+            result = subprocess.run(
+                ["/bin/bash", "-Eeuo", "pipefail", "-c",
+                 'summary_printed=0\nartifacts=()\n' + summary +
+                 '\nrelease_started_at=$((SECONDS - 3661))\nprint_summary\nprint_summary\n'],
+                env=env, capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("总耗时：01:01:01（3661 秒）", result.stdout)
+            self.assertEqual(result.stdout.count("总耗时："), 1)
+            self.assertEqual((Path(directory) / "release-info.txt").read_text(), "elapsedSeconds=3661\n")
+
+    def test_old_android_publish_flag_is_rejected(self):
+        result = subprocess.run(["/bin/bash", str(RELEASE_SCRIPT), "--push-release"],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("未知参数", result.stderr)
+
     def test_detected_publish_proxy_does_not_leak_into_flutter(self):
         source = RELEASE_SCRIPT.read_text()
         preflight = source[source.index('publish_env=(env)'):source.index('normalize_fingerprint()')]
@@ -46,7 +72,7 @@ class ReleaseScriptTest(unittest.TestCase):
                 PATH=f'{root}:{env["PATH"]}',
                 repo_root=directory,
                 json_key=str(key),
-                push_release="1",
+                push_android="1",
                 push_website="1",
                 push_ios="0",
                 play_track="internal",
@@ -64,7 +90,7 @@ class ReleaseScriptTest(unittest.TestCase):
     def run_upload_step(self, succeeds, wear_track="wear:internal"):
         # Execute the real post-build branch without building or contacting Play.
         source = RELEASE_SCRIPT.read_text()
-        upload_step = source[source.index('if (( push_release )); then\n  echo "上传手机到'):]
+        upload_step = source[source.index('if (( push_android )); then\n  echo "上传手机到'):]
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
             uploader = output / "fake-uploader"
@@ -76,7 +102,7 @@ class ReleaseScriptTest(unittest.TestCase):
             uploader.chmod(0o700)
             env = os.environ.copy()
             env.update(
-                push_release="1",
+                push_android="1",
                 push_ios="0",
                 play_track="internal",
                 wear_track=wear_track,
@@ -366,7 +392,7 @@ if not args.check:
                       ["--github-windows", "--platform", "macos"],
                       ["--platform", "android", "--build-all"],
                       ["--github-windows", "--test"], ["--build-all", "--test"],
-                      ["--github-windows", "--push-release"], ["--github-windows", "--push-ios"]):
+                      ["--github-windows", "--push-android"], ["--github-windows", "--push-ios"]):
             with self.subTest(flags=flags):
                 result = subprocess.run(["/bin/bash", str(RELEASE_SCRIPT), *flags],
                                         capture_output=True, text=True)
@@ -374,8 +400,8 @@ if not args.check:
 
     def test_complete_release_modes_and_website_failure(self):
         for flags, website_failure in (([], False), (["--test"], False),
-                (["--push-website"], False), (["--push-release"], False),
-                (["--push-release"], True), (["--platform", "android"], False),
+                (["--push-website"], False), (["--push-android"], False),
+                (["--push-android"], True), (["--platform", "android"], False),
                 (["--platform", "macos"], False), (["--platform", "ios"], False),
                 (["--platform", "all", "--push-website"], False)):
             with self.subTest(flags=flags, website_failure=website_failure), tempfile.TemporaryDirectory() as directory:
@@ -403,11 +429,11 @@ if not args.check:
                     self.assertIn("apple macos 1.0.1+10", calls)
                     self.assertIn("apple ios 1.0.1+10", calls)
                 actual_play = "python -u scripts/play_upload.py" in calls
-                self.assertEqual(actual_play, flags == ["--push-release"] and not website_failure)
+                self.assertEqual(actual_play, flags == ["--push-android"] and not website_failure)
                 if website_failure:
                     self.assertIn("websiteStatus=FAILED", infos[0].read_text())
                     self.assertIn("失败原因：官网下载同步未完成", result.stdout)
-                elif "--push-website" in flags or "--push-release" in flags:
+                elif "--push-website" in flags or "--push-android" in flags:
                     self.assertIn("websiteStatus=CONFIRMED", infos[0].read_text())
                 else:
                     self.assertNotIn("python ", calls)
@@ -432,10 +458,10 @@ if not args.check:
             self.assertEqual(len(list(info.parent.glob("*.apk"))), 0)
             self.assertEqual(len(list(info.parent.glob("*.aab"))), 0)
 
-    def test_push_release_with_push_ios_builds_android_and_ios_only(self):
+    def test_push_android_with_push_ios_builds_android_and_ios_only(self):
         with tempfile.TemporaryDirectory() as directory:
-            root, env = self.mock_release_root(directory, ["--push-release", "--push-ios"])
-            result = subprocess.run(["/bin/bash", "release.sh", "--push-release", "--push-ios"],
+            root, env = self.mock_release_root(directory, ["--push-android", "--push-ios"])
+            result = subprocess.run(["/bin/bash", "release.sh", "--push-android", "--push-ios"],
                                     cwd=root, env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             calls = (root / "calls").read_text()
@@ -517,7 +543,7 @@ if not args.check:
 
     def test_invalid_platform_and_incompatible_modes_stop_before_build(self):
         for flags in (["--platform", "windows"], ["--test", "--platform", "all"],
-                      ["--platform", "ios", "--push-release"],
+                      ["--platform", "ios", "--push-android"],
                       ["--platform", "android", "--push-ios"],
                       ["--platform", "macos", "--push-ios"]):
             result = subprocess.run(["/bin/bash", str(RELEASE_SCRIPT), *flags],
@@ -525,7 +551,7 @@ if not args.check:
             self.assertEqual(result.returncode, 2, result.stderr)
 
     def test_test_packages_cannot_be_published(self):
-        for flag in ("--push-release", "--push-website", "--push-ios", "--push-mobile"):
+        for flag in ("--push-android", "--push-website", "--push-ios", "--push-mobile"):
             result = subprocess.run(["/bin/bash", str(RELEASE_SCRIPT), "--test", flag],
                                     capture_output=True, text=True)
             self.assertEqual(result.returncode, 2)
