@@ -4,7 +4,7 @@
 
 ## 产品与当前范围
 
-- Android 与 iOS 手机端共用 Flutter 的 iOS 风格页面，不按运行平台切换两套页面；Wear OS 与 Apple Watch 使用各自的原生界面。Apple 平台代码待完整 Xcode 构建及配对设备验证。
+- Android 与 iOS 手机端共用 Flutter 的 iOS 风格页面，不按运行平台切换两套页面；Wear OS 与 Apple Watch 使用各自的原生界面。macOS、Windows 与 Linux 共用桌面分栏。Apple 平台代码待完整 Xcode 构建及配对设备验证；Windows 尚未在 Windows 机器上运行过。
 - 已实现文本聊天、流式回复、Markdown 回复、多话题、模型服务预设、自定义 API、表单、JSON 与扫码导入配置，以及全局和单模型提示词。
 - 当前协议是 OpenAI 兼容 Chat Completions 和 Claude Messages。新增平台时先判断能否复用协议适配器，再增加专用实现。
 - 已实现手机/桌面的图片、拍照入口（手机）和文件发送：图片/PDF 按协议直发，UTF-8 文本本地读取，其它格式不限后缀并原样发送，是否支持由模型或接口决定。不在本地解析 Office 文档。工具调用、跨设备云同步和历史导入导出尚未实现。附件流程与验证边界见 `doc/CHAT_ATTACHMENTS.md`。正式上传签名已在本机配置，但尚未在 Play Console 注册或上架；不要把 Android 构建成功写成 iOS 或商店发布成功。
@@ -16,8 +16,9 @@
 
 ### 入口与外壳
 
-- `lib/main.dart`：`main()`、手表后台入口 `watchBackgroundMain()` 与 `MaterialApp` 外壳；必须留在 `lib/` 根目录（`FLUTTER_TARGET`）。
-- `lib/core/app_platform.dart`：`isDesktopApp`、`supportsApplePurchases`、`supportsWatchCompanion` 等平台能力判断；UI 不用 `Platform.isAndroid/isIOS` 分支。
+- `lib/main.dart`：`main()`、手表后台入口 `watchBackgroundMain()` 与 `MaterialApp` 外壳；必须留在 `lib/` 根目录（`FLUTTER_TARGET`）。`main()` 在读取语言偏好之前调用 `configureDesktopSqlite()`。
+- `lib/core/app_platform.dart`：`isDesktopApp`、`supportsApplePurchases`、`supportsWatchCompanion`、`supportsQrScan` 等平台能力判断；UI 不用 `Platform.isAndroid/isIOS` 分支。`supportsQrScan` 仅 Android、iOS、macOS 为真，Windows 与 Linux 不显示扫码入口，也不打开 `MobileScanner`。
+- `lib/core/sqlite_desktop.dart`：Windows 与 Linux 在打开数据库前把 sqflite 换成 `sqflite_common_ffi`，并将数据库固定到 `getApplicationSupportDirectory()/databases`；`main()` 必须 await 初始化，不能使用依赖当前工作目录的 FFI 默认路径。原生 SQLite 由传递依赖 `sqlite3` 的 Dart build hooks 打进安装包，不要再加已经空转的 `sqlite3_flutter_libs`。单元测试不要调用 `configureDesktopSqlite()`，否则会换掉测试用的 method channel 工厂；路径与持久化测试使用独立的 `createDesktopDatabaseFactory()`。macOS 继续用 `sqflite_darwin`。
 
 ### 聊天（chat/）
 
@@ -42,7 +43,7 @@
 - `lib/chat/message_copy.dart`：复制 Markdown 原文或包含 HTML 与纯文本的格式化内容；Android/iOS 原生剪贴板通道负责富文本。
 - `lib/chat/model_picker.dart`：聊天与服务配置共用的可搜索模型列表；大列表按 `平台/模型` 或 `家族-型号` 前缀折叠分组。
 - `lib/chat/assistant_markdown.dart`：模型回复的 Markdown 展示。
-- `lib/chat/desktop_chat.dart`：macOS 桌面端的分栏布局与键盘快捷键外壳。
+- `lib/chat/desktop_chat.dart`：桌面分栏布局与键盘快捷键外壳。macOS 用 Command，Windows 与 Linux 用 Control。Windows 原生 File 菜单只在点击时调用 `between_models/desktop_menu`，菜单文字里写着 Ctrl+N 与 Ctrl+,，但不注册 Win32 加速键，避免和 Flutter 快捷键各触发一次。格式化复制在 Windows 写入 CF_UNICODETEXT 与 `HTML Format`；通道失败时退回纯文本。窗口标题为 AI Link，默认 1100×760，最小 600×500。
 
 ### 核心数据（core/）
 
@@ -183,7 +184,9 @@ cd android && ./gradlew :wear:assembleDebug
 
 iOS Debug 使用 `com.maxhall.ailink.debug` 和「AI Link Debug」，watchOS Debug 使用 `com.maxhall.ailink.debug.watchkitapp` 并关联 Debug iPhone；Release 保留正式标识。iOS/watchOS 编译和设备验证需要完整 Xcode 与 Apple 平台 SDK，并完成 Flutter 插件依赖集成；如果当前开发机只有 Xcode Command Line Tools，明确记录该限制，不要用 Swift 语法检查或 Android 构建结果代替 Apple 平台验证。
 
-发布构建运行 `./release.sh`，会先分析和测试，再从未入库的 `android/key.properties` 使用同一个上传密钥生成手机和手表 APK/AAB；无参数时同时构建 Android、macOS 和 iOS/Apple Watch，本机没有 iOS 分发证书就跳过 iOS 并继续（显式 `--platform ios` 才当错误），结束时打印各平台成功/失败/跳过与本地产物路径的汇总。`--platform android|ios|macos|mobile|all` 可只构建所需平台（`mobile` 为 Android + iOS，不含 macOS）；本地测试运行 `./release.sh --test`，用 `android/key.test.properties` 生成两端 APK。默认仅本地归档；`--push-website` 上传正式 APK 到 OSS 并同步 HomeTools 的 `/api/v1/ai-link/release`，`--push-release` 同时同步官网和 Google Play，`--push-ios` 用 `scripts/appstore_upload.py`（Xcode 自带 `altool`）把正式 IPA 上传 App Store Connect 供 TestFlight 使用、不自动提审。`--push-mobile` 等价于 `--push-release --push-ios`：同步官网，并上传 Google Play 与 App Store Connect。未指定 `--platform` 时按发布开关推导要构建的平台：`--push-release`/`--push-website` 取 Android，`--push-ios` 取 iOS，`--push-mobile` 或两者同时给出取 `mobile`。App Store Connect 凭据放 `localConfig/appstore-connect.env`（模板 `scripts/appstore_connect.env.example`），上传前会联网校验凭据并核对 IPA 内手机与手表标识和版本；`altool` 走系统网络设置，不读 `http_proxy`。AI Link 发布信息使用独立 Redis key，不覆盖 Tools24；发布 Token 与 OSS 凭据保存在忽略的 `localConfig` 中。APK/AAB 分别保存签名校验、R8 映射和 Dart 符号。正式版与测试版使用不同包名和签名，可同时安装且数据独立；普通 Debug 与 `--test` 共用测试包名和签名，可覆盖更新。旧包数据不自动迁移，不得通过卸载或清空用户数据强行切换。密钥和密码必须离线备份，不使用 debug 签名冒充发布包。Google Play 隐私政策、Data safety、AI 内容举报流程、真实截图和设备测试见 `doc/google_play/README.md`，未完成项不能写成已上架。
+发布构建运行 `./release.sh`，会先分析和测试，再从未入库的 `android/key.properties` 使用同一个上传密钥生成手机和手表 APK/AAB；无参数时同时构建 Android、macOS 和 iOS/Apple Watch，本机没有 iOS 分发证书就跳过 iOS 并继续（显式 `--platform ios` 才当错误），结束时打印各平台成功/失败/跳过与本地产物路径的汇总。`--platform android|ios|macos|windows|mobile|all` 可只构建所需平台（`mobile` 为 Android + iOS，不含 macOS）。`all` 不含 Windows：Flutter 不能从 macOS 交叉编译 Windows，`--platform windows` 只在 Windows 主机上执行 `flutter build windows --release` 并归档 zip。本地测试运行 `./release.sh --test`，用 `android/key.test.properties` 生成两端 APK。不要把本机 Dart 测试通过写成 Windows 应用已经跑起来。默认仅本地归档；`--push-website` 上传正式 APK 到 OSS 并同步 HomeTools 的 `/api/v1/ai-link/release`，`--push-release` 同时同步官网和 Google Play，`--push-ios` 用 `scripts/appstore_upload.py`（Xcode 自带 `altool`）把正式 IPA 上传 App Store Connect 供 TestFlight 使用、不自动提审。`--push-mobile` 等价于 `--push-release --push-ios`：同步官网，并上传 Google Play 与 App Store Connect。未指定 `--platform` 时按发布开关推导要构建的平台：`--push-release`/`--push-website` 取 Android，`--push-ios` 取 iOS，`--push-mobile` 或两者同时给出取 `mobile`。App Store Connect 凭据放 `localConfig/appstore-connect.env`（模板 `scripts/appstore_connect.env.example`），上传前会联网校验凭据并核对 IPA 内手机与手表标识和版本；`altool` 走系统网络设置，不读 `http_proxy`。AI Link 发布信息使用独立 Redis key，不覆盖 Tools24；发布 Token 与 OSS 凭据保存在忽略的 `localConfig` 中。APK/AAB 分别保存签名校验、R8 映射和 Dart 符号。正式版与测试版使用不同包名和签名，可同时安装且数据独立；普通 Debug 与 `--test` 共用测试包名和签名，可覆盖更新。旧包数据不自动迁移，不得通过卸载或清空用户数据强行切换。密钥和密码必须离线备份，不使用 debug 签名冒充发布包。Google Play 隐私政策、Data safety、AI 内容举报流程、真实截图和设备测试见 `doc/google_play/README.md`，未完成项不能写成已上架。
+
+桌面联合归档用 `./release.sh --platform desktop`：本机 macOS 与 GitHub Actions Windows 使用相同提交、版本、构建号及 Flutter 版本，产物统一保存在本次归档目录。`scripts/windows_remote_release.py` 要求干净且已推送的分支、`gh` 已登录及默认分支已有 `.github/workflows/ai-link-windows.yml`；不自动提交或推送。Windows 产物下载后校验元数据及 ZIP 内容，任务失败则本次构建失败，已归档的 macOS 产物保留。`all` 保持原有范围，联合桌面构建需显式指定 `desktop`。
 
 提交代码前先检查 `git status`、变更范围和 `git diff --check`。只提交本次工作涉及的文件；`build/`、`.dart_tool/` 等构建产物由 `.gitignore` 排除。
 

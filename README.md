@@ -35,6 +35,12 @@ iOS 的配置文件位于 `ios/Runner/GoogleService-Info.plist`，已加入 Runn
 
 macOS 客户端可使用 `flutter run -d macos` 运行，支持首页左侧历史会话与右侧聊天、设置页左侧分类与右侧详情、键盘快捷键、云端语音、扫码配置和富文本复制。运行、数据与本地打包说明见 [macOS 客户端](doc/macos/README.md)。Mac 与手机分别保存本机数据，暂不自动同步。
 
+Windows 与 Linux 共用这套桌面界面。数据库在这两个系统上使用 ffi，快捷键是 Ctrl+N、Ctrl+,、Ctrl+L 和 Ctrl+Enter。Windows 有 File 菜单和富文本复制；没有摄像头时不显示扫码。安装包要用 Windows 上的 `./release.sh --platform windows` 或 `flutter build windows` 构建，macOS 不能交叉编译。当前还没有在 Windows 机器上运行过。
+
+macOS 与 Windows 一起构建归档：在 Mac 上运行 `./release.sh --platform desktop`。macOS 在本机构建，Windows 由 GitHub Actions 构建并下载，两者归入同一次 `release-artifacts/release-history/` 目录，附统一的 `SHA256SUMS`。两端使用同一提交、版本号、Git 提交次数构建号和 Flutter 版本；Windows 下载时再次核对这些信息。此命令不会上传商店或创建 GitHub Release。
+
+首次使用前需将 `.github/workflows/ai-link-windows.yml` 和代码提交、推送到 GitHub（工作流需先存在于默认分支），启用仓库 Actions，并安装 GitHub CLI、运行 `gh auth login`，账号需要触发 Actions 的权限。联合构建要求工作区干净且当前分支已推送；Windows runner 排队、测试或构建失败会使本次发布失败，已完成的 macOS 产物会保留。`--platform macos` 和 `--platform windows` 仍分别执行单平台本机构建；`all` 仍为原有 Android、iOS 和 macOS 范围。
+
 ```bash
 flutter pub get
 flutter run

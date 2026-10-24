@@ -82,5 +82,7 @@ Future<void> copyMessage(
     });
   } on MissingPluginException {
     await Clipboard.setData(ClipboardData(text: plain));
+  } on PlatformException {
+    await Clipboard.setData(ClipboardData(text: plain));
   }
 }

@@ -56,6 +56,7 @@ class _ProviderScreenState extends State<ProviderScreen> with StorefrontAware {
   }
 
   Future<void> _scanImport() async {
+    if (!supportsQrScan) return;
     final imported = await Navigator.push<bool>(
       context,
       appPageRoute(builder: (_) => const ProviderQrScanner()),
@@ -284,16 +285,17 @@ class _ProviderScreenState extends State<ProviderScreen> with StorefrontAware {
                   : 'i18n.supports_openai_compatible_chat_completions',
             ),
             children: [
-              IosRow(
-                title: T('i18n.scan_to_import'),
-                subtitle: T('i18n.scan_a_full_json_configuration'),
-                leading: Icon(
-                  CupertinoIcons.qrcode_viewfinder,
-                  color: IosColors.blue,
-                  size: 22,
+              if (supportsQrScan)
+                IosRow(
+                  title: T('i18n.scan_to_import'),
+                  subtitle: T('i18n.scan_a_full_json_configuration'),
+                  leading: Icon(
+                    CupertinoIcons.qrcode_viewfinder,
+                    color: IosColors.blue,
+                    size: 22,
+                  ),
+                  onTap: _scanImport,
                 ),
-                onTap: _scanImport,
-              ),
               IosRow(
                 title: T('i18n.custom_api_json_import'),
                 leading: Icon(
@@ -467,6 +469,7 @@ class _ProviderEditorState extends State<ProviderEditor> with StorefrontAware {
   }
 
   Future<void> _scanApiKey() async {
+    if (!supportsQrScan) return;
     final key = await Navigator.push<String>(
       context,
       appPageRoute(
@@ -663,15 +666,16 @@ class _ProviderEditorState extends State<ProviderEditor> with StorefrontAware {
                           ),
                         ),
                       ),
-                      IosRow(
-                        title: T('i18n.scan_api_key'),
-                        leading: Icon(
-                          CupertinoIcons.qrcode_viewfinder,
-                          color: IosColors.blue,
-                          size: 22,
+                      if (supportsQrScan)
+                        IosRow(
+                          title: T('i18n.scan_api_key'),
+                          leading: Icon(
+                            CupertinoIcons.qrcode_viewfinder,
+                            color: IosColors.blue,
+                            size: 22,
+                          ),
+                          onTap: _scanApiKey,
                         ),
-                        onTap: _scanApiKey,
-                      ),
                     ],
                   )
                 else
@@ -793,16 +797,17 @@ class _ProviderEditorState extends State<ProviderEditor> with StorefrontAware {
               ? Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    CupertinoButton(
-                      padding: const EdgeInsets.symmetric(horizontal: 7),
-                      minimumSize: const Size(36, 36),
-                      onPressed: _scanApiKey,
-                      child: Icon(
-                        CupertinoIcons.qrcode_viewfinder,
-                        size: 20,
-                        color: IosColors.blue,
+                    if (supportsQrScan)
+                      CupertinoButton(
+                        padding: const EdgeInsets.symmetric(horizontal: 7),
+                        minimumSize: const Size(36, 36),
+                        onPressed: _scanApiKey,
+                        child: Icon(
+                          CupertinoIcons.qrcode_viewfinder,
+                          size: 20,
+                          color: IosColors.blue,
+                        ),
                       ),
-                    ),
                     CupertinoButton(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       minimumSize: const Size(36, 36),

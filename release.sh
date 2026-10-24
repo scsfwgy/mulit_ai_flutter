@@ -14,6 +14,8 @@
 #   ./release.sh --push-ios                  iOS：构建并上传 App Store Connect
 #   ./release.sh --push-mobile               Android 与 iOS 一起发布（不含 macOS）
 #   ./release.sh --platform macos            只构建 macOS
+#   ./release.sh --platform desktop          本机 macOS + GitHub Actions Windows，统一归档
+#   ./release.sh --platform windows          只在 Windows 主机上构建 Windows zip
 #
 # 凭据都放在已被 .gitignore 忽略的 localConfig/ 下，脚本只读取、不写入：
 #   Android 签名   android/key.properties（正式）与 android/key.test.properties（--test）
@@ -38,9 +40,11 @@ wear_track=""
 json_key="${PLAY_SERVICE_ACCOUNT_JSON:-$repo_root/localConfig/google-play-service-account.json}"
 
 usage() {
-  echo "用法：./release.sh [--platform all|mobile|android|ios|macos] [--test] [--push-release|--push-website|--push-ios|--push-mobile] [--ios-export-options 路径] [--play-track internal|alpha|beta|production] [--wear-track wear:轨道名] [--json-key 路径]"
+  echo "用法：./release.sh [--platform all|mobile|android|ios|macos|windows|desktop] [--test] [--push-release|--push-website|--push-ios|--push-mobile] [--ios-export-options 路径] [--play-track internal|alpha|beta|production] [--wear-track wear:轨道名] [--json-key 路径]"
   echo "  （无参数）        构建 Android/Wear OS APK/AAB、iOS/Apple Watch IPA 与归档、macOS APP/DMG/ZIP；仅本地归档"
-  echo "  --platform      只构建所选平台；all 为全部，mobile 为 Android + iOS（不含 macOS）；Apple 平台需 Mac/Xcode，本机无 iOS 分发证书时自动跳过 iOS"
+  echo "  --platform      只构建所选平台；all 为 Android、iOS 与 macOS，mobile 为 Android + iOS（不含 macOS）；Apple 平台需 Mac/Xcode，本机无 iOS 分发证书时自动跳过 iOS"
+  echo "                  windows 不包含在 all 里，且只能在 Windows 主机上构建"
+  echo "                  desktop 为本机 macOS + GitHub Actions Windows；需要 gh 登录及已提交、推送的干净工作区"
   echo "                  不指定时按发布开关推导：--push-release/--push-website 取 Android，--push-ios 取 iOS，--push-mobile 或两者同时给出则取 mobile"
   echo "  --ios-export-options  iOS 本地 IPA 导出 plist；也可设 IOS_EXPORT_OPTIONS_PLIST"
   echo "  --test          构建本地测试签名的手机和 Wear OS APK；不上传"
@@ -111,14 +115,24 @@ fi
 build_android=0
 build_ios=0
 build_macos=0
+build_windows=0
+build_windows_remote=0
 case "$platform" in
   all) build_android=1; build_ios=1; build_macos=1 ;;
   mobile) build_android=1; build_ios=1 ;;
   android) build_android=1 ;;
   ios) build_ios=1 ;;
   macos) build_macos=1 ;;
+  windows) build_windows=1 ;;
+  desktop) build_macos=1; build_windows_remote=1 ;;
   *) echo "不支持的平台：$platform" >&2; exit 2 ;;
 esac
+if (( build_windows )); then
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) ;;
+    *) echo "Windows 安装包只能在 Windows 上构建。" >&2; exit 2 ;;
+  esac
+fi
 if [[ "$profile" == "test" && "$platform" != "android" ]]; then
   echo "--test 仅支持 Android 手机与 Wear OS；Apple 调试请使用 install-dev.sh。" >&2
   exit 2
@@ -166,6 +180,11 @@ if (( push_ios )) && (( ! build_ios )); then
   exit 2
 fi
 export AI_LINK_SIGNING_PROFILE="$profile"
+
+# 在本机耗时构建前确认远程可构建相同提交；不自动提交或推送代码。
+if (( build_windows_remote )); then
+  python3 scripts/windows_remote_release.py --check
+fi
 
 if (( build_android )); then
 
@@ -329,6 +348,7 @@ artifacts=()
 android_status="未构建"
 macos_status="未构建"
 ios_status="未构建"
+windows_status="未构建"
 website_status="未执行"
 play_status="未执行"
 appstore_status="未执行"
@@ -348,6 +368,7 @@ print_summary() {
   echo "构建结果"
   echo "  Android 手机 / Wear OS：$android_status"
   echo "  macOS：$macos_status"
+  echo "  Windows：$windows_status"
   echo "  iOS / Apple Watch：$ios_status"
   if [[ -n "$ios_skip_reason" ]]; then echo "  跳过原因：$ios_skip_reason"; fi
   echo
@@ -381,7 +402,7 @@ fail() {
 build_failed() {
   local name
   set +e
-  for name in android_status macos_status ios_status; do
+  for name in android_status macos_status ios_status windows_status; do
     [[ "${!name}" == "构建中" ]] && printf -v "$name" '%s' "失败"
   done
   failure_reason="构建命令执行失败"
@@ -476,6 +497,35 @@ if (( build_macos )); then
   artifacts+=("macos/AI-Link-$base_name+$code.dmg" "macos/AI-Link-$base_name+$code.zip")
   echo "macosStatus=COMPLETE" >> "$output/release-info.txt"
   macos_status="成功"
+fi
+if (( build_windows )); then
+  windows_status="构建中"
+  echo "构建 Windows Release..."
+  flutter build windows --release --build-name="$base_name" --build-number="$code"
+  windows_bundle="$output/windows"
+  mkdir -p "$windows_bundle"
+  cp -R build/windows/x64/runner/Release "$windows_bundle/AI-Link"
+  (
+    cd "$windows_bundle"
+    archive="AI-Link-$base_name+$code-windows.zip"
+    if command -v zip >/dev/null; then
+      zip -r "$archive" AI-Link
+    else
+      powershell.exe -NoProfile -Command "Compress-Archive -Path 'AI-Link' -DestinationPath '$archive' -Force"
+    fi
+  )
+  artifacts+=("windows/AI-Link-$base_name+$code-windows.zip")
+  echo "windowsStatus=COMPLETE" >> "$output/release-info.txt"
+  windows_status="成功"
+fi
+if (( build_windows_remote )); then
+  windows_status="构建中"
+  echo "通过 GitHub Actions 构建 Windows 并下载归档..."
+  python3 scripts/windows_remote_release.py --output "$output/windows" \
+    --version "$base_name" --build-number "$code"
+  artifacts+=("windows/AI-Link-$base_name+$code-windows.zip")
+  echo "windowsStatus=COMPLETE" >> "$output/release-info.txt"
+  windows_status="成功"
 fi
 if (( build_ios )); then
   ios_status="构建中"

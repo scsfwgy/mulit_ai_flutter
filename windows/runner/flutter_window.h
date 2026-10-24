@@ -2,9 +2,12 @@
 #define RUNNER_FLUTTER_WINDOW_H_
 
 #include <flutter/dart_project.h>
+#include <flutter/encodable_value.h>
 #include <flutter/flutter_view_controller.h>
+#include <flutter/method_channel.h>
 
 #include <memory>
+#include <string>
 
 #include "win32_window.h"
 
@@ -23,11 +26,22 @@ class FlutterWindow : public Win32Window {
                          LPARAM const lparam) noexcept override;
 
  private:
+  void InstallMenu();
+  void RegisterChannels();
+  void InvokeMenu(const char* method) noexcept;
+
   // The project to run.
   flutter::DartProject project_;
 
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> menu_channel_;
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      clipboard_channel_;
+
+  // Menu clicks only. Accelerators would also fire Flutter's Ctrl shortcuts.
+  static constexpr UINT kNewConversationCommand = 1001;
+  static constexpr UINT kSettingsCommand = 1002;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

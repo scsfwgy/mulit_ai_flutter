@@ -12,6 +12,7 @@ import 'package:mulit_ai_flutter/core/storefront_policy.dart';
 import 'package:mulit_ai_flutter/chat/chat_home.dart';
 import 'package:mulit_ai_flutter/core/app_platform.dart';
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/core/sqlite_desktop.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/settings/startup_screen.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
@@ -21,6 +22,8 @@ bool _compressionLicenseRegistered = false;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // 语言偏好会马上读 SQLite。Windows 与 Linux 必须先换成 ffi 工厂。
+  await configureDesktopSqlite();
   if (!_compressionLicenseRegistered) {
     _compressionLicenseRegistered = true;
     LicenseRegistry.addLicense(() async* {

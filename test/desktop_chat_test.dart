@@ -150,6 +150,54 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
+  testWidgets('Windows uses Control for desktop shortcuts', (tester) async {
+    final controller = TextEditingController();
+    final focus = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focus.dispose);
+    var sends = 0;
+    var newTopics = 0;
+    var settings = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DesktopChatKeyboard(
+          controller: controller,
+          inputFocus: focus,
+          onSend: () => sends++,
+          onNew: () => newTopics++,
+          onSettings: () => settings++,
+          child: const SizedBox.expand(),
+        ),
+      ),
+    );
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    expect(newTopics, 0);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
+    await tester.sendKeyEvent(LogicalKeyboardKey.comma);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    expect(newTopics, 1);
+    expect(settings, 1);
+    expect(sends, 1);
+    expect(desktopUsesControlShortcuts(TargetPlatform.linux), isTrue);
+    await tester.pumpWidget(const SizedBox());
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
+  testWidgets('Windows has no camera import', (tester) async {
+    expect(supportsQrScan, isFalse);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
+  testWidgets('Linux has no camera import', (tester) async {
+    expect(supportsQrScan, isFalse);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.linux));
+
+  testWidgets('macOS keeps camera import', (tester) async {
+    expect(supportsQrScan, isTrue);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
   testWidgets('resizing between sidebar and drawer preserves chat state', (
     tester,
   ) async {

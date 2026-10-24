@@ -2,6 +2,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 
@@ -128,7 +129,7 @@ class ReleaseScriptTest(unittest.TestCase):
             self.assertIn("--wear-track 必须", result.stderr)
 
     def mock_release_root(self, directory, flags, website_failure=False, ios_signing=True,
-                          appstore_failure=False):
+                          appstore_failure=False, host="Darwin"):
         # Repo skeleton whose external commands are stubs, so release.sh runs its
         # real branch structure without building or touching the network.
         root = Path(directory)
@@ -151,7 +152,7 @@ class ReleaseScriptTest(unittest.TestCase):
             path.write_text("#!/bin/bash\nset -eu\n" + body)
             path.chmod(0o700)
 
-        executable(commands / "uname", 'echo Darwin\n')
+        executable(commands / "uname", f'echo {host}\n')
         executable(commands / "xcrun", 'echo /mock-sdk\n')
         executable(commands / "security", 'echo "${SECURITY_IDENTITIES-}"\n')
         (root / "scripts/apple_release.py").write_text('''import argparse
@@ -169,6 +170,21 @@ args.output.mkdir(parents=True, exist_ok=True)
 for suffix in (['ipa'] if args.platform == 'ios' else ['dmg', 'zip']):
     (args.output / f'AI-Link-{args.version}+{args.build_number}.{suffix}').write_text('artifact')
 ''')
+        (root / "scripts/windows_remote_release.py").write_text('''import argparse
+import os
+from pathlib import Path
+parser = argparse.ArgumentParser()
+parser.add_argument('--check', action='store_true')
+parser.add_argument('--output', type=Path)
+parser.add_argument('--version')
+parser.add_argument('--build-number')
+args = parser.parse_args()
+with open(os.environ['CALLS'], 'a') as stream:
+    stream.write('windows check\\n' if args.check else f'windows {args.version}+{args.build_number}\\n')
+if not args.check:
+    args.output.mkdir(parents=True, exist_ok=True)
+    (args.output / f'AI-Link-{args.version}+{args.build_number}-windows.zip').write_text('artifact')
+''')
         certificate = ("F539897F7B786486EBC44F1383AF434DCE6AE6BB3ED12DCF363F6F4633B8596F"
                        if "--test" in flags else
                        "7D40427292830784C3DB74560D3F1368B9A0B8E5DACD6D73FFBBD4A771D211DE")
@@ -183,6 +199,13 @@ for suffix in (['ipa'] if args.platform == 'ios' else ['dmg', 'zip']):
         executable(commands / "keytool", f'echo "SHA256: {certificate}"\n')
         executable(commands / "flutter", '''echo "flutter $*" >> "$CALLS"
         if [[ "$1" != build ]]; then exit 0; fi
+        if [[ "$2" == windows ]]; then
+          mkdir -p build/windows/x64/runner/Release/data
+          echo EXE > build/windows/x64/runner/Release/mulit_ai_flutter.exe
+          echo DLL > build/windows/x64/runner/Release/flutter_windows.dll
+          echo assets > build/windows/x64/runner/Release/data/icudtl.dat
+          exit 0
+        fi
         for argument in "$@"; do
           if [[ "$argument" == --split-debug-info=* ]]; then
             symbols="${argument#*=}"
@@ -223,6 +246,42 @@ for suffix in (['ipa'] if args.platform == 'ios' else ['dmg', 'zip']):
                    SECURITY_IDENTITIES=('  1) ABCD "Apple Distribution: Test (T94W2V3B6M)"'
                                         if ios_signing else ""))
         return root, env
+
+    def test_windows_archive_uses_release_version_and_complete_bundle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, env = self.mock_release_root(directory, ["--platform", "windows"],
+                                               host="MINGW64_NT-10.0")
+            result = subprocess.run(["/bin/bash", "release.sh", "--platform", "windows"],
+                                    cwd=root, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            calls = (root / "calls").read_text()
+            self.assertIn("flutter build windows --release --build-name=1.0.1 --build-number=10\n",
+                          calls)
+            self.assertNotIn("gradle", calls)
+            info = next((root / "release-artifacts").rglob("release-info.txt"))
+            self.assertIn("buildStatus=COMPLETE\n", info.read_text())
+            archive = info.parent / "windows/AI-Link-1.0.1+10-windows.zip"
+            with zipfile.ZipFile(archive) as bundle:
+                self.assertTrue({"AI-Link/mulit_ai_flutter.exe", "AI-Link/flutter_windows.dll",
+                                 "AI-Link/data/icudtl.dat"}.issubset(bundle.namelist()))
+
+    def test_desktop_builds_macos_and_remote_windows_into_one_archive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, env = self.mock_release_root(directory, ["--platform", "desktop"])
+            result = subprocess.run(["/bin/bash", "release.sh", "--platform", "desktop"],
+                                    cwd=root, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            calls = (root / "calls").read_text()
+            self.assertLess(calls.index("windows check"), calls.index("flutter pub get"))
+            self.assertIn("apple macos 1.0.1+10", calls)
+            self.assertIn("windows 1.0.1+10", calls)
+            self.assertNotIn("apple ios", calls)
+            self.assertNotIn("gradle", calls)
+            info = next((root / "release-artifacts").rglob("release-info.txt"))
+            self.assertTrue((info.parent / "macos/AI-Link-1.0.1+10.dmg").is_file())
+            self.assertTrue((info.parent / "windows/AI-Link-1.0.1+10-windows.zip").is_file())
+            self.assertEqual(len((info.parent / "SHA256SUMS").read_text().splitlines()), 3)
+            self.assertIn("Windows：成功", result.stdout)
 
     def test_complete_release_modes_and_website_failure(self):
         for flags, website_failure in (([], False), (["--test"], False),

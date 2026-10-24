@@ -1,0 +1,77 @@
+name: AI Link Windows
+run-name: AI Link Windows ${{ inputs.request_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        required: true
+        type: string
+      source_sha:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+      build_number:
+        required: true
+        type: string
+      flutter_version:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_BUILD: ${{ inputs.build_number }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      FLUTTER_VERSION: ${{ inputs.flutter_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ inputs.flutter_version }}
+          channel: stable
+          cache: true
+      - name: Check and build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ((git rev-parse HEAD) -ne $env:SOURCE_SHA) { throw 'Source commit mismatch' }
+          flutter pub get
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency resolution failed' }
+          flutter analyze
+          if ($LASTEXITCODE -ne 0) { throw 'Analysis failed' }
+          flutter test
+          if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
+          flutter build windows --release --target-platform windows-x64 --build-name="$env:RELEASE_VERSION" --build-number="$env:RELEASE_BUILD"
+          if ($LASTEXITCODE -ne 0) { throw 'Windows build failed' }
+      - name: Archive complete bundle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Path artifacts/AI-Link -Force | Out-Null
+          Copy-Item build/windows/x64/runner/Release/* artifacts/AI-Link -Recurse
+          Compress-Archive -Path artifacts/AI-Link -DestinationPath artifacts/windows.zip
+          Remove-Item artifacts/AI-Link -Recurse -Force
+          @{
+            source_sha = $env:SOURCE_SHA
+            version = $env:RELEASE_VERSION
+            build_number = $env:RELEASE_BUILD
+            flutter_version = $env:FLUTTER_VERSION
+          } | ConvertTo-Json | Set-Content artifacts/build-info.json -Encoding utf8
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ai-link-windows-${{ inputs.request_id }}
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 7

@@ -441,6 +441,7 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor>
   }
 
   Future<void> _scanKey() async {
+    if (!supportsQrScan) return;
     final value = await Navigator.push<String>(
       context,
       appPageRoute(
@@ -535,17 +536,18 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor>
               ? Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    CupertinoButton(
-                      padding: const EdgeInsets.symmetric(horizontal: 7),
-                      minimumSize: const Size(36, 36),
-                      onPressed: _scanKey,
-                      child: Icon(
-                        CupertinoIcons.qrcode_viewfinder,
-                        size: 20,
-                        color: IosColors.blue,
-                        semanticLabel: T('i18n.scan_api_key'),
+                    if (supportsQrScan)
+                      CupertinoButton(
+                        padding: const EdgeInsets.symmetric(horizontal: 7),
+                        minimumSize: const Size(36, 36),
+                        onPressed: _scanKey,
+                        child: Icon(
+                          CupertinoIcons.qrcode_viewfinder,
+                          size: 20,
+                          color: IosColors.blue,
+                          semanticLabel: T('i18n.scan_api_key'),
+                        ),
                       ),
-                    ),
                     CupertinoButton(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       minimumSize: const Size(36, 36),

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
@@ -5,6 +6,15 @@ import 'package:flutter/services.dart';
 import 'package:mulit_ai_flutter/core/app_platform.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
+
+/// macOS 用 Command。Windows 与 Linux 用 Control，和系统菜单习惯一致。
+bool desktopUsesControlShortcuts(TargetPlatform platform) =>
+    platform == TargetPlatform.windows || platform == TargetPlatform.linux;
+
+SingleActivator desktopCommandActivator(LogicalKeyboardKey key) {
+  final control = desktopUsesControlShortcuts(defaultTargetPlatform);
+  return SingleActivator(key, control: control, meta: !control);
+}
 
 enum DesktopSection {
   chat,
@@ -200,11 +210,11 @@ class DesktopChatKeyboard extends StatelessWidget {
 
     return CallbackShortcuts(
       bindings: {
-        const SingleActivator(LogicalKeyboardKey.keyN, meta: true): onNew,
-        const SingleActivator(LogicalKeyboardKey.comma, meta: true): onSettings,
-        const SingleActivator(LogicalKeyboardKey.keyL, meta: true):
+        desktopCommandActivator(LogicalKeyboardKey.keyN): onNew,
+        desktopCommandActivator(LogicalKeyboardKey.comma): onSettings,
+        desktopCommandActivator(LogicalKeyboardKey.keyL):
             inputFocus.requestFocus,
-        const SingleActivator(LogicalKeyboardKey.enter, meta: true): send,
+        desktopCommandActivator(LogicalKeyboardKey.enter): send,
       },
       child: Focus(
         autofocus: true,
