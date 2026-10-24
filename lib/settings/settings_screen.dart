@@ -733,8 +733,12 @@ class _AboutScreenState extends State<AboutScreen> {
 
   Future<void> _openUrl(String url) async {
     try {
-      if (await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication))
+      if (await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
+      )) {
         return;
+      }
     } catch (_) {
       // Keep unavailable browsers from surfacing as unhandled platform errors.
     }
