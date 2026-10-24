@@ -20,7 +20,9 @@ import 'package:mulit_ai_flutter/core/storefront_policy.dart';
 import 'package:mulit_ai_flutter/chat/attachment_picker.dart';
 import 'package:mulit_ai_flutter/chat/widgets/desktop_attachment_drop.dart';
 import 'package:mulit_ai_flutter/api/api_client.dart';
+import 'package:mulit_ai_flutter/chat/chat_context.dart';
 import 'package:mulit_ai_flutter/chat/chat_context_screen.dart';
+import 'package:mulit_ai_flutter/chat/memory_profile.dart';
 import 'package:mulit_ai_flutter/chat/chat_message_meta.dart';
 import 'package:mulit_ai_flutter/chat/chat_model_selector.dart';
 import 'package:mulit_ai_flutter/chat/chat_model_title.dart';
@@ -192,8 +194,12 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   ChatTopic? _topic;
   int? _draftProviderId;
   String? _draftModel;
+  bool? _draftMemoryOverride;
   ModelApiClient? _activeClient;
   final _titleClients = <ModelApiClient>{};
+  final _memoryClients = <ModelApiClient>{};
+  Future<void> _memoryTail = Future<void>.value();
+  int _memoryJobs = 0;
   final _reply = ValueNotifier<String>('');
   bool _contextTrimmed = false;
   final _replyElapsedMs = ValueNotifier<int>(0);
@@ -322,6 +328,9 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     for (final client in _titleClients) {
       client.cancel();
     }
+    for (final client in _memoryClients) {
+      client.cancel();
+    }
     _input.dispose();
     _chatScroll.dispose();
     super.dispose();
@@ -359,7 +368,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         _activeClient?.cancel();
       }
     }
-    for (final client in _titleClients) {
+    for (final client in [..._titleClients, ..._memoryClients]) {
       if (StorefrontPolicy.instance.blocks(
         client.provider.baseUrl,
         presetId: client.provider.presetId,
@@ -606,7 +615,9 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       !_recording &&
       !_transcribing &&
       !_playing &&
-      _titleClients.isEmpty;
+      _titleClients.isEmpty &&
+      _memoryJobs == 0 &&
+      _memoryClients.isEmpty;
 
   void _closeTopics() {
     _scaffoldKey.currentState?.closeDrawer();
@@ -635,6 +646,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       await _openProviders();
       if (!mounted || _providers.isEmpty) return;
     }
+    _scheduleMemoryUpdate(_topic, _messages);
     final previous = _providers
         .where((item) => item.id == _currentProviderId)
         .firstOrNull;
@@ -654,6 +666,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       _searching = false;
       _error = null;
       _errorAction = ChatErrorAction.none;
+      _draftMemoryOverride = null;
     });
     await ChatStore.instance.saveLastChatSelection(
       ChatSelection(provider.id, model),
@@ -681,12 +694,16 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       if (mounted) _notify(T('i18n.library_missing'));
       return;
     }
+    if (_topic != null && _topic!.id != id) {
+      _scheduleMemoryUpdate(_topic, _messages);
+    }
     await _discardDraftAttachments();
     if (!mounted) return;
     setState(() {
       _topic = topic;
       _draftProviderId = null;
       _draftModel = null;
+      _draftMemoryOverride = null;
       _messages = messages;
       _error = null;
       _errorAction = ChatErrorAction.none;
@@ -1485,9 +1502,11 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       });
       return;
     }
-    final systemPrompt = await ChatStore.instance.systemPrompt(
+    final systemPrompt = await ChatStore.instance.chatSystemPrompt(
       provider.id,
       model,
+      topicId: _topic?.id,
+      topicOverride: _topic == null ? _draftMemoryOverride : null,
     );
     if (!mounted ||
         _topic?.id != initialTopicId ||
@@ -1508,12 +1527,17 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       _attachments = [];
       final topics = await ChatStore.instance.topics();
       topic = topics.firstWhere((item) => item.id == id);
+      final draftMemory = _draftMemoryOverride;
+      if (draftMemory != null) {
+        await ChatStore.instance.setMemoryTopicOverride(id, draftMemory);
+      }
       if (!mounted) return;
       setState(() {
         _topics = topics;
         _topic = topic;
         _draftProviderId = null;
         _draftModel = null;
+        _draftMemoryOverride = null;
       });
     } else {
       topic = _topic!;
@@ -1577,9 +1601,10 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         });
         return;
       }
-      final systemPrompt = await ChatStore.instance.systemPrompt(
+      final systemPrompt = await ChatStore.instance.chatSystemPrompt(
         provider.id,
         topic.model,
+        topicId: topic.id,
       );
       if (!mounted || _topic?.id != topic.id) return;
       await _requestReply(topic, provider, key, systemPrompt, history);
@@ -1762,6 +1787,105 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     }
   }
 
+  void _scheduleMemoryUpdate(ChatTopic? topic, List<ChatMessage> messages) {
+    if (topic == null || _sending || _starting || _watchProcessing) return;
+    final captured = topic;
+    final snapshot = List<ChatMessage>.of(messages);
+    _memoryJobs++;
+    _memoryTail = _memoryTail.catchError((_) {}).then((_) async {
+      try {
+        if (mounted) await _mergeTopicMemory(captured, snapshot);
+      } finally {
+        _memoryJobs--;
+      }
+    });
+  }
+
+  Future<void> _mergeTopicMemory(
+    ChatTopic topic,
+    List<ChatMessage> messages,
+  ) async {
+    final store = ChatStore.instance;
+    if (!await store.chatUsesMemory(topic.id)) return;
+    final cursor = await store.memoryCursor(topic.id);
+    final window = ChatContext.parseWindow(
+      await store.setting(ChatContext.settingKey),
+    );
+    final request = buildMemoryMerge(
+      messages: messages,
+      cursorMessageId: cursor,
+      transcriptTokenBudget: memoryTranscriptTokenBudget(window),
+    );
+    if (request == null) return;
+    final revision = await store.memoryRevision();
+    final profile = await store.memoryProfile();
+    if (request.transcript.isEmpty) {
+      await store.advanceMemoryCursor(
+        revision: revision,
+        topicId: topic.id,
+        cursorMessageId: request.cursorMessageId,
+      );
+      return;
+    }
+    final providerId = topic.providerId;
+    if (providerId == null) return;
+    final provider = _providers
+        .where((item) => item.id == providerId)
+        .firstOrNull;
+    if (provider == null) return;
+    if (StorefrontPolicy.instance.blocks(
+      provider.baseUrl,
+      presetId: provider.presetId,
+      model: topic.model,
+    )) {
+      return;
+    }
+    final key = await store.apiKey(provider.id);
+    if (key == null || key.isEmpty || !await store.memoryEnabled()) return;
+    if (!mounted || !await ApplePurchases.instance.refresh()) return;
+    if (!await store.memoryEnabled()) return;
+    final client = ModelApiClient(provider, key);
+    _memoryClients.add(client);
+    var timedOut = false;
+    try {
+      final updated = await client
+          .mergeMemoryProfile(
+            topic.model,
+            profile,
+            request.transcript,
+            contextWindowTokens: window,
+          )
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              timedOut = true;
+              client.cancel();
+              return null;
+            },
+          );
+      if (updated == null) {
+        if (!timedOut) {
+          await store.advanceMemoryCursor(
+            revision: revision,
+            topicId: topic.id,
+            cursorMessageId: request.cursorMessageId,
+          );
+        }
+        return;
+      }
+      await store.saveMergedMemory(
+        revision: revision,
+        profile: updated,
+        topicId: topic.id,
+        cursorMessageId: request.cursorMessageId,
+      );
+    } catch (_) {
+      // Keep the previous profile and cursor so a later leave can retry.
+    } finally {
+      _memoryClients.remove(client);
+    }
+  }
+
   Future<void> _generateTitle(
     ChatTopic topic,
     ProviderConfig provider,
@@ -1805,6 +1929,46 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         _topic = topics.where((item) => item.id == _topic!.id).firstOrNull;
       }
     });
+  }
+
+  Future<ChatMemoryMenuState> _memoryMenuState() async {
+    final store = ChatStore.instance;
+    final enabled = await store.memoryEnabled();
+    final inGlobal = await store.memoryInGlobalPrompt();
+    final override = _topic == null
+        ? _draftMemoryOverride
+        : await store.memoryTopicOverride(_topic!.id);
+    return ChatMemoryMenuState(
+      enabled: enabled,
+      used: topicUsesMemory(
+        enabled: enabled,
+        inGlobalPrompt: inGlobal,
+        topicOverride: override,
+      ),
+    );
+  }
+
+  Future<void> _toggleChatMemory() async {
+    final store = ChatStore.instance;
+    if (!await store.memoryEnabled()) {
+      if (mounted) _notify('i18n.memory_master_off');
+      return;
+    }
+    final next = !(await _memoryMenuState()).used;
+    final topic = _topic;
+    if (topic == null) {
+      if (mounted) setState(() => _draftMemoryOverride = next);
+      return;
+    }
+    await store.setMemoryTopicOverride(topic.id, next);
+  }
+
+  Future<void> _viewMemory() async {
+    final profile = await ChatStore.instance.memoryProfile();
+    if (!mounted) return;
+    await _pushRoute<void>(
+      appPageRoute(builder: (_) => MemoryEditor(initial: profile)),
+    );
   }
 
   void _notify(String message) => ScaffoldMessenger.of(context).showSnackBar(
@@ -1951,6 +2115,9 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
             onVoiceSettings: _openVoiceSettings,
             onSearch: _openSearchSettings,
             onMessageSettings: _openMessageSettings,
+            memoryState: _memoryMenuState,
+            onToggleChatMemory: _toggleChatMemory,
+            onViewMemory: _viewMemory,
           ),
         ],
       ),

@@ -3,7 +3,23 @@ import 'package:flutter/cupertino.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 
-enum ChatMoreAction { newTopic, model, messages, models, voice, search }
+enum ChatMoreAction {
+  newTopic,
+  model,
+  messages,
+  models,
+  voice,
+  search,
+  chatMemory,
+  viewMemory,
+}
+
+class ChatMemoryMenuState {
+  const ChatMemoryMenuState({required this.enabled, required this.used});
+
+  final bool enabled;
+  final bool used;
+}
 
 class ChatMoreButton extends StatelessWidget {
   const ChatMoreButton({
@@ -14,6 +30,9 @@ class ChatMoreButton extends StatelessWidget {
     required this.onVoiceSettings,
     required this.onSearch,
     required this.onMessageSettings,
+    this.memoryState,
+    this.onToggleChatMemory,
+    this.onViewMemory,
   });
 
   final VoidCallback onNewTopic;
@@ -22,9 +41,14 @@ class ChatMoreButton extends StatelessWidget {
   final VoidCallback onVoiceSettings;
   final VoidCallback onSearch;
   final VoidCallback onMessageSettings;
+  final Future<ChatMemoryMenuState> Function()? memoryState;
+  final VoidCallback? onToggleChatMemory;
+  final VoidCallback? onViewMemory;
 
   Future<void> _show(BuildContext context) async {
     FocusScope.of(context).unfocus();
+    final memory = await memoryState?.call();
+    if (!context.mounted) return;
     final action = await showAppModalPopup<ChatMoreAction>(
       context: context,
       builder: (sheetContext) => CupertinoActionSheet(
@@ -56,6 +80,20 @@ class ChatMoreButton extends StatelessWidget {
             onPressed: () => Navigator.pop(sheetContext, ChatMoreAction.search),
             child: Text(T('i18n.web_search')),
           ),
+          if (memory != null && onToggleChatMemory != null)
+            CupertinoActionSheetAction(
+              onPressed: () =>
+                  Navigator.pop(sheetContext, ChatMoreAction.chatMemory),
+              child: Text(
+                T(memory.used ? 'i18n.memory_chat_on' : 'i18n.memory_chat_off'),
+              ),
+            ),
+          if (onViewMemory != null)
+            CupertinoActionSheetAction(
+              onPressed: () =>
+                  Navigator.pop(sheetContext, ChatMoreAction.viewMemory),
+              child: Text(T('i18n.memory_view')),
+            ),
         ],
         cancelButton: CupertinoActionSheetAction(
           onPressed: () => Navigator.pop(sheetContext),
@@ -77,6 +115,10 @@ class ChatMoreButton extends StatelessWidget {
         onSearch();
       case ChatMoreAction.messages:
         onMessageSettings();
+      case ChatMoreAction.chatMemory:
+        onToggleChatMemory?.call();
+      case ChatMoreAction.viewMemory:
+        onViewMemory?.call();
       case null:
         break;
     }

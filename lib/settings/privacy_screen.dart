@@ -102,6 +102,10 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
                 detail: T('i18n.chats_prompts_and_api_keys'),
               ),
               _PrivacyRow(
+                title: T('i18n.memory'),
+                detail: T('i18n.memory_privacy_detail'),
+              ),
+              _PrivacyRow(
                 title: T('i18n.attachment_privacy'),
                 detail: T('i18n.attachment_privacy_detail'),
               ),
@@ -121,21 +125,19 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
               if (supportsWatchCompanion)
                 _PrivacyRow(
                   title: T('i18n.watch_data'),
-                  detail: T(
-                    'i18n.watches_securely_store_selected_service',
-                  ),
+                  detail: T('i18n.watches_securely_store_selected_service'),
                 ),
               if (ApplePurchases.instance.enabled)
                 _PrivacyRow(
                   title: T('i18n.purchases_and_trial'),
-                  detail: T(
-                    'i18n.app_store_handles_apple_purchases',
-                  ),
+                  detail: T('i18n.app_store_handles_apple_purchases'),
                 ),
               _PrivacyRow(
                 title: T('i18n.usage_analytics'),
                 detail: T(
-                  isDesktopApp ? 'i18n.the_macos_app_does' : 'i18n.android_and_ios_production_builds',
+                  isDesktopApp
+                      ? 'i18n.the_macos_app_does'
+                      : 'i18n.android_and_ios_production_builds',
                 ),
               ),
             ],
@@ -170,7 +172,9 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
           IosSection(
             children: [
               IosRow(
-                title: _clearing ? T('i18n.clearing') : T('i18n.clear_all_local_data'),
+                title: _clearing
+                    ? T('i18n.clearing')
+                    : T('i18n.clear_all_local_data'),
                 leading: Icon(
                   CupertinoIcons.delete,
                   color: IosColors.destructive,

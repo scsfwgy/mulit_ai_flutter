@@ -8,6 +8,7 @@ import 'package:mulit_ai_flutter/core/attachment_store.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
 import 'package:mulit_ai_flutter/chat/chat_context.dart';
+import 'package:mulit_ai_flutter/chat/memory_profile.dart';
 
 enum ApiErrorKind { other, network, auth, model, context }
 
@@ -485,6 +486,35 @@ class ModelApiClient {
       if (result.length >= 120) break;
     }
     return normalizeGeneratedTopicTitle(result.toString());
+  }
+
+  /// Returns the updated profile, or null when the model produced nothing.
+  /// The caller keeps the previous profile in that case.
+  Future<String?> mergeMemoryProfile(
+    String model,
+    String profile,
+    String transcript, {
+    int contextWindowTokens = ChatContext.defaultWindowTokens,
+  }) async {
+    final prompt = ChatMessage(
+      id: 0,
+      topicId: 0,
+      role: 'user',
+      content: memoryMergeUserContent(profile, transcript),
+      createdAt: 0,
+    );
+    final result = StringBuffer();
+    await for (final chunk in streamReply(
+      [prompt],
+      model,
+      systemPrompt: memoryMergeInstruction,
+      maxTokens: memoryMergeMaxTokens,
+      contextWindowTokens: contextWindowTokens,
+    )) {
+      result.write(chunk);
+      if (result.length >= memoryProfileMaxChars + 200) break;
+    }
+    return normalizeMemoryProfile(result.toString());
   }
 
   String _textFromEvent(
