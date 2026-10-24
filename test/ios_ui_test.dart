@@ -138,6 +138,8 @@ void main() {
     expect(find.text('提示词'), findsOneWidget);
     await tester.tap(find.byIcon(CupertinoIcons.back));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('关于'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('关于'));
     await tester.pumpAndSettle();
     expect(find.text('版本'), findsOneWidget);
