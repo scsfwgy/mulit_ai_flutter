@@ -188,6 +188,8 @@ iOS Debug 使用 `com.maxhall.ailink.debug` 和「AI Link Debug」，watchOS Deb
 
 桌面联合归档用 `./release.sh --platform desktop`：本机 macOS 与 GitHub Actions Windows 使用相同提交、版本、构建号及 Flutter 版本，产物统一保存在本次归档目录。`scripts/windows_remote_release.py` 要求干净且已推送的分支、`gh` 已登录及默认分支已有 `.github/workflows/ai-link-windows.yml`；不自动提交或推送。Windows 产物下载后校验元数据及 ZIP 内容，任务失败则本次构建失败，已归档的 macOS 产物保留。`all` 保持原有范围，联合桌面构建需显式指定 `desktop`。
 
+独立构建参数：`./release.sh --github-windows` 只调用 GitHub Actions 构建 Windows 并下载 ZIP；`./release.sh --build-all` 在 Mac 上构建 Android 手机/Wear OS、iOS/Apple Watch、macOS 和远程 Windows，统一归档与校验和。`--build-all` 缺少 iOS 分发签名时必须报错，不能跳过 iOS。两个参数互斥，不能与 `--platform` 或 `--test` 同用；不带上传开关时不发布到官网或商店。原有默认构建、`--platform all` 及单平台行为保持不变。
+
 提交代码前先检查 `git status`、变更范围和 `git diff --check`。只提交本次工作涉及的文件；`build/`、`.dart_tool/` 等构建产物由 `.gitignore` 排除。
 
 Git 提交信息统一使用简体中文。标题简明概括本次改动和新增内容；有需要注意的事项时，在正文中简要说明。不要写与实际变更无关的内容。

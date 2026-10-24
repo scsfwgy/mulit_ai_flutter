@@ -283,6 +283,60 @@ if not args.check:
             self.assertEqual(len((info.parent / "SHA256SUMS").read_text().splitlines()), 3)
             self.assertIn("Windows：成功", result.stdout)
 
+    def test_github_windows_builds_only_remote_windows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, env = self.mock_release_root(directory, ["--github-windows"], host="Linux")
+            (root / "commands/xcrun").unlink()
+            result = subprocess.run(["/bin/bash", "release.sh", "--github-windows"],
+                                    cwd=root, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            calls = (root / "calls").read_text()
+            self.assertIn("windows check", calls)
+            self.assertIn("windows 1.0.1+10", calls)
+            self.assertNotIn("apple ", calls)
+            self.assertNotIn("gradle", calls)
+            self.assertNotIn("flutter build", calls)
+            info = next((root / "release-artifacts").rglob("release-info.txt"))
+            self.assertIn("windowsStatus=COMPLETE", info.read_text())
+            self.assertEqual(len((info.parent / "SHA256SUMS").read_text().splitlines()), 1)
+
+    def test_build_all_archives_every_platform_without_uploading(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, env = self.mock_release_root(directory, ["--build-all"])
+            result = subprocess.run(["/bin/bash", "release.sh", "--build-all"],
+                                    cwd=root, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            calls = (root / "calls").read_text()
+            for build in ("flutter build apk", "flutter build appbundle", "gradle :wear:assembleRelease",
+                          "gradle :wear:bundleRelease", "apple ios 1.0.1+10", "apple macos 1.0.1+10",
+                          "windows 1.0.1+10"):
+                self.assertIn(build, calls)
+            self.assertNotIn("python ", calls)
+            info = next((root / "release-artifacts").rglob("release-info.txt"))
+            self.assertEqual(len((info.parent / "SHA256SUMS").read_text().splitlines()), 8)
+            for platform in ("macosStatus", "windowsStatus", "iosWatchStatus", "buildStatus"):
+                self.assertIn(f"{platform}=COMPLETE", info.read_text())
+
+    def test_build_all_requires_ios_distribution_signing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, env = self.mock_release_root(directory, ["--build-all"], ios_signing=False)
+            result = subprocess.run(["/bin/bash", "release.sh", "--build-all"],
+                                    cwd=root, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("没有 iOS Distribution", result.stderr)
+            self.assertFalse((root / "calls").exists())
+
+    def test_new_build_flags_reject_conflicting_modes(self):
+        for flags in (["--github-windows", "--build-all"], ["--build-all", "--github-windows"],
+                      ["--github-windows", "--platform", "macos"],
+                      ["--platform", "android", "--build-all"],
+                      ["--github-windows", "--test"], ["--build-all", "--test"],
+                      ["--github-windows", "--push-release"], ["--github-windows", "--push-ios"]):
+            with self.subTest(flags=flags):
+                result = subprocess.run(["/bin/bash", str(RELEASE_SCRIPT), *flags],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 2, result.stderr)
+
     def test_complete_release_modes_and_website_failure(self):
         for flags, website_failure in (([], False), (["--test"], False),
                 (["--push-website"], False), (["--push-release"], False),

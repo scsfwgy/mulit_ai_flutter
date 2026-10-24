@@ -16,6 +16,8 @@
 #   ./release.sh --platform macos            只构建 macOS
 #   ./release.sh --platform desktop          本机 macOS + GitHub Actions Windows，统一归档
 #   ./release.sh --platform windows          只在 Windows 主机上构建 Windows zip
+#   ./release.sh --github-windows            只通过 GitHub Actions 构建 Windows 并下载归档
+#   ./release.sh --build-all                 Android/Wear OS、iOS/Apple Watch、macOS + GitHub Windows
 #
 # 凭据都放在已被 .gitignore 忽略的 localConfig/ 下，脚本只读取、不写入：
 #   Android 签名   android/key.properties（正式）与 android/key.test.properties（--test）
@@ -31,6 +33,7 @@ cd "$repo_root"
 
 profile="release"
 platform=""
+requested_build=""
 ios_export_options="${IOS_EXPORT_OPTIONS_PLIST:-}"
 push_release=0
 push_website=0
@@ -40,12 +43,15 @@ wear_track=""
 json_key="${PLAY_SERVICE_ACCOUNT_JSON:-$repo_root/localConfig/google-play-service-account.json}"
 
 usage() {
-  echo "用法：./release.sh [--platform all|mobile|android|ios|macos|windows|desktop] [--test] [--push-release|--push-website|--push-ios|--push-mobile] [--ios-export-options 路径] [--play-track internal|alpha|beta|production] [--wear-track wear:轨道名] [--json-key 路径]"
+  echo "用法：./release.sh [--platform all|mobile|android|ios|macos|windows|desktop | --github-windows | --build-all] [--test] [--push-release|--push-website|--push-ios|--push-mobile] [--ios-export-options 路径] [--play-track internal|alpha|beta|production] [--wear-track wear:轨道名] [--json-key 路径]"
   echo "  （无参数）        构建 Android/Wear OS APK/AAB、iOS/Apple Watch IPA 与归档、macOS APP/DMG/ZIP；仅本地归档"
   echo "  --platform      只构建所选平台；all 为 Android、iOS 与 macOS，mobile 为 Android + iOS（不含 macOS）；Apple 平台需 Mac/Xcode，本机无 iOS 分发证书时自动跳过 iOS"
   echo "                  windows 不包含在 all 里，且只能在 Windows 主机上构建"
   echo "                  desktop 为本机 macOS + GitHub Actions Windows；需要 gh 登录及已提交、推送的干净工作区"
   echo "                  不指定时按发布开关推导：--push-release/--push-website 取 Android，--push-ios 取 iOS，--push-mobile 或两者同时给出则取 mobile"
+  echo "  --github-windows  仅通过 GitHub Actions 构建 Windows 并下载归档；需要已推送的干净分支与 Actions 读写权限"
+  echo "  --build-all       构建 Android/Wear OS、iOS/Apple Watch、macOS 和 GitHub Windows；需 Mac、Android/Apple 签名及 Actions 权限，缺少 iOS 分发签名时报错"
+  echo "                    这两个参数互斥，且均不能与 --platform 或 --test 同用；默认仅本地归档，不上传商店"
   echo "  --ios-export-options  iOS 本地 IPA 导出 plist；也可设 IOS_EXPORT_OPTIONS_PLIST"
   echo "  --test          构建本地测试签名的手机和 Wear OS APK；不上传"
   echo "  --push-release  默认只构建 Android；APK 同步官网，同时上传两个 AAB 到 Google Play"
@@ -63,6 +69,11 @@ while [[ $# -gt 0 ]]; do
     --platform)
       [[ $# -ge 2 ]] || { echo "--platform 缺少平台" >&2; exit 2; }
       platform="$2"; shift 2 ;;
+    --github-windows|--build-all)
+      [[ -z "$requested_build" || "$requested_build" == "$1" ]] || {
+        echo "--github-windows 与 --build-all 不能同时使用。" >&2; exit 2;
+      }
+      requested_build="$1"; shift ;;
     --ios-export-options)
       [[ $# -ge 2 ]] || { echo "--ios-export-options 缺少路径" >&2; exit 2; }
       ios_export_options="$2"; shift 2 ;;
@@ -84,6 +95,14 @@ while [[ $# -gt 0 ]]; do
     *) echo "未知参数：$1" >&2; usage >&2; exit 2 ;;
   esac
 done
+
+if [[ -n "$requested_build" ]]; then
+  [[ -z "$platform" ]] || { echo "$requested_build 不能与 --platform 同时使用。" >&2; exit 2; }
+  case "$requested_build" in
+    --github-windows) platform="windows-github" ;;
+    --build-all) platform="all-github" ;;
+  esac
+fi
 
 case "$play_track" in
   internal|alpha|beta|production) ;;
@@ -125,6 +144,8 @@ case "$platform" in
   macos) build_macos=1 ;;
   windows) build_windows=1 ;;
   desktop) build_macos=1; build_windows_remote=1 ;;
+  windows-github) build_windows_remote=1 ;;
+  all-github) build_android=1; build_ios=1; build_macos=1; build_windows_remote=1 ;;
   *) echo "不支持的平台：$platform" >&2; exit 2 ;;
 esac
 if (( build_windows )); then
@@ -167,7 +188,7 @@ if (( build_ios || build_macos )); then
 fi
 # 无参数默认全平台，但本机可能只有开发证书；此时跳过 iOS，只把明确点了 iOS 的情况当错误。
 if (( build_ios )) && ! ios_signing_available; then
-  if (( ! build_android && ! build_macos )); then
+  if (( ! build_android && ! build_macos )) || [[ "$platform" == "all-github" ]]; then
     echo "没有 iOS Distribution 证书和 App Store 描述文件，无法导出正式 IPA。" >&2
     exit 2
   fi

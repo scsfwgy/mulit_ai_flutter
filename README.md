@@ -39,6 +39,10 @@ Windows 与 Linux 共用这套桌面界面。数据库在这两个系统上使�
 
 macOS 与 Windows 一起构建归档：在 Mac 上运行 `./release.sh --platform desktop`。macOS 在本机构建，Windows 由 GitHub Actions 构建并下载，两者归入同一次 `release-artifacts/release-history/` 目录，附统一的 `SHA256SUMS`。两端使用同一提交、版本号、Git 提交次数构建号和 Flutter 版本；Windows 下载时再次核对这些信息。此命令不会上传商店或创建 GitHub Release。
 
+仅通过 GitHub 构建 Windows：`./release.sh --github-windows`，完成后下载 Windows ZIP 至本次归档目录，不构建本机应用包。
+
+构建全部平台：在 Mac 上运行 `./release.sh --build-all`，构建 Android 手机/Wear OS APK 与 AAB、iOS/Apple Watch IPA、macOS DMG/ZIP，以及 GitHub Actions Windows ZIP，统一归档并生成校验和。需要完整 Android/Xcode 环境、正式签名与 GitHub Actions 权限；缺少 iOS 分发签名会直接报错，不跳过 iOS。这两个独立参数互斥，且不能与 `--platform` 或 `--test` 同用；默认不上传官网或商店。
+
 首次使用前需将 `.github/workflows/ai-link-windows.yml` 和代码提交、推送到 GitHub（工作流需先存在于默认分支），启用仓库 Actions，并安装 GitHub CLI、运行 `gh auth login`，账号需要触发 Actions 的权限。联合构建要求工作区干净且当前分支已推送；Windows runner 排队、测试或构建失败会使本次发布失败，已完成的 macOS 产物会保留。`--platform macos` 和 `--platform windows` 仍分别执行单平台本机构建；`all` 仍为原有 Android、iOS 和 macOS 范围。
 
 使用细粒度 Personal Access Token 时，需选择本仓库并授予 **Actions: Read and write**。`GH_TOKEN`、`GITHUB_TOKEN` 环境变量（按此优先级）会覆盖 `gh auth login` 保存的凭据，修改授权时须确认实际生效的令牌。提交一致性通过 `git ls-remote origin` 校验，不额外要求令牌的 Git References/Contents API 权限；运行进度使用 Actions API 查询，兼容细粒度令牌。

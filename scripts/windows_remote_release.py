@@ -32,10 +32,10 @@ def command(*args):
 
 def preflight():
     if command("git", "status", "--porcelain", "--untracked-files=normal"):
-        raise RuntimeError("桌面联合构建需要干净的工作区；请先提交并推送本次改动。")
+        raise RuntimeError("GitHub Windows 构建需要干净的工作区；请先提交并推送本次改动。")
     branch = command("git", "branch", "--show-current")
     if not branch:
-        raise RuntimeError("请在已推送的分支上执行桌面联合构建。")
+        raise RuntimeError("请在已推送的分支上执行 GitHub Windows 构建。")
     sha = command("git", "rev-parse", "HEAD")
     remote_ref = command("git", "ls-remote", "--exit-code", "origin", f"refs/heads/{branch}")
     remote_sha = remote_ref.split()[0]
