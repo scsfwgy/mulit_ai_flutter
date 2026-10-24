@@ -190,6 +190,8 @@ iOS Debug 使用 `com.maxhall.ailink.debug` 和「AI Link Debug」，watchOS Deb
 
 独立构建参数：`./release.sh --github-windows` 只调用 GitHub Actions 构建 Windows 并下载 ZIP；`./release.sh --build-all` 在 Mac 上构建 Android 手机/Wear OS、iOS/Apple Watch、macOS 和远程 Windows，统一归档与校验和。`--build-all` 缺少 iOS 分发签名时必须报错，不能跳过 iOS。两个参数互斥，不能与 `--platform` 或 `--test` 同用；不带上传开关时不发布到官网或商店。原有默认构建、`--platform all` 及单平台行为保持不变。
 
+Windows 安装包：`scripts/package_windows.ps1` 调用 Inno Setup 编译 `windows/installer/ai-link.iss`，生成 `AI-Link-Setup-<版本>+<构建号>.exe`，与完整 ZIP 一起归档及计算校验和。GitHub 工作流自动安装 Inno Setup，本机构建需自行安装。微软 VC++ 运行库从官方地址下载并校验 Authenticode 签名后封装进安装包；安装需要管理员权限。安装 AppId 固定为 `com.maxhall.ailink.windows`，升级复用安装位置，卸载不删除用户数据库和密钥目录。安装包自身没有代码签名。下载脚本必须同时核对元数据、完整 ZIP 和带版本号 EXE，不能将缺失安装包的构建写成成功。
+
 提交代码前先检查 `git status`、变更范围和 `git diff --check`。只提交本次工作涉及的文件；`build/`、`.dart_tool/` 等构建产物由 `.gitignore` 排除。
 
 Git 提交信息统一使用简体中文。标题简明概括本次改动和新增内容；有需要注意的事项时，在正文中简要说明。不要写与实际变更无关的内容。

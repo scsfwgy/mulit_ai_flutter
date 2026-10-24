@@ -76,6 +76,7 @@ class WindowsRemoteReleaseTest(unittest.TestCase):
                     staging = Path(args[-1])
                     info = dict(expected, source_sha="sha" if valid else "other")
                     (staging / "build-info.json").write_text(json.dumps(info), encoding="utf-8-sig")
+                    (staging / "AI-Link-Setup-1.1.3+42.exe").write_bytes(b'MZinstaller')
                     with zipfile.ZipFile(staging / "windows.zip", "w") as bundle:
                         bundle.writestr("AI-Link/mulit_ai_flutter.exe", "exe")
                         bundle.writestr("AI-Link/flutter_windows.dll", "dll")
@@ -85,11 +86,29 @@ class WindowsRemoteReleaseTest(unittest.TestCase):
                     if valid:
                         remote.download_bundle(123, "request", output, expected)
                         self.assertTrue((output / "AI-Link-1.1.3+42-windows.zip").is_file())
+                        self.assertEqual((output / "AI-Link-Setup-1.1.3+42.exe").read_bytes(), b'MZinstaller')
                         self.assertEqual(json.loads((output / "build-info.json").read_text()), expected)
                     else:
                         with self.assertRaisesRegex(RuntimeError, "不一致"):
                             remote.download_bundle(123, "request", output, expected)
                         self.assertEqual(list(output.iterdir()), [])
+
+    def test_missing_or_invalid_installer_is_not_archived(self):
+        expected = dict(source_sha="sha", version="1.1.3", build_number="42",
+                        flutter_version="3.47.4")
+        for content in (None, b'not-an-executable'):
+            with self.subTest(content=content), tempfile.TemporaryDirectory() as directory:
+                def download(*args):
+                    staging = Path(args[-1])
+                    (staging / "build-info.json").write_text(json.dumps(expected))
+                    if content is not None:
+                        (staging / "AI-Link-Setup-1.1.3+42.exe").write_bytes(content)
+
+                output = Path(directory)
+                with patch.object(remote, "command", side_effect=download):
+                    with self.assertRaisesRegex(RuntimeError, "安装程序"):
+                        remote.download_bundle(123, "request", output, expected)
+                self.assertEqual(list(output.iterdir()), [])
 
     def test_dispatch_tracks_only_its_request_and_downloads_after_success(self):
         unrelated = dict(databaseId=456, displayTitle="AI Link Windows other", url="other")

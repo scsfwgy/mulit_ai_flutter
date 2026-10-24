@@ -39,7 +39,9 @@ Windows 与 Linux 共用这套桌面界面。数据库在这两个系统上使�
 
 macOS 与 Windows 一起构建归档：在 Mac 上运行 `./release.sh --platform desktop`。macOS 在本机构建，Windows 由 GitHub Actions 构建并下载，两者归入同一次 `release-artifacts/release-history/` 目录，附统一的 `SHA256SUMS`。两端使用同一提交、版本号、Git 提交次数构建号和 Flutter 版本；Windows 下载时再次核对这些信息。此命令不会上传商店或创建 GitHub Release。
 
-仅通过 GitHub 构建 Windows：`./release.sh --github-windows`，完成后下载 Windows ZIP 至本次归档目录，不构建本机应用包。
+仅通过 GitHub 构建 Windows：`./release.sh --github-windows`，完成后下载 Windows 安装程序和 ZIP 至本次归档目录，不构建本机应用包。
+
+Windows 安装程序命名为 `AI-Link-Setup-<版本号>+<构建号>.exe`，版本号来自 `pubspec.yaml`，构建号为 Git 提交次数。安装包包含完整程序和经微软数字签名校验的 Visual C++ x64 运行库，安装时需要管理员权限，提供开始菜单入口、可选桌面快捷方式与卸载入口；同一个 AppId 用于覆盖升级，卸载不清理用户聊天数据。安装程序本身尚未配置代码签名。GitHub runner 自动安装 Inno Setup；Windows 本机构建需先安装 Inno Setup，再运行 `./release.sh --platform windows`。单独运行 `flutter build windows` 仍只生成程序目录。
 
 构建全部平台：在 Mac 上运行 `./release.sh --build-all`，构建 Android 手机/Wear OS APK 与 AAB、iOS/Apple Watch IPA、macOS DMG/ZIP，以及 GitHub Actions Windows ZIP，统一归档并生成校验和。需要完整 Android/Xcode 环境、正式签名与 GitHub Actions 权限；缺少 iOS 分发签名会直接报错，不跳过 iOS。这两个独立参数互斥，且不能与 `--platform` 或 `--test` 同用；默认不上传官网或商店。
 

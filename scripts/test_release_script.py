@@ -184,6 +184,7 @@ with open(os.environ['CALLS'], 'a') as stream:
 if not args.check:
     args.output.mkdir(parents=True, exist_ok=True)
     (args.output / f'AI-Link-{args.version}+{args.build_number}-windows.zip').write_text('artifact')
+    (args.output / f'AI-Link-Setup-{args.version}+{args.build_number}.exe').write_bytes(b'MZinstaller')
 ''')
         certificate = ("F539897F7B786486EBC44F1383AF434DCE6AE6BB3ED12DCF363F6F4633B8596F"
                        if "--test" in flags else
@@ -197,6 +198,17 @@ if not args.check:
         executable(commands / "scutil", 'echo "HTTPProxy : 127.0.0.1"\necho "HTTPPort : 7897"\n')
         executable(commands / "apksigner", f'echo "Signer #1 certificate SHA-256 digest: {certificate}"\n')
         executable(commands / "keytool", f'echo "SHA256: {certificate}"\n')
+        executable(commands / "powershell.exe", '''while [[ $# -gt 0 ]]; do
+          case "$1" in
+            -Version) version="$2"; shift 2 ;;
+            -BuildNumber) number="$2"; shift 2 ;;
+            -OutputDir) output_dir="$2"; shift 2 ;;
+            *) shift ;;
+          esac
+        done
+        mkdir -p "$output_dir"
+        echo MZinstaller > "$output_dir/AI-Link-Setup-$version+$number.exe"
+        ''')
         executable(commands / "flutter", '''echo "flutter $*" >> "$CALLS"
         if [[ "$1" != build ]]; then exit 0; fi
         if [[ "$2" == windows ]]; then
@@ -261,6 +273,7 @@ if not args.check:
             info = next((root / "release-artifacts").rglob("release-info.txt"))
             self.assertIn("buildStatus=COMPLETE\n", info.read_text())
             archive = info.parent / "windows/AI-Link-1.0.1+10-windows.zip"
+            self.assertTrue((info.parent / "windows/AI-Link-Setup-1.0.1+10.exe").is_file())
             with zipfile.ZipFile(archive) as bundle:
                 self.assertTrue({"AI-Link/mulit_ai_flutter.exe", "AI-Link/flutter_windows.dll",
                                  "AI-Link/data/icudtl.dat"}.issubset(bundle.namelist()))
@@ -280,7 +293,8 @@ if not args.check:
             info = next((root / "release-artifacts").rglob("release-info.txt"))
             self.assertTrue((info.parent / "macos/AI-Link-1.0.1+10.dmg").is_file())
             self.assertTrue((info.parent / "windows/AI-Link-1.0.1+10-windows.zip").is_file())
-            self.assertEqual(len((info.parent / "SHA256SUMS").read_text().splitlines()), 3)
+            self.assertTrue((info.parent / "windows/AI-Link-Setup-1.0.1+10.exe").is_file())
+            self.assertEqual(len((info.parent / "SHA256SUMS").read_text().splitlines()), 4)
             self.assertIn("Windows：成功", result.stdout)
 
     def test_github_windows_builds_only_remote_windows(self):
@@ -298,7 +312,8 @@ if not args.check:
             self.assertNotIn("flutter build", calls)
             info = next((root / "release-artifacts").rglob("release-info.txt"))
             self.assertIn("windowsStatus=COMPLETE", info.read_text())
-            self.assertEqual(len((info.parent / "SHA256SUMS").read_text().splitlines()), 1)
+            self.assertTrue((info.parent / "windows/AI-Link-Setup-1.0.1+10.exe").is_file())
+            self.assertEqual(len((info.parent / "SHA256SUMS").read_text().splitlines()), 2)
 
     def test_build_all_archives_every_platform_without_uploading(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -313,7 +328,8 @@ if not args.check:
                 self.assertIn(build, calls)
             self.assertNotIn("python ", calls)
             info = next((root / "release-artifacts").rglob("release-info.txt"))
-            self.assertEqual(len((info.parent / "SHA256SUMS").read_text().splitlines()), 8)
+            self.assertTrue((info.parent / "windows/AI-Link-Setup-1.0.1+10.exe").is_file())
+            self.assertEqual(len((info.parent / "SHA256SUMS").read_text().splitlines()), 9)
             for platform in ("macosStatus", "windowsStatus", "iosWatchStatus", "buildStatus"):
                 self.assertIn(f"{platform}=COMPLETE", info.read_text())
 

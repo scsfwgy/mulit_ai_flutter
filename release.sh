@@ -15,8 +15,8 @@
 #   ./release.sh --push-mobile               Android 与 iOS 一起发布（不含 macOS）
 #   ./release.sh --platform macos            只构建 macOS
 #   ./release.sh --platform desktop          本机 macOS + GitHub Actions Windows，统一归档
-#   ./release.sh --platform windows          只在 Windows 主机上构建 Windows zip
-#   ./release.sh --github-windows            只通过 GitHub Actions 构建 Windows 并下载归档
+#   ./release.sh --platform windows          只在 Windows 主机上构建 Windows 安装程序和 ZIP
+#   ./release.sh --github-windows            只通过 GitHub Actions 构建 Windows 并下载安装程序和 ZIP
 #   ./release.sh --build-all                 Android/Wear OS、iOS/Apple Watch、macOS + GitHub Windows
 #
 # 凭据都放在已被 .gitignore 忽略的 localConfig/ 下，脚本只读取、不写入：
@@ -49,7 +49,7 @@ usage() {
   echo "                  windows 不包含在 all 里，且只能在 Windows 主机上构建"
   echo "                  desktop 为本机 macOS + GitHub Actions Windows；需要 gh 登录及已提交、推送的干净工作区"
   echo "                  不指定时按发布开关推导：--push-release/--push-website 取 Android，--push-ios 取 iOS，--push-mobile 或两者同时给出则取 mobile"
-  echo "  --github-windows  仅通过 GitHub Actions 构建 Windows 并下载归档；需要已推送的干净分支与 Actions 读写权限"
+  echo "  --github-windows  仅通过 GitHub Actions 构建 Windows 并下载带版本号的 Setup.exe 和 ZIP；需要已推送的干净分支与 Actions 读写权限"
   echo "  --build-all       构建 Android/Wear OS、iOS/Apple Watch、macOS 和 GitHub Windows；需 Mac、Android/Apple 签名及 Actions 权限，缺少 iOS 分发签名时报错"
   echo "                    这两个参数互斥，且均不能与 --platform 或 --test 同用；默认仅本地归档，不上传商店"
   echo "  --ios-export-options  iOS 本地 IPA 导出 plist；也可设 IOS_EXPORT_OPTIONS_PLIST"
@@ -525,6 +525,8 @@ if (( build_windows )); then
   flutter build windows --release --build-name="$base_name" --build-number="$code"
   windows_bundle="$output/windows"
   mkdir -p "$windows_bundle"
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/package_windows.ps1 \
+    -Version "$base_name" -BuildNumber "$code" -OutputDir "$windows_bundle"
   cp -R build/windows/x64/runner/Release "$windows_bundle/AI-Link"
   (
     cd "$windows_bundle"
@@ -535,7 +537,7 @@ if (( build_windows )); then
       powershell.exe -NoProfile -Command "Compress-Archive -Path 'AI-Link' -DestinationPath '$archive' -Force"
     fi
   )
-  artifacts+=("windows/AI-Link-$base_name+$code-windows.zip")
+  artifacts+=("windows/AI-Link-$base_name+$code-windows.zip" "windows/AI-Link-Setup-$base_name+$code.exe")
   echo "windowsStatus=COMPLETE" >> "$output/release-info.txt"
   windows_status="成功"
 fi
@@ -544,7 +546,7 @@ if (( build_windows_remote )); then
   echo "通过 GitHub Actions 构建 Windows 并下载归档..."
   python3 scripts/windows_remote_release.py --output "$output/windows" \
     --version "$base_name" --build-number "$code"
-  artifacts+=("windows/AI-Link-$base_name+$code-windows.zip")
+  artifacts+=("windows/AI-Link-$base_name+$code-windows.zip" "windows/AI-Link-Setup-$base_name+$code.exe")
   echo "windowsStatus=COMPLETE" >> "$output/release-info.txt"
   windows_status="成功"
 fi

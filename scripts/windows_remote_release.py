@@ -77,6 +77,13 @@ def download_bundle(run_id, request_id, output, expected):
         actual = json.loads((staging / "build-info.json").read_text(encoding="utf-8-sig"))
         if actual != expected:
             raise RuntimeError("Windows 产物的提交或版本不一致，已停止归档。")
+        installer_name = f"AI-Link-Setup-{expected['version']}+{expected['build_number']}.exe"
+        installer = staging / installer_name
+        if not installer.is_file():
+            raise RuntimeError("Windows 产物缺少带版本号的安装程序。")
+        with installer.open('rb') as stream:
+            if stream.read(2) != b'MZ':
+                raise RuntimeError("Windows 安装程序格式无效。")
         archive = staging / "windows.zip"
         with zipfile.ZipFile(archive) as bundle:
             required = {"AI-Link/mulit_ai_flutter.exe", "AI-Link/flutter_windows.dll",
@@ -87,6 +94,7 @@ def download_bundle(run_id, request_id, output, expected):
                 raise RuntimeError("Windows ZIP 校验失败。")
         name = f"AI-Link-{expected['version']}+{expected['build_number']}-windows.zip"
         (output / name).write_bytes(archive.read_bytes())
+        (output / installer_name).write_bytes(installer.read_bytes())
         (output / "build-info.json").write_text(json.dumps(actual, indent=2) + "\n")
 
 
