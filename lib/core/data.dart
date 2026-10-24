@@ -1483,6 +1483,27 @@ class ChatStore {
         .toSet();
   }
 
+  /// Search evidence or an explicit watch sync flag records actual past use.
+  Future<Set<int>> searchedTopicIds() async {
+    final rows = await (await db).query(
+      'messages',
+      distinct: true,
+      columns: ['topic_id'],
+      where: "search_sources IS NOT NULL AND search_sources != '[]' AND search_sources != ''",
+    );
+    final watchRows = await (await db).query(
+      'settings',
+      columns: ['value'],
+      where: "key LIKE 'watch_search_topic_%'",
+    );
+    return {
+      ...rows.map((row) => row['topic_id'] as int),
+      ...watchRows
+          .map((row) => int.tryParse(row['value'] as String))
+          .whereType<int>(),
+    };
+  }
+
   Future<int> createTopicWithMessage(
     ProviderConfig provider,
     String model,
@@ -1634,6 +1655,9 @@ class ChatStore {
         where: 'id = ?',
         whereArgs: [topicId],
       );
+      if (turn['searchUsed'] == true) {
+        await put('watch_search_topic_$topicId', '$topicId');
+      }
       await put(topicKey, '$topicId');
       await put(sequenceKey, '${sequence + 1}');
       await put('watch_turn_$id', '1');
@@ -1674,6 +1698,7 @@ class ChatStore {
         .expand((m) => m.attachments)
         .toList();
     await (await db).delete('topics', where: 'id = ?', whereArgs: [id]);
+    await deleteSetting('watch_search_topic_$id');
     await deleteSetting(memoryCursorSetting(id));
     await deleteSetting(memoryTopicSetting(id));
     await AttachmentStore.instance.delete(attachments);

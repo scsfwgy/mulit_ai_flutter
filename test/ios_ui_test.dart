@@ -218,6 +218,36 @@ void main() {
     expect(taps, 1);
   });
 
+  testWidgets('message settings keeps the current chat memory toggle', (
+    tester,
+  ) async {
+    var used = true;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MessageSettingsScreen(
+          chatUsesMemory: () async => used,
+          onToggleChatMemory: () async {
+            used = !used;
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final row = find.ancestor(
+      of: find.text('此对话使用全局记忆'),
+      matching: find.byType(IosRow),
+    );
+    final toggle = find.descendant(
+      of: row,
+      matching: find.byType(CupertinoSwitch),
+    );
+    expect(tester.widget<CupertinoSwitch>(toggle).value, isTrue);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(used, isFalse);
+    expect(tester.widget<CupertinoSwitch>(toggle).value, isFalse);
+  });
+
   testWidgets('top title has no model switch before setup', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
@@ -240,9 +270,7 @@ void main() {
               ChatMoreButton(
                 onNewTopic: () => selected.add('new'),
                 onModel: () => selected.add('model'),
-                onModelSettings: () => selected.add('models'),
-                onVoiceSettings: () => selected.add('voice'),
-                onSearch: () => selected.add('search'),
+                onSettings: () => selected.add('settings'),
                 onMessageSettings: () => selected.add('messages'),
               ),
             ],
@@ -257,12 +285,17 @@ void main() {
       ('新对话', 'new'),
       ('切换模型', 'model'),
       ('消息设置', 'messages'),
-      ('模型设置', 'models'),
-      ('语音服务', 'voice'),
-      ('联网搜索', 'search'),
+      ('设置', 'settings'),
     ]) {
       await tester.tap(find.byIcon(CupertinoIcons.ellipsis));
       await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<CupertinoActionSheet>(find.byType(CupertinoActionSheet))
+            .title,
+        isNull,
+      );
+      expect(find.byType(CupertinoActionSheetAction), findsNWidgets(5));
       expect(find.byType(CupertinoSwitch), findsNothing);
       await tester.tap(find.text(label));
       await tester.pumpAndSettle();
@@ -272,7 +305,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
-    expect(selected.length, 6);
+    expect(selected.length, 4);
   });
 
   test('loading duration shows milliseconds and seconds plus milliseconds', () {

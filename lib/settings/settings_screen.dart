@@ -394,15 +394,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
 }
 
 class MessageSettingsScreen extends StatefulWidget {
-  const MessageSettingsScreen({super.key, this.canChangeSearch});
+  const MessageSettingsScreen({
+    super.key,
+    this.canChangeSearch,
+    this.chatUsesMemory,
+    this.onToggleChatMemory,
+  });
 
   final bool Function()? canChangeSearch;
+  final Future<bool> Function()? chatUsesMemory;
+  final Future<void> Function()? onToggleChatMemory;
 
   @override
   State<MessageSettingsScreen> createState() => _MessageSettingsScreenState();
 }
 
 class _MessageSettingsScreenState extends State<MessageSettingsScreen> {
+  bool? _chatMemory;
+  bool _savingMemory = false;
+
+  Future<void> _loadChatMemory() async {
+    final used = await widget.chatUsesMemory?.call();
+    if (mounted) setState(() => _chatMemory = used);
+  }
+
+  Future<void> _toggleChatMemory(bool _) async {
+    setState(() => _savingMemory = true);
+    try {
+      await widget.onToggleChatMemory?.call();
+      await _loadChatMemory();
+    } finally {
+      if (mounted) setState(() => _savingMemory = false);
+    }
+  }
+
   bool _searchEnabled = false;
   bool _loadingSearch = true;
   bool _savingSearch = false;
@@ -411,6 +436,7 @@ class _MessageSettingsScreenState extends State<MessageSettingsScreen> {
   void initState() {
     super.initState();
     _loadSearch();
+    _loadChatMemory();
   }
 
   Future<void> _loadSearch() async {
@@ -488,6 +514,23 @@ class _MessageSettingsScreenState extends State<MessageSettingsScreen> {
       body: SafeArea(
         child: ListView(
           children: [
+            if (widget.chatUsesMemory != null &&
+                widget.onToggleChatMemory != null)
+              IosSection(
+                children: [
+                  IosRow(
+                    title: T('i18n.memory_chat_toggle'),
+                    chevron: false,
+                    trailing: CupertinoSwitch(
+                      value: _chatMemory ?? false,
+                      activeTrackColor: IosColors.blue,
+                      onChanged: _chatMemory == null || _savingMemory
+                          ? null
+                          : _toggleChatMemory,
+                    ),
+                  ),
+                ],
+              ),
             IosSection(
               footer: T('i18n.your_messages_show_the_model'),
               children: [

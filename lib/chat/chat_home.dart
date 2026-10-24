@@ -47,7 +47,6 @@ import 'package:mulit_ai_flutter/search/search_service.dart';
 import 'package:mulit_ai_flutter/search/search_settings_screen.dart';
 import 'package:mulit_ai_flutter/settings/privacy_screen.dart';
 import 'package:mulit_ai_flutter/settings/prompt_screen.dart';
-import 'package:mulit_ai_flutter/settings/memory_settings_screen.dart';
 import 'package:mulit_ai_flutter/settings/purchase_screen.dart';
 import 'package:mulit_ai_flutter/settings/settings_screen.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
@@ -118,8 +117,11 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       case DesktopSection.messages:
         _pushRoute<void>(
           appPageRoute(
-            builder: (_) =>
-                MessageSettingsScreen(canChangeSearch: _canChangeSearch),
+            builder: (_) => MessageSettingsScreen(
+              canChangeSearch: _canChangeSearch,
+              chatUsesMemory: _chatUsesMemory,
+              onToggleChatMemory: _toggleChatMemory,
+            ),
           ),
           section: section,
         );
@@ -564,8 +566,11 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   Future<void> _openMessageSettings() async {
     await _pushRoute<void>(
       appPageRoute(
-        builder: (_) =>
-            MessageSettingsScreen(canChangeSearch: _canChangeSearch),
+        builder: (_) => MessageSettingsScreen(
+          canChangeSearch: _canChangeSearch,
+          chatUsesMemory: _chatUsesMemory,
+          onToggleChatMemory: _toggleChatMemory,
+        ),
       ),
     );
     await _load();
@@ -1832,20 +1837,17 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     });
   }
 
-  Future<ChatMemoryMenuState> _memoryMenuState() async {
+  Future<bool> _chatUsesMemory() async {
     final store = ChatStore.instance;
     final enabled = await store.memoryEnabled();
     final inGlobal = await store.memoryInGlobalPrompt();
     final override = _topic == null
         ? _draftMemoryOverride
         : await store.memoryTopicOverride(_topic!.id);
-    return ChatMemoryMenuState(
+    return topicUsesMemory(
       enabled: enabled,
-      used: topicUsesMemory(
-        enabled: enabled,
-        inGlobalPrompt: inGlobal,
-        topicOverride: override,
-      ),
+      inGlobalPrompt: inGlobal,
+      topicOverride: override,
     );
   }
 
@@ -1855,21 +1857,13 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       if (mounted) _notify('i18n.memory_master_off');
       return;
     }
-    final next = !(await _memoryMenuState()).used;
+    final next = !(await _chatUsesMemory());
     final topic = _topic;
     if (topic == null) {
       if (mounted) setState(() => _draftMemoryOverride = next);
       return;
     }
     await store.setMemoryTopicOverride(topic.id, next);
-  }
-
-  Future<void> _viewMemory() async {
-    final profile = await ChatStore.instance.memoryProfile();
-    if (!mounted) return;
-    await _pushRoute<void>(
-      appPageRoute(builder: (_) => MemoryEditor(initial: profile)),
-    );
   }
 
   void _notify(String message) => ScaffoldMessenger.of(context).showSnackBar(
@@ -2012,13 +2006,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           ChatMoreButton(
             onNewTopic: _newTopic,
             onModel: _changeModel,
-            onModelSettings: _openModelSettings,
-            onVoiceSettings: _openVoiceSettings,
-            onSearch: _openSearchSettings,
+            onSettings: _openSettings,
             onMessageSettings: _openMessageSettings,
-            memoryState: _memoryMenuState,
-            onToggleChatMemory: _toggleChatMemory,
-            onViewMemory: _viewMemory,
           ),
         ],
       ),

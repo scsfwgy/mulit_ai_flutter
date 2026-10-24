@@ -29,7 +29,6 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
   bool _checkingWatches = true;
   bool _isAppleWatch = false;
   bool _watchAppInstalled = false;
-  bool _watchReachable = false;
   bool _openingStore = false;
   String? _watchCheckError;
 
@@ -76,7 +75,6 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
       setState(() {
         _isAppleWatch = status?['platform'] == 'apple';
         _watchAppInstalled = status?['installed'] == true;
-        _watchReachable = status?['reachable'] == true;
         _connectedWatches = status?['connected'] as int? ?? 0;
         _missingWatches = missing;
         _watchCheckError = null;
@@ -92,7 +90,9 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
     } on MissingPluginException {
       if (mounted) {
         setState(() {
-          _watchCheckError = T('i18n.watch_installation_guidance_is_unavailable');
+          _watchCheckError = T(
+            'i18n.watch_installation_guidance_is_unavailable',
+          );
           _checkingWatches = false;
         });
       }
@@ -136,7 +136,7 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
     if (_isAppleWatch) {
       if (_connectedWatches == 0) return T('i18n.no_apple_watch_paired');
       if (!_watchAppInstalled) return T('i18n.ai_link_is_not_installed');
-      return _watchReachable ? T('i18n.apple_watch_connected') : T('i18n.watch_app_installed_waiting');
+      return T('i18n.watch_app_paired_installed');
     }
     if (_connectedWatches == 0) return T('i18n.wear_os_data_connection');
     if (_missingWatches.isNotEmpty) {
@@ -147,9 +147,15 @@ class _WatchSettingsScreenState extends State<WatchSettingsScreen>
 
   Future<void> _load() async {
     final store = ChatStore.instance;
-    final providers = (await store.providers()).where(
-      (p) => !StorefrontPolicy.instance.blocks(p.baseUrl, presetId: p.presetId, model: p.model),
-    ).toList();
+    final providers = (await store.providers())
+        .where(
+          (p) => !StorefrontPolicy.instance.blocks(
+            p.baseUrl,
+            presetId: p.presetId,
+            model: p.model,
+          ),
+        )
+        .toList();
     final selection = await loadWatchChatSelection(store);
     final selected =
         providers.where((p) => p.id == selection?.providerId).firstOrNull ??

@@ -1,7 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-
 import 'package:mulit_ai_flutter/core/data.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
@@ -36,6 +35,7 @@ class _TopicScreenState extends State<TopicScreen> {
   List<ChatTopic> _topics = [];
   List<ProviderConfig> _providers = [];
   Set<int> _watchTopicIds = {};
+  Set<int> _searchedTopicIds = {};
 
   @override
   void initState() {
@@ -47,13 +47,60 @@ class _TopicScreenState extends State<TopicScreen> {
     final topics = await ChatStore.instance.topics();
     final providers = await ChatStore.instance.providers();
     final watchTopicIds = await ChatStore.instance.watchTopicIds();
+    final searchedTopicIds = await ChatStore.instance.searchedTopicIds();
     if (mounted) {
       setState(() {
         _topics = topics;
         _providers = providers;
         _watchTopicIds = watchTopicIds;
+        _searchedTopicIds = searchedTopicIds;
       });
     }
+  }
+
+  Widget _topicIcon(ChatTopic topic) {
+    final isWatch = _watchTopicIds.contains(topic.id);
+    final color = topic.id == widget.selectedId
+        ? IosColors.blue
+        : IosColors.secondary;
+    return SizedBox(
+      width: 30,
+      height: 30,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 0,
+            top: 2,
+            child: Icon(
+              isWatch ? Icons.watch_outlined : CupertinoIcons.chat_bubble_text,
+              color: color,
+              size: 22,
+              semanticLabel: T(isWatch ? 'i18n.watch' : 'i18n.chats'),
+            ),
+          ),
+          if (_searchedTopicIds.contains(topic.id))
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: IosColors.surface,
+                  shape: BoxShape.circle,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(1.5),
+                  child: Icon(
+                    CupertinoIcons.globe,
+                    color: color,
+                    size: 13,
+                    semanticLabel: T('i18n.web_search'),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   Future<void> _actions(ChatTopic topic) async {
@@ -224,15 +271,7 @@ class _TopicScreenState extends State<TopicScreen> {
                           title: topic.title,
                           subtitle:
                               '${_providers.where((p) => p.id == topic.providerId).firstOrNull?.name ?? T('i18n.service_deleted')} · ${topic.model}',
-                          leading: Icon(
-                            _watchTopicIds.contains(topic.id)
-                                ? Icons.watch_outlined
-                                : CupertinoIcons.chat_bubble_text,
-                            color: topic.id == widget.selectedId
-                                ? IosColors.blue
-                                : IosColors.secondary,
-                            size: 22,
-                          ),
+                          leading: _topicIcon(topic),
                           trailing: CupertinoButton(
                             padding: const EdgeInsets.symmetric(horizontal: 6),
                             minimumSize: const Size(38, 38),
@@ -264,7 +303,10 @@ class _TopicScreenState extends State<TopicScreen> {
                   children: [
                     Icon(CupertinoIcons.gear, color: IosColors.blue, size: 22),
                     const SizedBox(width: 6),
-                    Text(T('i18n.settings'), style: TextStyle(color: IosColors.blue)),
+                    Text(
+                      T('i18n.settings'),
+                      style: TextStyle(color: IosColors.blue),
+                    ),
                   ],
                 ),
               ),

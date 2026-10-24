@@ -697,6 +697,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             .put("model", config.optString("model"))
             .put("transcript", text)
             .put("answer", reply)
+            .put("searchUsed", config.optBoolean("searchEnabled", false))
         val recent = JSONArray()
         for (index in (oldTurns.length() - 49).coerceAtLeast(0) until oldTurns.length()) {
             recent.put(oldTurns.getJSONObject(index))

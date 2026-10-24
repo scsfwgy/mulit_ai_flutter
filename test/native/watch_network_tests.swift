@@ -200,6 +200,17 @@ struct WatchNetworkTests {
       "late old topic acknowledgement leaves new topic intact")
     let saved = String(decoding: defaults.data(forKey: "ai_link_watch_independent_history_v1")!, as: UTF8.self)
     try expect(!saved.contains("watch-test-key") && !saved.contains("apiKey"), "history contains no credentials")
+    try newTopic.append(id: UUID().uuidString.lowercased(),
+      config: config(searchEnabled: true), question: "searched", answer: "grounded")
+    let searchRestored = WatchHistoryStore(defaults: defaults)
+    try expect(searchRestored.snapshot.pending.last?.searchUsed == true,
+      "search history flag survives offline storage and sync")
+    let oldTurnData = try JSONEncoder().encode(searchRestored.snapshot.pending.last!)
+    var oldTurn = try JSONSerialization.jsonObject(with: oldTurnData) as! [String: Any]
+    oldTurn.removeValue(forKey: "searchUsed")
+    let legacyTurn = try JSONDecoder().decode(WatchSyncTurn.self,
+      from: JSONSerialization.data(withJSONObject: oldTurn))
+    try expect(legacyTurn.searchUsed == nil, "legacy history remains readable without invented search state")
     restored.clear()
     for bad in ["http://example.com", "https://user:key@example.com", "https://example.com?x=y"] {
       do { _ = try WatchNetworkConfiguration.endpoint(bad, "/chat"); throw NSError(domain: "unsafe URL", code: 1) }

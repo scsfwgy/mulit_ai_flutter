@@ -127,8 +127,14 @@ void main() {
       await store.saveWatchTurn(first);
       expect(settings['watch_sequence_$conversationId'], '1');
     }
+    expect(
+      settings.keys.where((key) => key.startsWith('watch_search_topic_')),
+      isEmpty,
+    );
+    await store.saveWatchTurn({...turn(2), 'searchUsed': true});
+    expect(settings['watch_search_topic_1'], '1');
     expect(topics.length, 3);
-    expect(messages.length, 8);
+    expect(messages.length, 10);
     expect(messages.take(4).map((m) => m['content']), ['q0', 'a0', 'q1', 'a1']);
     // Only mock test data is cleared, never a simulator or device database.
     settings.clear();

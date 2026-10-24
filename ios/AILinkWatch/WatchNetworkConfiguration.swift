@@ -233,6 +233,7 @@ struct WatchSyncTurn: Codable, Identifiable {
   let transcript: String
   let answer: String
   var source: String? = "apple-watch"
+  var searchUsed: Bool?
 }
 
 /// Pending turns are separate from the 50 display turns and survive reconnects.
@@ -274,7 +275,8 @@ final class WatchHistoryStore {
     let turn = WatchSyncTurn(id: id.lowercased(), conversationId: snapshot.conversationId,
       sequence: snapshot.sequence, createdAt: Int64(Date().timeIntervalSince1970 * 1000),
       providerId: config.providerId, providerName: config.providerName,
-      providerPresetId: config.providerPresetId, model: config.model, transcript: question, answer: answer)
+      providerPresetId: config.providerPresetId, model: config.model, transcript: question, answer: answer,
+      searchUsed: config.searchEnabled == true)
     snapshot.sequence += 1
     snapshot.recent = Array((snapshot.recent + [turn]).suffix(50))
     snapshot.pending.append(turn)
