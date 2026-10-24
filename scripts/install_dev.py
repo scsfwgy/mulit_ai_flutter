@@ -15,9 +15,17 @@ import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PHONE_ID = "com.maxhall.ailink.debug"
+RELEASE_PHONE_ID = "com.maxhall.ailink"
+DEBUG_PHONE_ID = "com.maxhall.ailink.debug"
+# Profile and debug installs keep the older names used by the bundle checks.
+PHONE_ID = DEBUG_PHONE_ID
 WATCH_ID = PHONE_ID + ".watchkitapp"
 MACOS_ID = "com.maxhall.ailink.macos"
+
+
+def apple_bundle_ids(ios_mode):
+    phone = RELEASE_PHONE_ID if ios_mode == "release" else DEBUG_PHONE_ID
+    return phone, phone + ".watchkitapp"
 
 
 @dataclass(frozen=True)
@@ -239,12 +247,14 @@ def build(selected, ios_mode, team, macos_mode="debug"):
         phone = ROOT / "build/ios/iphoneos/Runner.app"
         watch = phone / "Watch/AILinkWatch.app"
         widget = watch / "PlugIns/AILinkWatchWidgets.appex"
-        for path, expected in ((phone, PHONE_ID), (watch, WATCH_ID), (widget, WATCH_ID + ".widgets")):
+        phone_id, watch_id = apple_bundle_ids(ios_mode)
+        edition = "正式版" if ios_mode == "release" else "开发版"
+        for path, expected in ((phone, phone_id), (watch, watch_id), (widget, watch_id + ".widgets")):
             with (path / "Info.plist").open("rb") as stream:
                 info = plistlib.load(stream)
             if info.get("CFBundleIdentifier") != expected:
-                raise ValueError(f"安装包标识不是开发版 {expected}，已停止安装：{path}")
-            if path == watch and info.get("WKCompanionAppBundleIdentifier") != PHONE_ID:
+                raise ValueError(f"安装包标识不是{edition} {expected}，已停止安装：{path}")
+            if path == watch and info.get("WKCompanionAppBundleIdentifier") != phone_id:
                 raise ValueError("Apple Watch 配套手机标识不匹配，已停止安装。")
         run(["codesign", "--verify", "--deep", "--strict", phone])
         artifacts["ios", "phone"] = phone
@@ -300,7 +310,12 @@ def main():
     choice.add_argument("--device", action="append", metavar="设备ID", help="指定序列号/UDID，可重复传入")
     choice.add_argument("--all", action="store_true", help="安装到筛选后的全部设备")
     parser.add_argument("--list", action="store_true", help="只列设备，不构建或安装")
-    parser.add_argument("--ios-mode", choices=("profile", "debug"), default="profile", help="默认 profile，可从桌面启动；debug 用于断点/热重载")
+    parser.add_argument(
+        "--ios-mode",
+        choices=("release", "profile", "debug"),
+        default="release",
+        help="默认 release，安装正式包；profile 或 debug 安装可并存的测试包",
+    )
     parser.add_argument("--macos-mode", choices=("debug", "profile", "release"), default="debug", help="Mac 构建模式，默认 debug")
     parser.add_argument("--macos-dir", default=str(Path.home() / "Applications"), metavar="目录", help="Mac 安装目录，默认 ~/Applications")
     parser.add_argument("--launch", action="store_true", help="安装后打开 Mac 客户端；手机/手表行为不变")
@@ -354,7 +369,7 @@ def main():
         print(f"安装完成：{device.name}", flush=True)
     print("\n所选设备已全部覆盖安装；未卸载或清空应用数据。")
     if any(d.platform == "ios" and d.kind == "phone" for d in selected) and args.ios_mode == "debug":
-        print("iPhone Debug 版需通过 flutter run / Xcode 启动；桌面启动请使用默认 Profile 模式重新安装。")
+        print("iPhone Debug 版需通过 flutter run / Xcode 启动；桌面启动请使用默认 Release，或 --ios-mode profile 重新安装。")
 
 
 if __name__ == "__main__":

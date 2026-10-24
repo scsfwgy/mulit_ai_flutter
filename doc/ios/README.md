@@ -108,7 +108,7 @@ xcrun swiftc -swift-version 5 -parse-as-library \
 
 1. 在 Xcode → Settings → Accounts 登录属于当前开发团队的 Apple Developer 账号；已有团队 ID 或缓存描述文件不等于 Xcode 已登录。
 2. 打开 `ios/Runner.xcworkspace`，为 `Runner`、`AILinkWatch`、`AILinkWatchWidgets` 三个目标选择同一 Team，启用 Automatically manage signing。使用其他团队时，安装脚本也要传 `--team <TeamID>`。
-3. 在 Xcode 选择配对的真机组合，用 Profile 配置构建一次，让 Xcode 为新的扩展标识生成并下载开发描述文件，再运行 `./install-dev.sh --platform ios`。
+3. 在 Xcode 选择配对的真机组合，用 Release 配置构建一次，让 Xcode 为正式标识生成并下载描述文件，再运行 `./install-dev.sh --platform ios`。测试包改用 Profile 配置，并在安装时加 `--ios-mode profile`。
 
 当前实现无需 App Groups；如果仍提示旧 App Groups entitlement 不匹配，确认使用最新工程并在 Xcode 执行 Product → Clean Build Folder 后重建，这不会清空设备应用数据。本机已通过 API 凭据生成并缓存开发描述文件；更换团队、证书或电脑时仍需重新完成自动签名。
 
@@ -118,7 +118,7 @@ xcrun swiftc -swift-version 5 -parse-as-library \
 
 运行 `./install-dev.sh --platform ios`，按序号选择真实 iPhone/iPad、Apple Watch，多个序号用逗号或空格分隔；`--all` 安装到全部 Apple 真机，`--target phone` / `--target watch` 只选择手机或手表。设备须先通过 Device Hub 配对、信任 Mac 并开启开发者模式。
 
-默认构建 Profile 版，手机可脱离调试器从桌面启动。Profile 与 Debug 共用开发标识 `com.maxhall.ailink.debug` / `com.maxhall.ailink.debug.watchkitapp`、名称「AI Link Debug」与同一开发团队，覆盖安装保留应用数据；Release 仍使用正式标识。需要 Flutter 断点或热重载时传 `--ios-mode debug`，再通过 `flutter run` 或 Xcode 启动手机应用。
+默认构建 Release 正式包，标识为 `com.maxhall.ailink` / `com.maxhall.ailink.watchkitapp`，名称「AI Link」，手机可从桌面启动。测试包传 `--ios-mode profile`：与 Debug 共用 `com.maxhall.ailink.debug` / `com.maxhall.ailink.debug.watchkitapp`、名称「AI Link Debug」，可与正式包并存，覆盖安装保留各自的数据。需要 Flutter 断点或热重载时传 `--ios-mode debug`，再通过 `flutter run` 或 Xcode 启动手机应用。
 
 脚本读取 Xcode Debug 配置的开发团队，也可用 `--team <TeamID>` 或 `IOS_DEVELOPMENT_TEAM` 指定；通过临时 xcconfig 对手机、手表与复杂功能扩展统一签名，不改写项目中的团队设置。两端由同一次 Flutter iOS 构建生成，脚本校验标识、配套关系与签名后分别覆盖安装。只安装手表时也会准备配套 iPhone 的构建依赖，避免直接构建 Watch Scheme 时缺少 Flutter framework。
 

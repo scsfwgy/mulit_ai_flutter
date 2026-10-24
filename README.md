@@ -65,6 +65,8 @@ iPhone 新安装默认使用苹果系统识别与系统朗读，手机与手表�
 ./install-dev.sh --device macos --macos-mode release # 安装 Mac Release
 ./install-dev.sh --target desktop --macos-dir /自选目录
 ./install-dev.sh --target watch                   # 只列出手表并选择
+./install-dev.sh --platform ios --target phone                 # 默认安装正式包
+./install-dev.sh --platform ios --ios-mode profile             # 安装可并存的测试包
 ./install-dev.sh --platform ios --target phone --ios-mode debug
 ./install-dev.sh --device <序列号或UDID>           # 可重复传 --device 选择多台
 ```
@@ -75,7 +77,7 @@ iPhone 新安装默认使用苹果系统识别与系统朗读，手机与手表�
 
 Mac 使用完整 Xcode 构建，默认 Debug，可选 `--macos-mode profile` / `release`；安装到 `~/Applications/AI Link.app`，`--macos-dir` 可改目录。复制后验证签名，再替换应用包；替换失败会恢复旧包，不清空 SQLite 或钥匙串。Mac 的 Debug/Profile/Release 共用 `com.maxhall.ailink.macos` 和本机数据；签名读取忽略的 `Signing.local.xcconfig`，详见 [Mac 说明](doc/macos/README.md)。默认仅安装，`--launch` 打开 Mac 应用。
 
-Android/iOS 两端开发安装都叫「AI Link Debug」并沿用开发包标识。Apple 默认使用 Profile 模式，可从桌面启动；`--ios-mode debug` 用于 Flutter 断点和热重载，手机需要通过 `flutter run` 或 Xcode 启动。Profile 与 Debug 可覆盖更新并保留数据，Release 保持正式标识。脚本先完成所需构建，再覆盖安装所选设备，不执行卸载或数据清空；安装失败会停止并保留已成功安装的设备。安装成功不代表语音、配对和后台流程验证通过。
+Android 开发安装叫「AI Link Debug」，使用 `com.maxhall.ailink.debug`。iOS 默认安装正式包「AI Link」（`com.maxhall.ailink` 与 `com.maxhall.ailink.watchkitapp`），可从桌面启动。需要与正式包并存的测试包时传 `--ios-mode profile`；`--ios-mode debug` 用于 Flutter 断点和热重载，手机需要通过 `flutter run` 或 Xcode 启动。Profile 与 Debug 共用测试标识和名称「AI Link Debug」，可互相覆盖并保留测试数据。脚本先完成所需构建，再覆盖安装所选设备，不执行卸载或数据清空；安装失败会停止并保留已成功安装的设备。安装成功不代表语音、配对和后台流程验证通过。
 
 ### Wear OS 手表
 

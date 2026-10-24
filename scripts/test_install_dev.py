@@ -106,7 +106,7 @@ class InstallDevTest(unittest.TestCase):
                  patch.object(installer, "install_macos", return_value=Path("/tmp/mac-apps/AI Link.app")) as install, \
                  patch.object(installer, "run") as command, contextlib.redirect_stdout(io.StringIO()):
                 installer.main()
-            build.assert_called_once_with([mac], "profile", None, "debug")
+            build.assert_called_once_with([mac], "release", None, "debug")
             install.assert_called_once_with(Path("built.app"), "/tmp/mac-apps")
             if launch:
                 command.assert_called_once_with(["open", "-a", Path("/tmp/mac-apps/AI Link.app")])
@@ -169,12 +169,14 @@ class InstallDevTest(unittest.TestCase):
             self.assertEqual(artifacts, {("android", "watch"): apk})
             run.assert_called_once_with([root / "android/gradlew", "-p", root / "android", ":wear:assembleDebug"])
 
-    def make_apple_artifacts(self, root, companion=installer.PHONE_ID):
+    def make_apple_artifacts(self, root, companion=None, phone_id=installer.PHONE_ID):
         phone = root / "build/ios/iphoneos/Runner.app"
         watch = phone / "Watch/AILinkWatch.app"
         widget = watch / "PlugIns/AILinkWatchWidgets.appex"
-        for path, identifier in ((phone, installer.PHONE_ID), (watch, installer.WATCH_ID),
-                                 (widget, installer.WATCH_ID + ".widgets")):
+        watch_id = phone_id + ".watchkitapp"
+        companion = phone_id if companion is None else companion
+        for path, identifier in ((phone, phone_id), (watch, watch_id),
+                                 (widget, watch_id + ".widgets")):
             path.mkdir(parents=True, exist_ok=True)
             info = {"CFBundleIdentifier": identifier}
             if path == watch:
@@ -204,6 +206,30 @@ class InstallDevTest(unittest.TestCase):
             self.make_apple_artifacts(root, companion="wrong.phone")
             with patch.object(installer, "ROOT", root), patch.object(installer, "run"), self.assertRaisesRegex(ValueError, "配套手机标识"):
                 installer.build(self.devices[2:], "profile", "ABCDE12345")
+
+    def test_release_build_requires_the_official_bundle(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+
+            def command(argv, **kwargs):
+                if argv[0] == "flutter":
+                    self.assertEqual(argv, ["flutter", "build", "ios", "--release"])
+                    self.make_apple_artifacts(
+                        root,
+                        companion=installer.RELEASE_PHONE_ID,
+                        phone_id=installer.RELEASE_PHONE_ID,
+                    )
+
+            with patch.object(installer, "ROOT", root), patch.object(installer, "run", side_effect=command):
+                artifacts = installer.build(self.devices[2:], "release", "ABCDE12345")
+            self.assertEqual(set(artifacts), {("ios", "phone"), ("ios", "watch")})
+
+    def test_debug_bundle_is_rejected_for_the_default_release_install(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.make_apple_artifacts(root)
+            with patch.object(installer, "ROOT", root), patch.object(installer, "run"), self.assertRaisesRegex(ValueError, "正式版"):
+                installer.build(self.devices[2:], "release", "ABCDE12345")
 
     def test_release_widget_in_debug_bundle_stops_before_install(self):
         with tempfile.TemporaryDirectory() as temp:
