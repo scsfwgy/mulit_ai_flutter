@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mulit_ai_flutter/core/app_platform.dart';
-import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/chat/desktop_chat.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 import 'package:mulit_ai_flutter/settings/settings_screen.dart';
@@ -81,13 +81,29 @@ void main() {
   ) async {
     await tester.pumpWidget(const MaterialApp(home: SettingsScreen()));
     expect(find.text('手表'), findsNothing);
-    expect(find.text('主题色'), findsOneWidget);
-    expect(
-      find.byType(CupertinoSlidingSegmentedControl<AppLanguage>),
-      findsOneWidget,
-    );
+    expect(find.text(T('i18n.model_settings')), findsOneWidget);
+    expect(find.text(T('i18n.appearance_skin')), findsOneWidget);
     expect(supportsWatchCompanion, isFalse);
   }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+  testWidgets('desktop menu offers the shared model settings entry', (
+    tester,
+  ) async {
+    DesktopSection? selected;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DesktopNavigationMenu(
+            selected: DesktopSection.settings,
+            onSelect: (section) => selected = section,
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('desktop-section-models')));
+    expect(selected, DesktopSection.models);
+    expect(find.text(T('i18n.model_settings')), findsOneWidget);
+  }, variant: TargetPlatformVariant.desktop());
 
   testWidgets('mobile settings retains watch pairing', (tester) async {
     await tester.pumpWidget(const MaterialApp(home: SettingsScreen()));

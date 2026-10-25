@@ -19,7 +19,7 @@ SingleActivator desktopCommandActivator(LogicalKeyboardKey key) {
 enum DesktopSection {
   chat,
   providers,
-  prompts,
+  models,
   voice,
   search,
   messages,
@@ -60,14 +60,41 @@ class DesktopNavigationMenu extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(12, 16, 12, 8),
             children: [
               for (final item in [
-                (DesktopSection.settings, CupertinoIcons.gear, T('i18n.general')),
-                (DesktopSection.providers, CupertinoIcons.square_stack, T('i18n.model_services')),
-                (DesktopSection.prompts, CupertinoIcons.text_quote, T('i18n.prompts')),
-                (DesktopSection.voice, CupertinoIcons.waveform, T('i18n.voice_services')),
-                (DesktopSection.search, CupertinoIcons.search, T('i18n.web_search')),
-                (DesktopSection.messages, CupertinoIcons.info, T('i18n.message_settings')),
-                (DesktopSection.privacy, CupertinoIcons.lock, T('i18n.data_privacy')),
-                (DesktopSection.about, CupertinoIcons.info_circle, T('i18n.about')),
+                (
+                  DesktopSection.settings,
+                  CupertinoIcons.gear,
+                  T('i18n.settings'),
+                ),
+                (
+                  DesktopSection.models,
+                  CupertinoIcons.square_stack,
+                  T('i18n.model_settings'),
+                ),
+                (
+                  DesktopSection.voice,
+                  CupertinoIcons.waveform,
+                  T('i18n.voice_services'),
+                ),
+                (
+                  DesktopSection.search,
+                  CupertinoIcons.search,
+                  T('i18n.web_search'),
+                ),
+                (
+                  DesktopSection.messages,
+                  CupertinoIcons.info,
+                  T('i18n.message_settings'),
+                ),
+                (
+                  DesktopSection.privacy,
+                  CupertinoIcons.lock,
+                  T('i18n.data_privacy'),
+                ),
+                (
+                  DesktopSection.about,
+                  CupertinoIcons.info_circle,
+                  T('i18n.about'),
+                ),
               ])
                 Padding(
                   padding: const EdgeInsets.only(bottom: 4),
@@ -123,7 +150,10 @@ class DesktopNavigationMenu extends StatelessWidget {
               children: [
                 Icon(CupertinoIcons.back, color: IosColors.blue, size: 22),
                 const SizedBox(width: 8),
-                Text(T('i18n.back_to_chat'), style: TextStyle(color: IosColors.blue)),
+                Text(
+                  T('i18n.back_to_chat'),
+                  style: TextStyle(color: IosColors.blue),
+                ),
               ],
             ),
           ),

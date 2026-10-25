@@ -46,7 +46,6 @@ import 'package:mulit_ai_flutter/provider/provider_screen.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
 import 'package:mulit_ai_flutter/search/search_settings_screen.dart';
 import 'package:mulit_ai_flutter/settings/privacy_screen.dart';
-import 'package:mulit_ai_flutter/settings/prompt_screen.dart';
 import 'package:mulit_ai_flutter/settings/purchase_screen.dart';
 import 'package:mulit_ai_flutter/settings/settings_screen.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
@@ -109,11 +108,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         _openSearchSettings();
       case DesktopSection.settings:
         _openSettings();
-      case DesktopSection.prompts:
-        _pushRoute<void>(
-          appPageRoute(builder: (_) => const PromptSettingsScreen()),
-          section: section,
-        );
+      case DesktopSection.models:
+        _openModelSettings();
       case DesktopSection.messages:
         _pushRoute<void>(
           appPageRoute(
@@ -584,6 +580,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           onPrivacy: _openPrivacy,
         ),
       ),
+      section: DesktopSection.models,
     );
     await _load();
   }

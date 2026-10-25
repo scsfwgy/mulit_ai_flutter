@@ -14,6 +14,37 @@ void main() {
   setUpAll(useSqflitePluginFactory);
 
   testWidgets(
+    'settings opens memory through model settings on every platform',
+    (tester) async {
+      installEmptyDatabaseStub(settings: {memoryEnabledSetting: '1'});
+      await tester.pumpWidget(const MaterialApp(home: SettingsScreen()));
+      await tester.tap(find.widgetWithText(IosRow, T('i18n.model_settings')));
+      await tester.pumpAndSettle();
+      expect(find.byType(ModelSettingsScreen), findsOneWidget);
+      await tester.tap(find.widgetWithText(IosRow, T('i18n.memory')));
+      await tester.pumpAndSettle();
+      expect(find.byType(MemorySettingsScreen), findsOneWidget);
+      await tester.tap(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is IosNavButton && widget.icon == CupertinoIcons.back,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(IosRow, T('i18n.memory')));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<CupertinoSwitch>(find.byType(CupertinoSwitch).first)
+            .value,
+        isTrue,
+      );
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.all(),
+  );
+
+  testWidgets(
     'model settings opens memory independently of prompts and returns',
     (tester) async {
       installEmptyDatabaseStub(

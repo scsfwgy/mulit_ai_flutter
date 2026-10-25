@@ -80,145 +80,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (mounted) setState(() {});
   }
 
-  Widget _desktopPreferences() {
-    Widget row(String label, Widget control) => Padding(
-      padding: const EdgeInsets.symmetric(vertical: 18),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              T(label),
-              style: TextStyle(fontSize: 15, color: IosColors.label),
-            ),
-          ),
-          Expanded(child: control),
-        ],
-      ),
-    );
-    Future<void> save(Future<void> operation) async {
-      await operation;
-      if (mounted) setState(() {});
-    }
-
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(28, 18, 28, 28),
-      children: [
-        IosSection(
-          children: [
-            IosRow(
-              title: T('i18n.resource_library'),
-              leading: Icon(CupertinoIcons.folder, color: IosColors.blue),
-              onTap: _openLibrary,
-            ),
-          ],
-        ),
-        IosSection(
-          children: [
-            IosRow(
-              title: T('i18n.context_settings'),
-              leading: Icon(
-                CupertinoIcons.text_alignleft,
-                color: IosColors.blue,
-              ),
-              onTap: () => Navigator.push<void>(
-                context,
-                appPageRoute(builder: (_) => const ChatContextScreen()),
-              ),
-            ),
-          ],
-        ),
-        row(
-          'i18n.language',
-          CupertinoSlidingSegmentedControl<AppLanguage>(
-            groupValue: _preferences.language,
-            children: {
-              for (final language in AppLanguage.values)
-                language: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Text(_languageName(language)),
-                ),
-            },
-            onValueChanged: (value) {
-              if (value != null) save(_preferences.setLanguage(value));
-            },
-          ),
-        ),
-        Divider(color: IosColors.separator),
-        row(
-          'i18n.mode',
-          CupertinoSlidingSegmentedControl<AppAppearance>(
-            groupValue: _preferences.appearance,
-            children: {
-              for (final mode in AppAppearance.values)
-                mode: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Text(
-                    T(switch (mode) {
-                      AppAppearance.system => 'i18n.follow_system',
-                      AppAppearance.light => 'i18n.light',
-                      AppAppearance.dark => 'i18n.dark',
-                    }),
-                  ),
-                ),
-            },
-            onValueChanged: (value) {
-              if (value != null) save(_preferences.setAppearance(value));
-            },
-          ),
-        ),
-        Divider(color: IosColors.separator),
-        row(
-          'i18n.accent_color',
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              for (final skin in AppSkin.values)
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: IosColors.surface,
-                    border: Border.all(
-                      color: _preferences.skin == skin
-                          ? IosColors.blue
-                          : IosColors.separator,
-                      width: _preferences.skin == skin ? 2 : 1,
-                    ),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: CupertinoButton(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
-                    ),
-                    onPressed: () => save(_preferences.setSkin(skin)),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          CupertinoIcons.circle_fill,
-                          color: skin.accent,
-                          size: 18,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          T(skin.label),
-                          style: TextStyle(
-                            color: IosColors.label,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: IosColors.background,
@@ -229,167 +90,140 @@ class _SettingsScreenState extends State<SettingsScreen> {
         onPressed: () => Navigator.pop(context),
       ),
     ),
-    body: isDesktopApp
-        ? _desktopPreferences()
-        : SafeArea(
-            child: ListView(
-              children: [
-                AnimatedBuilder(
-                  animation: ApplePurchases.instance,
-                  builder: (context, _) => ApplePurchases.instance.enabled
-                      ? IosSection(
-                          children: [
-                            IosRow(
-                              title: T('i18n.trial_permanent_unlock'),
-                              leading: Icon(
-                                CupertinoIcons.sparkles,
-                                color: IosColors.blue,
-                              ),
-                              subtitle: T(
-                                ApplePurchases.instance.permanent
-                                    ? 'i18n.permanently_unlocked'
-                                    : 'i18n.7_day_trial_one_time',
-                              ),
-                              onTap: () => Navigator.push<void>(
-                                context,
-                                appPageRoute(
-                                  builder: (_) => const PurchaseScreen(),
-                                ),
-                              ),
-                            ),
-                          ],
-                        )
-                      : const SizedBox.shrink(),
-                ),
-                IosSection(
-                  children: [
-                    IosRow(
-                      title: T('i18n.resource_library'),
-                      leading: Icon(
-                        CupertinoIcons.folder,
-                        color: IosColors.blue,
-                      ),
-                      onTap: _openLibrary,
-                    ),
-                  ],
-                ),
-                IosSection(
-                  children: [
-                    IosRow(
-                      title: T('i18n.model_settings'),
-                      leading: Icon(
-                        CupertinoIcons.square_stack,
-                        color: IosColors.blue,
-                      ),
-                      onTap: () => Navigator.push<void>(
-                        context,
-                        appPageRoute(
-                          builder: (_) => ModelSettingsScreen(
-                            canClearData: widget.canClearData,
-                            onPrivacy: _openPrivacy,
-                          ),
-                        ),
-                      ),
-                    ),
-                    IosRow(
-                      title: T('i18n.voice_services'),
-                      leading: Icon(
-                        CupertinoIcons.waveform,
-                        color: IosColors.blue,
-                      ),
-                      onTap: () => Navigator.push<void>(
-                        context,
-                        appPageRoute(
-                          builder: (_) => const VoiceSettingsScreen(),
-                        ),
-                      ),
-                    ),
-                    IosRow(
-                      title: T('i18n.web_search'),
-                      leading: Icon(
-                        CupertinoIcons.search,
-                        color: IosColors.blue,
-                      ),
-                      onTap: () => Navigator.push<void>(
-                        context,
-                        appPageRoute(
-                          builder: (_) => const SearchSettingsScreen(),
-                        ),
-                      ),
-                    ),
-                    if (supportsWatchCompanion)
+    body: SafeArea(
+      child: ListView(
+        children: [
+          AnimatedBuilder(
+            animation: ApplePurchases.instance,
+            builder: (context, _) => ApplePurchases.instance.enabled
+                ? IosSection(
+                    children: [
                       IosRow(
-                        title: T('i18n.watch'),
+                        title: T('i18n.trial_permanent_unlock'),
                         leading: Icon(
-                          CupertinoIcons.device_phone_portrait,
+                          CupertinoIcons.sparkles,
                           color: IosColors.blue,
+                        ),
+                        subtitle: T(
+                          ApplePurchases.instance.permanent
+                              ? 'i18n.permanently_unlocked'
+                              : 'i18n.7_day_trial_one_time',
                         ),
                         onTap: () => Navigator.push<void>(
                           context,
-                          appPageRoute(
-                            builder: (_) => const WatchSettingsScreen(),
-                          ),
+                          appPageRoute(builder: (_) => const PurchaseScreen()),
                         ),
                       ),
-                    IosRow(
-                      title: T('i18n.message_settings'),
-                      leading: Icon(CupertinoIcons.info, color: IosColors.blue),
-                      onTap: () => Navigator.push<void>(
-                        context,
-                        appPageRoute(
-                          builder: (_) => MessageSettingsScreen(
-                            canChangeSearch: widget.canClearData,
-                          ),
-                        ),
-                      ),
-                    ),
-                    IosRow(
-                      title: T('i18n.language'),
-                      subtitle: _languageName(_preferences.language),
-                      leading: Icon(
-                        CupertinoIcons.globe,
-                        color: IosColors.blue,
-                      ),
-                      onTap: _chooseLanguage,
-                    ),
-                    IosRow(
-                      title: T('i18n.appearance_skin'),
-                      subtitle: T(switch (_preferences.appearance) {
-                        AppAppearance.system => 'i18n.follow_system',
-                        AppAppearance.light => 'i18n.light',
-                        AppAppearance.dark => 'i18n.dark',
-                      }),
-                      leading: Icon(
-                        CupertinoIcons.paintbrush,
-                        color: IosColors.blue,
-                      ),
-                      onTap: () =>
-                          Navigator.push<void>(
-                            context,
-                            appPageRoute(
-                              builder: (_) => const AppearanceScreen(),
-                            ),
-                          ).then((_) {
-                            if (mounted) setState(() {});
-                          }),
-                    ),
-                    IosRow(
-                      title: T('i18n.about'),
-                      leading: Icon(
-                        CupertinoIcons.info_circle,
-                        color: IosColors.blue,
-                      ),
-                      onTap: () => Navigator.push<void>(
-                        context,
-                        appPageRoute(builder: (_) => const AboutScreen()),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 28),
-              ],
-            ),
+                    ],
+                  )
+                : const SizedBox.shrink(),
           ),
+          IosSection(
+            children: [
+              IosRow(
+                title: T('i18n.resource_library'),
+                leading: Icon(CupertinoIcons.folder, color: IosColors.blue),
+                onTap: _openLibrary,
+              ),
+            ],
+          ),
+          IosSection(
+            children: [
+              IosRow(
+                title: T('i18n.model_settings'),
+                leading: Icon(
+                  CupertinoIcons.square_stack,
+                  color: IosColors.blue,
+                ),
+                onTap: () => Navigator.push<void>(
+                  context,
+                  appPageRoute(
+                    builder: (_) => ModelSettingsScreen(
+                      canClearData: widget.canClearData,
+                      onPrivacy: _openPrivacy,
+                    ),
+                  ),
+                ),
+              ),
+              IosRow(
+                title: T('i18n.voice_services'),
+                leading: Icon(CupertinoIcons.waveform, color: IosColors.blue),
+                onTap: () => Navigator.push<void>(
+                  context,
+                  appPageRoute(builder: (_) => const VoiceSettingsScreen()),
+                ),
+              ),
+              IosRow(
+                title: T('i18n.web_search'),
+                leading: Icon(CupertinoIcons.search, color: IosColors.blue),
+                onTap: () => Navigator.push<void>(
+                  context,
+                  appPageRoute(builder: (_) => const SearchSettingsScreen()),
+                ),
+              ),
+              if (supportsWatchCompanion)
+                IosRow(
+                  title: T('i18n.watch'),
+                  leading: Icon(
+                    CupertinoIcons.device_phone_portrait,
+                    color: IosColors.blue,
+                  ),
+                  onTap: () => Navigator.push<void>(
+                    context,
+                    appPageRoute(builder: (_) => const WatchSettingsScreen()),
+                  ),
+                ),
+              IosRow(
+                title: T('i18n.message_settings'),
+                leading: Icon(CupertinoIcons.info, color: IosColors.blue),
+                onTap: () => Navigator.push<void>(
+                  context,
+                  appPageRoute(
+                    builder: (_) => MessageSettingsScreen(
+                      canChangeSearch: widget.canClearData,
+                    ),
+                  ),
+                ),
+              ),
+              IosRow(
+                title: T('i18n.language'),
+                subtitle: _languageName(_preferences.language),
+                leading: Icon(CupertinoIcons.globe, color: IosColors.blue),
+                onTap: _chooseLanguage,
+              ),
+              IosRow(
+                title: T('i18n.appearance_skin'),
+                subtitle: T(switch (_preferences.appearance) {
+                  AppAppearance.system => 'i18n.follow_system',
+                  AppAppearance.light => 'i18n.light',
+                  AppAppearance.dark => 'i18n.dark',
+                }),
+                leading: Icon(CupertinoIcons.paintbrush, color: IosColors.blue),
+                onTap: () =>
+                    Navigator.push<void>(
+                      context,
+                      appPageRoute(builder: (_) => const AppearanceScreen()),
+                    ).then((_) {
+                      if (mounted) setState(() {});
+                    }),
+              ),
+              IosRow(
+                title: T('i18n.about'),
+                leading: Icon(
+                  CupertinoIcons.info_circle,
+                  color: IosColors.blue,
+                ),
+                onTap: () => Navigator.push<void>(
+                  context,
+                  appPageRoute(builder: (_) => const AboutScreen()),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 28),
+        ],
+      ),
+    ),
   );
 }
 
