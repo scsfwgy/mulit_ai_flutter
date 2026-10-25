@@ -595,6 +595,32 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     );
     if (!mounted) return null;
     if (!moving && result != null) {
+      if (_pickingAttachment ||
+          _starting ||
+          _sending ||
+          _recording ||
+          _transcribing) {
+        _notify(T('i18n.stop_the_current_response_before'));
+        return null;
+      }
+      final scoped = result.id != null || result.ungrouped;
+      if (_topic != null && scoped && _topic!.projectId != result.id) {
+        final previous = _providers
+            .where((p) => p.id == _currentProviderId)
+            .firstOrNull;
+        final provider = previous ?? _providers.firstOrNull;
+        final model = previous == null
+            ? provider?.model
+            : _currentModel ?? provider?.model;
+        // Enter the selected workspace without moving the old conversation or
+        // discarding text/files composed for the next message.
+        _beginDraft(provider, model, result.id);
+      } else if (_topic == null && _draftProjectId != result.id) {
+        setState(() {
+          _chatLocationRevision++;
+          _draftProjectId = result.id;
+        });
+      }
       setState(() => _topicProjectFilter = result);
     }
     await _load();
@@ -650,14 +676,13 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   }
 
   Future<void> _newTopic({int? projectId, bool explicitProject = false}) async {
-    final nextProjectId = explicitProject ? projectId : _currentProjectId;
+    final nextProjectId = explicitProject ? projectId : _topicProjectFilter.id;
     if (_pickingAttachment || _starting && !_sending) return;
     _showDesktopChat();
     if (_providers.isEmpty) {
       await _openProviders();
       if (!mounted || _providers.isEmpty) return;
     }
-    _scheduleMemoryUpdate(_topic, _messages);
     final previous = _providers
         .where((item) => item.id == _currentProviderId)
         .firstOrNull;
@@ -667,11 +692,19 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         : _currentModel ?? provider.model;
     await _discardDraftAttachments();
     if (!mounted) return;
+    _beginDraft(provider, model, nextProjectId);
+    await ChatStore.instance.saveLastChatSelection(
+      ChatSelection(provider.id, model),
+    );
+  }
+
+  void _beginDraft(ProviderConfig? provider, String? model, int? projectId) {
+    _scheduleMemoryUpdate(_topic, _messages);
     setState(() {
       _chatLocationRevision++;
       _topic = null;
-      _draftProjectId = nextProjectId;
-      _draftProviderId = provider.id;
+      _draftProjectId = projectId;
+      _draftProviderId = provider?.id;
       _draftModel = model;
       _messages = [];
       _reply.value = '';
@@ -681,9 +714,6 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       _errorAction = ChatErrorAction.none;
       _draftMemoryOverride = null;
     });
-    await ChatStore.instance.saveLastChatSelection(
-      ChatSelection(provider.id, model),
-    );
   }
 
   Future<void> _selectTopic(int id, {int? messageId}) async {
@@ -1494,6 +1524,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       if (!mounted || _providers.isEmpty) return;
     }
     final initialTopicId = _topic?.id;
+    final initialProjectId = _currentProjectId;
+    final initialLocation = _chatLocationRevision;
     final providerId = _currentProviderId ?? _providers.first.id;
     final provider = _providers.where((p) => p.id == providerId).firstOrNull;
     if (provider == null) {
@@ -1522,9 +1554,11 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       model,
       topicId: _topic?.id,
       topicOverride: _topic == null ? _draftMemoryOverride : null,
-      projectId: _currentProjectId,
+      projectId: initialProjectId,
     );
     if (!mounted ||
+        initialLocation != _chatLocationRevision ||
+        initialProjectId != _currentProjectId ||
         _topic?.id != initialTopicId ||
         (_currentProviderId != null && _currentProviderId != providerId) ||
         (_currentModel != null && _currentModel != model)) {
@@ -1539,7 +1573,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         model,
         content,
         attachments: attachments,
-        projectId: _currentProjectId,
+        projectId: initialProjectId,
       );
       _attachments = [];
       final topics = await ChatStore.instance.topics();
