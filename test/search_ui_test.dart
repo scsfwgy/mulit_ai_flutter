@@ -71,7 +71,7 @@ void main() {
         if (call.method == 'query') {
           if (sql == 'PRAGMA user_version') {
             return [
-              {'user_version': 6},
+              {'user_version': 7},
             ];
           }
           if (sql.contains('FROM providers')) {

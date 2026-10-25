@@ -7,6 +7,8 @@ import 'package:mulit_ai_flutter/chat/chat_loading_status.dart';
 import 'package:mulit_ai_flutter/chat/chat_message_meta.dart';
 import 'package:mulit_ai_flutter/chat/widgets/chat_attachments.dart';
 import 'package:mulit_ai_flutter/core/chat_attachment.dart';
+import 'package:mulit_ai_flutter/core/project.dart';
+import 'package:mulit_ai_flutter/chat/widgets/knowledge_sources.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
 import 'package:mulit_ai_flutter/search/search_sources.dart';
@@ -39,6 +41,7 @@ class MessageBubble extends StatelessWidget {
     this.outputTokens,
     this.searchSources = const [],
     this.attachments = const [],
+    this.knowledgeSources = const [],
     this.onSpeak,
   });
 
@@ -55,6 +58,7 @@ class MessageBubble extends StatelessWidget {
   final int? outputTokens;
   final List<SearchSource> searchSources;
   final List<ChatAttachment> attachments;
+  final List<KnowledgeSource> knowledgeSources;
 
   /// 生成中气泡的首段可见文字耗时；生成过程中持续更新。
   final ValueListenable<int> replyElapsedMs;
@@ -128,7 +132,9 @@ class MessageBubble extends StatelessWidget {
                             ),
                             child: ChatLoadingStatus(
                               elapsedMilliseconds: replyElapsedMs,
-                              label: searching ? T('i18n.searching_the_web') : T('i18n.loading'),
+                              label: searching
+                                  ? T('i18n.searching_the_web')
+                                  : T('i18n.loading'),
                             ),
                           ),
                         if (loading && contextTrimmed)
@@ -145,6 +151,8 @@ class MessageBubble extends StatelessWidget {
                       ],
                     ),
                   ),
+                  if (!user && knowledgeSources.isNotEmpty)
+                    KnowledgeSources(sources: knowledgeSources),
                   if (!user && searchSources.isNotEmpty)
                     SearchSources(
                       key: ValueKey('sources_${messageId ?? 'live'}'),

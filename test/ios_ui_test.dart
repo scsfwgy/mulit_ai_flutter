@@ -104,7 +104,13 @@ void main() {
       find.text(T('i18n.full_privacy_policy')),
       250,
     );
-    await tester.tap(find.text(T('i18n.full_privacy_policy')));
+    final policyRow = find.widgetWithText(
+      IosRow,
+      T('i18n.full_privacy_policy'),
+    );
+    await tester.ensureVisible(policyRow);
+    await tester.pumpAndSettle();
+    await tester.tap(policyRow);
     await tester.pumpAndSettle();
     expect(opened, 'https://www.tools24.uk/app/ai-link/privacy');
   });

@@ -39,6 +39,9 @@ import 'package:mulit_ai_flutter/core/app_platform.dart';
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/core/apple_purchases.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/core/project.dart';
+import 'package:mulit_ai_flutter/core/project_store.dart';
+import 'package:mulit_ai_flutter/chat/project_screen.dart';
 import 'package:mulit_ai_flutter/core/chat_attachment.dart';
 import 'package:mulit_ai_flutter/core/attachment_store.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
@@ -136,6 +139,11 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   List<ChatTopic> _topics = [];
   List<ChatMessage> _messages = [];
   ChatTopic? _topic;
+  int? _draftProjectId;
+  List<ChatProject> _projects = [];
+  List<KnowledgeSource> _replyKnowledge = [];
+  int? get _currentProjectId =>
+      _topic?.projectId ?? (_topic == null ? _draftProjectId : null);
   int? _draftProviderId;
   String? _draftModel;
   bool? _draftMemoryOverride;
@@ -417,6 +425,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
               (await store.voiceApiKey(speechService))?.trim().isNotEmpty ==
                   true;
       final topics = await ChatStore.instance.topics();
+      final projects = await ChatStore.instance.projects();
       final savedSelection = _loading
           ? await ChatStore.instance.lastChatSelection()
           : null;
@@ -443,6 +452,11 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         _canSpeak = canSpeak;
         _watchProcessing = watchProcessing;
         _topics = topics;
+        _projects = projects;
+        if (_draftProjectId != null &&
+            !projects.any((p) => p.id == _draftProjectId)) {
+          _draftProjectId = null;
+        }
         _topic = selected;
         if (_topic == null &&
             (initialLoad ||
@@ -510,8 +524,10 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       appPageRoute(
         builder: (_) => MessageSettingsScreen(
           canChangeSearch: _canChangeSearch,
-          chatUsesMemory: _chatUsesMemory,
-          onToggleChatMemory: _toggleChatMemory,
+          chatUsesMemory: _currentProjectId == null ? _chatUsesMemory : null,
+          onToggleChatMemory: _currentProjectId == null
+              ? _toggleChatMemory
+              : null,
         ),
       ),
     );
@@ -554,12 +570,33 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     await _newTopic();
   }
 
+  Future<void> _newInProject(int? projectId) async {
+    _closeTopics();
+    await _newTopic(projectId: projectId, explicitProject: true);
+  }
+
+  Future<void> _chooseSearchMatch(int id, int? messageId) async {
+    _closeTopics();
+    _showDesktopChat();
+    await _selectTopic(id, messageId: messageId);
+  }
+
+  Future<void> _manageCurrentProject() async {
+    final project = await ChatStore.instance.project(_currentProjectId);
+    if (!mounted || project == null) return;
+    await _pushRoute<void>(
+      appPageRoute(builder: (_) => ProjectScreen(project: project)),
+    );
+    await _load();
+  }
+
   Future<void> _settingsFromDrawer() async {
     _closeTopics();
     await _openSettings();
   }
 
-  Future<void> _newTopic() async {
+  Future<void> _newTopic({int? projectId, bool explicitProject = false}) async {
+    final nextProjectId = explicitProject ? projectId : _currentProjectId;
     if (_pickingAttachment || _starting && !_sending) return;
     _showDesktopChat();
     if (_providers.isEmpty) {
@@ -578,6 +615,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     if (!mounted) return;
     setState(() {
       _topic = null;
+      _draftProjectId = nextProjectId;
       _draftProviderId = provider.id;
       _draftModel = model;
       _messages = [];
@@ -621,6 +659,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     if (!mounted) return;
     setState(() {
       _topic = topic;
+      _draftProjectId = null;
       _draftProviderId = null;
       _draftModel = null;
       _draftMemoryOverride = null;
@@ -1427,6 +1466,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       model,
       topicId: _topic?.id,
       topicOverride: _topic == null ? _draftMemoryOverride : null,
+      projectId: _currentProjectId,
     );
     if (!mounted ||
         _topic?.id != initialTopicId ||
@@ -1443,6 +1483,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         model,
         content,
         attachments: attachments,
+        projectId: _currentProjectId,
       );
       _attachments = [];
       final topics = await ChatStore.instance.topics();
@@ -1554,6 +1595,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       _sendingTopicId = topic.id;
       _reply.value = '';
       _replySources = const [];
+      _replyKnowledge = [];
       _searching = _searchEnabled && history.last.content.trim().isNotEmpty;
       _contextTrimmed = false;
       _replyElapsedMs.value = 0;
@@ -1576,10 +1618,28 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     int? firstTokenMs;
     ReplyUsage? usage;
     List<SearchSource> sources = const [];
+    List<KnowledgeSource> knowledge = [];
     final searchEnabled =
         _searchEnabled && history.last.content.trim().isNotEmpty;
     try {
       await _refreshTopics();
+      final currentProject = await ChatStore.instance.project(topic.projectId);
+      if (currentProject != null) {
+        final questions = history.where((m) => m.role == 'user').toList();
+        final query = questions.reversed
+            .take(2)
+            .map((m) => m.content)
+            .join('\n');
+        final room = AppPreferences.instance.contextWindowTokens ~/ 5;
+        knowledge = await ChatStore.instance.retrieveKnowledge(
+          currentProject.id,
+          query,
+          tokenBudget: room.clamp(512, 2400),
+        );
+        if (mounted && _topic?.id == topic.id) {
+          setState(() => _replyKnowledge = knowledge);
+        }
+      }
       ({SearchProviderConfig config, String apiKey})? webSearch;
       if (searchEnabled) {
         final config = await ChatStore.instance.selectedSearchProvider();
@@ -1595,6 +1655,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         history,
         topic.model,
         systemPrompt: systemPrompt,
+        referenceContext: knowledgeContext(knowledge),
         contextWindowTokens: AppPreferences.instance.contextWindowTokens,
         onContextTrimmed: (omitted) {
           if (mounted &&
@@ -1662,6 +1723,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           inputTokens: usage?.inputTokens,
           outputTokens: usage?.outputTokens,
           searchSources: sources,
+          knowledgeSources: knowledge,
         );
       }
       final shouldGenerateTitle =
@@ -1708,7 +1770,13 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   }
 
   void _scheduleMemoryUpdate(ChatTopic? topic, List<ChatMessage> messages) {
-    if (topic == null || _sending || _starting || _watchProcessing) return;
+    if (topic == null ||
+        topic.projectId != null ||
+        _sending ||
+        _starting ||
+        _watchProcessing) {
+      return;
+    }
     unawaited(_memory.schedule(topic, messages));
   }
 
@@ -1748,9 +1816,11 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
 
   Future<void> _refreshTopics() async {
     final topics = await ChatStore.instance.topics();
+    final projects = await ChatStore.instance.projects();
     if (!mounted) return;
     setState(() {
       _topics = topics;
+      _projects = projects;
       if (_topic != null) {
         _topic = topics.where((item) => item.id == _topic!.id).firstOrNull;
       }
@@ -1758,6 +1828,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   }
 
   Future<bool> _chatUsesMemory() async {
+    if (_currentProjectId != null) return false;
     final store = ChatStore.instance;
     final enabled = await store.memoryEnabled();
     final inGlobal = await store.memoryInGlobalPrompt();
@@ -1772,6 +1843,10 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   }
 
   Future<void> _toggleChatMemory() async {
+    if (_currentProjectId != null) {
+      _notify(T('i18n.project_memory_detail'));
+      return;
+    }
     final store = ChatStore.instance;
     if (!await store.memoryEnabled()) {
       if (mounted) _notify('i18n.memory_master_off');
@@ -1815,11 +1890,26 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   }
 
   Widget _topicsPanel({bool persistent = false}) => TopicScreen(
-    key: ValueKey(
-      Object.hashAll(
-        _topics.map((topic) => Object.hash(topic.id, topic.title)),
+    key: ValueKey('topics_$persistent'),
+    revision: Object.hashAll(
+      _topics.map(
+        (topic) => Object.hash(
+          topic.id,
+          topic.title,
+          topic.projectId,
+          topic.pinnedAt,
+          topic.updatedAt,
+        ),
       ),
     ),
+    onChooseProject: (moving) {
+      _closeTopics();
+      return _pushRoute<ProjectSelection>(
+        appPageRoute(builder: (_) => ProjectsScreen(moving: moving)),
+      );
+    },
+    onSearchSelect: _chooseSearchMatch,
+    onNewInProject: _newInProject,
     persistent: persistent,
     selectedId: _topic?.id,
     generatingTopicId: _sendingTopicId,
@@ -1934,6 +2024,39 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                 ? const Center(child: CupertinoActivityIndicator(radius: 14))
                 : Column(
                     children: [
+                      if (_currentProjectId != null)
+                        CupertinoButton(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 6,
+                          ),
+                          onPressed: _sending || _starting
+                              ? null
+                              : _manageCurrentProject,
+                          child: Row(
+                            children: [
+                              const Icon(CupertinoIcons.folder, size: 16),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _projects
+                                          .where(
+                                            (p) => p.id == _currentProjectId,
+                                          )
+                                          .firstOrNull
+                                          ?.name ??
+                                      T('i18n.project_space'),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const Icon(
+                                CupertinoIcons.chevron_right,
+                                size: 14,
+                              ),
+                            ],
+                          ),
+                        ),
                       Expanded(
                         child: Listener(
                           behavior: HitTestBehavior.opaque,
@@ -2041,6 +2164,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                 content: text,
                 loading: true,
                 searchSources: _replySources,
+                knowledgeSources: _replyKnowledge,
                 replyElapsedMs: _replyElapsedMs,
                 searching: _searching,
                 contextTrimmed: _contextTrimmed,
@@ -2065,6 +2189,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
               attachments: message.attachments,
               messageId: messageId,
               searchSources: message.searchSources,
+              knowledgeSources: message.knowledgeSources,
               providerName: message.providerName,
               providerPresetId: message.providerPresetId,
               modelId: message.modelId,

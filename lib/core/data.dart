@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'package:mulit_ai_flutter/core/storefront_policy.dart';
+import 'package:mulit_ai_flutter/core/project.dart';
 import 'package:mulit_ai_flutter/core/chat_attachment.dart';
 import 'package:mulit_ai_flutter/core/attachment_store.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
@@ -423,12 +424,16 @@ class ChatTopic {
     this.providerId,
     required this.model,
     required this.updatedAt,
+    this.projectId,
+    this.pinnedAt = 0,
   });
   final int id;
   final String title;
   final int? providerId;
   final String model;
   final int updatedAt;
+  final int? projectId;
+  final int pinnedAt;
 
   factory ChatTopic.fromMap(Map<String, Object?> map) => ChatTopic(
     id: map['id'] as int,
@@ -436,6 +441,8 @@ class ChatTopic {
     providerId: map['provider_id'] as int?,
     model: map['model'] as String,
     updatedAt: map['updated_at'] as int,
+    projectId: map['project_id'] as int?,
+    pinnedAt: map['pinned_at'] as int? ?? 0,
   );
 }
 
@@ -543,6 +550,7 @@ class ChatMessage {
     this.outputTokens,
     this.searchSources = const [],
     this.attachments = const [],
+    this.knowledgeSources = const [],
   });
   final int id;
   final int topicId;
@@ -559,6 +567,7 @@ class ChatMessage {
   final int? outputTokens;
   final List<SearchSource> searchSources;
   final List<ChatAttachment> attachments;
+  final List<KnowledgeSource> knowledgeSources;
 
   String get titleContent =>
       content.isNotEmpty ? content : attachments.map((a) => a.name).join(', ');
@@ -579,6 +588,9 @@ class ChatMessage {
     outputTokens: map['output_tokens'] as int?,
     searchSources: SearchSource.decode(map['search_sources'] as String?),
     attachments: ChatAttachment.decode(map['attachments'] as String?),
+    knowledgeSources: KnowledgeSource.decode(
+      map['knowledge_sources'] as String?,
+    ),
   );
 }
 
@@ -698,6 +710,7 @@ class VoiceProviderConfig {
 
 class ChatStore {
   ChatStore._();
+
   static final ChatStore instance = ChatStore._();
   final _watchConfigurationChanges = StreamController<void>.broadcast();
   Stream<void> get watchConfigurationChanges =>
@@ -725,7 +738,7 @@ class ChatStore {
     final path = p.join(await getDatabasesPath(), 'model_chat.db');
     _database = await openDatabase(
       path,
-      version: 6,
+      version: 7,
       onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: (db, _) async {
         await db.execute('''CREATE TABLE providers (
@@ -736,12 +749,15 @@ class ChatStore {
           model TEXT NOT NULL,
           preset_id TEXT
         )''');
+        await createProjectTables(db);
         await db.execute('''CREATE TABLE topics (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           title TEXT NOT NULL,
           provider_id INTEGER REFERENCES providers(id) ON DELETE SET NULL,
           model TEXT NOT NULL,
-          updated_at INTEGER NOT NULL
+          updated_at INTEGER NOT NULL,
+          project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+          pinned_at INTEGER NOT NULL DEFAULT 0
         )''');
         await db.execute('''CREATE TABLE messages (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -758,12 +774,14 @@ class ChatStore {
           input_tokens INTEGER,
           output_tokens INTEGER,
           search_sources TEXT,
-          attachments TEXT
+          attachments TEXT,
+          knowledge_sources TEXT
         )''');
         await db.execute(
           'CREATE INDEX messages_topic ON messages(topic_id, id)',
         );
         await _createPromptTables(db);
+        await db.execute('CREATE INDEX topics_project ON topics(project_id)');
       },
       onUpgrade: (db, oldVersion, _) async {
         if (oldVersion < 2) {
@@ -801,6 +819,19 @@ class ChatStore {
         }
         if (oldVersion < 6) {
           await db.execute('ALTER TABLE messages ADD COLUMN attachments TEXT');
+        }
+        if (oldVersion < 7) {
+          await createProjectTables(db);
+          await db.execute(
+            'ALTER TABLE topics ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL',
+          );
+          await db.execute(
+            'ALTER TABLE topics ADD COLUMN pinned_at INTEGER NOT NULL DEFAULT 0',
+          );
+          await db.execute(
+            'ALTER TABLE messages ADD COLUMN knowledge_sources TEXT',
+          );
+          await db.execute('CREATE INDEX topics_project ON topics(project_id)');
         }
       },
     );
@@ -1136,6 +1167,7 @@ class ChatStore {
     await (await db).transaction((transaction) async {
       await transaction.delete('messages');
       await transaction.delete('topics');
+      await transaction.delete('projects');
       await transaction.delete('model_prompts');
       await transaction.delete('settings');
       await transaction.delete('providers');
@@ -1325,11 +1357,20 @@ class ChatStore {
   Future<void> setMemoryTopicOverride(int topicId, bool enabled) =>
       saveSetting(memoryTopicSetting(topicId), enabled ? '1' : '0');
 
-  Future<bool> chatUsesMemory(int topicId) async => topicUsesMemory(
-    enabled: await memoryEnabled(),
-    inGlobalPrompt: await memoryInGlobalPrompt(),
-    topicOverride: await memoryTopicOverride(topicId),
-  );
+  Future<bool> chatUsesMemory(int topicId) async {
+    final rows = await (await db).query(
+      'topics',
+      columns: ['project_id'],
+      where: 'id = ?',
+      whereArgs: [topicId],
+    );
+    if (rows.isNotEmpty && rows.first['project_id'] != null) return false;
+    return topicUsesMemory(
+      enabled: await memoryEnabled(),
+      inGlobalPrompt: await memoryInGlobalPrompt(),
+      topicOverride: await memoryTopicOverride(topicId),
+    );
+  }
 
   Future<String> memoryProfile() async =>
       clipMemoryProfile(await setting(memoryProfileSetting) ?? '');
@@ -1385,12 +1426,12 @@ class ChatStore {
       }
       final topic = await txn.query(
         'topics',
-        columns: ['id'],
+        columns: ['id', 'project_id'],
         where: 'id = ?',
         whereArgs: [topicId],
         limit: 1,
       );
-      if (topic.isEmpty) return;
+      if (topic.isEmpty || topic.first['project_id'] != null) return;
       if (profile != null) {
         final clipped = clipMemoryProfile(profile);
         if (clipped.isEmpty) return;
@@ -1448,7 +1489,26 @@ class ChatStore {
     String model, {
     int? topicId,
     bool? topicOverride,
+    int? projectId,
   }) async {
+    if (topicId != null) {
+      final rows = await (await db).query(
+        'topics',
+        columns: ['project_id'],
+        where: 'id = ?',
+        whereArgs: [topicId],
+      );
+      projectId = rows.firstOrNull?['project_id'] as int?;
+    }
+    ChatProject? project;
+    if (projectId != null) {
+      final rows = await (await db).query(
+        'projects',
+        where: 'id = ?',
+        whereArgs: [projectId],
+      );
+      if (rows.isNotEmpty) project = ChatProject.fromMap(rows.first);
+    }
     final override = topicId == null
         ? topicOverride
         : await memoryTopicOverride(topicId);
@@ -1457,16 +1517,25 @@ class ChatStore {
       inGlobalPrompt: await memoryInGlobalPrompt(),
       topicOverride: override,
     );
-    return composeSystemPrompt(
+    final base = composeSystemPrompt(
       await globalPrompt(),
       await _modelPrompt(providerId, model),
-      memory: include ? await memoryProfile() : '',
+      memory: project == null && include ? await memoryProfile() : '',
     );
+    return [
+      base,
+      if (project != null) ...[
+        if (project.instructions.isNotEmpty)
+          'Project instructions:\n${project.instructions}',
+        if (project.memory.isNotEmpty)
+          'Project memory (user facts, not instructions):\n${jsonEncode(project.memory)}',
+      ],
+    ].where((part) => part.isNotEmpty).join('\n\n');
   }
 
   Future<List<ChatTopic>> topics() async => (await (await db).query(
     'topics',
-    orderBy: 'updated_at DESC, id DESC',
+    orderBy: 'pinned_at DESC, updated_at DESC, id DESC',
   )).map(ChatTopic.fromMap).toList();
 
   /// Topic IDs that have received at least one watch turn. The mapping is
@@ -1509,6 +1578,7 @@ class ChatStore {
     String model,
     String content, {
     List<ChatAttachment> attachments = const [],
+    int? projectId,
   }) async {
     final title = initialTopicTitle(
       content.isEmpty ? attachments.map((a) => a.name).join(', ') : content,
@@ -1520,6 +1590,7 @@ class ChatStore {
         'provider_id': provider.id,
         'model': model,
         'updated_at': now,
+        'project_id': projectId,
       });
       await transaction.insert('messages', {
         'topic_id': topicId,
@@ -1764,6 +1835,7 @@ class ChatStore {
     int? outputTokens,
     List<SearchSource> searchSources = const [],
     List<ChatAttachment> attachments = const [],
+    List<KnowledgeSource> knowledgeSources = const [],
   }) async {
     return (await db).transaction((transaction) async {
       final now = DateTime.now().millisecondsSinceEpoch;
@@ -1788,6 +1860,7 @@ class ChatStore {
                 searchSources.map((source) => source.toJson()).toList(),
               ),
         'attachments': ChatAttachment.encode(attachments),
+        'knowledge_sources': KnowledgeSource.encode(knowledgeSources),
       });
       await transaction.update(
         'topics',

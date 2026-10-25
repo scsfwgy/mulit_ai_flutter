@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/core/project.dart';
+import 'package:mulit_ai_flutter/core/project_store.dart';
+import 'package:mulit_ai_flutter/chat/project_screen.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 
@@ -11,6 +16,10 @@ class TopicScreen extends StatefulWidget {
     this.selectedId,
     this.generatingTopicId,
     this.persistent = false,
+    this.revision,
+    this.onSearchSelect,
+    this.onNewInProject,
+    this.onChooseProject,
     required this.onClose,
     required this.onSelect,
     required this.onNew,
@@ -18,6 +27,10 @@ class TopicScreen extends StatefulWidget {
     required this.onChanged,
   });
 
+  final Object? revision;
+  final void Function(int topicId, int? messageId)? onSearchSelect;
+  final ValueChanged<int?>? onNewInProject;
+  final Future<ProjectSelection?> Function(bool moving)? onChooseProject;
   final int? selectedId;
   final int? generatingTopicId;
   final bool persistent;
@@ -33,6 +46,104 @@ class TopicScreen extends StatefulWidget {
 
 class _TopicScreenState extends State<TopicScreen> {
   List<ChatTopic> _topics = [];
+  List<ChatProject> _projects = [];
+  ProjectSelection _selection = const ProjectSelection(null);
+  final _search = TextEditingController();
+  Timer? _debounce;
+  int _searchRevision = 0;
+  List<HistoryMatch> _matches = [];
+  bool _searching = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _search.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant TopicScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.revision != widget.revision) _load();
+  }
+
+  Future<void> _run(Future<void> Function() action) async {
+    try {
+      await action();
+    } catch (_) {
+      if (mounted) setState(() => _error = T('i18n.project_operation_failed'));
+    }
+  }
+
+  Future<void> _searchHistory() async {
+    final revision = ++_searchRevision;
+    final query = _search.text.trim();
+    if (query.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _matches = [];
+          _searching = false;
+        });
+      }
+      return;
+    }
+    setState(() => _searching = true);
+    try {
+      final matches = await ChatStore.instance.searchHistory(
+        query,
+        projectId: _selection.id,
+        ungrouped: _selection.ungrouped,
+      );
+      if (mounted && revision == _searchRevision) {
+        setState(() {
+          _matches = matches;
+          _searching = false;
+        });
+      }
+    } catch (_) {
+      if (mounted && revision == _searchRevision) {
+        setState(() {
+          _searching = false;
+          _error = T('i18n.project_operation_failed');
+        });
+      }
+    }
+  }
+
+  Future<void> _chooseProject() async {
+    final result = widget.onChooseProject != null
+        ? await widget.onChooseProject!(false)
+        : await Navigator.of(context).push<ProjectSelection>(
+            appPageRoute(builder: (_) => const ProjectsScreen()),
+          );
+    if (!mounted) return;
+    if (result != null) setState(() => _selection = result);
+    await _load();
+    widget.onChanged();
+  }
+
+  Future<void> _move(ChatTopic topic) async {
+    if (topic.id == widget.generatingTopicId) return;
+    final result = widget.onChooseProject != null
+        ? await widget.onChooseProject!(true)
+        : await Navigator.of(context).push<ProjectSelection>(
+            appPageRoute(builder: (_) => const ProjectsScreen(moving: true)),
+          );
+    if (result == null) return;
+    await ChatStore.instance.moveTopic(topic.id, result.id);
+    await _load();
+    widget.onChanged();
+  }
+
+  List<ChatTopic> get _visibleTopics => _topics
+      .where(
+        (t) => _selection.id != null
+            ? t.projectId == _selection.id
+            : !_selection.ungrouped || t.projectId == null,
+      )
+      .toList();
+
   List<ProviderConfig> _providers = [];
   Set<int> _watchTopicIds = {};
   Set<int> _searchedTopicIds = {};
@@ -45,17 +156,24 @@ class _TopicScreenState extends State<TopicScreen> {
 
   Future<void> _load() async {
     final topics = await ChatStore.instance.topics();
+    final projects = await ChatStore.instance.projects();
     final providers = await ChatStore.instance.providers();
     final watchTopicIds = await ChatStore.instance.watchTopicIds();
     final searchedTopicIds = await ChatStore.instance.searchedTopicIds();
     if (mounted) {
       setState(() {
         _topics = topics;
+        _projects = projects;
+        if (_selection.id != null &&
+            !projects.any((p) => p.id == _selection.id)) {
+          _selection = const ProjectSelection(null);
+        }
         _providers = providers;
         _watchTopicIds = watchTopicIds;
         _searchedTopicIds = searchedTopicIds;
       });
     }
+    if (mounted) await _searchHistory();
   }
 
   Widget _topicIcon(ChatTopic topic) {
@@ -110,6 +228,17 @@ class _TopicScreenState extends State<TopicScreen> {
         title: Text(topic.title),
         actions: [
           CupertinoActionSheetAction(
+            onPressed: () => Navigator.pop(context, 'pin'),
+            child: Text(
+              T(topic.pinnedAt > 0 ? 'i18n.unpin_chat' : 'i18n.pin_chat'),
+            ),
+          ),
+          if (topic.id != widget.generatingTopicId)
+            CupertinoActionSheetAction(
+              onPressed: () => Navigator.pop(context, 'move'),
+              child: Text(T('i18n.move_to_project')),
+            ),
+          CupertinoActionSheetAction(
             onPressed: () => Navigator.pop(context, 'rename'),
             child: Text(T('i18n.rename')),
           ),
@@ -126,6 +255,14 @@ class _TopicScreenState extends State<TopicScreen> {
       ),
     );
     if (!mounted) return;
+    if (action == 'pin') {
+      await _run(() async {
+        await ChatStore.instance.pinTopic(topic.id, topic.pinnedAt == 0);
+        await _load();
+        widget.onChanged();
+      });
+    }
+    if (action == 'move') await _run(() => _move(topic));
     if (action == 'rename') await _rename(topic);
     if (action == 'delete') await _delete(topic);
   }
@@ -235,16 +372,98 @@ class _TopicScreenState extends State<TopicScreen> {
                 ),
                 IosNavButton(
                   icon: CupertinoIcons.square_pencil,
-                  onPressed: widget.onNew,
+                  onPressed: () => widget.onNewInProject != null
+                      ? widget.onNewInProject!(_selection.id)
+                      : widget.onNew(),
                 ),
               ],
             ),
           ),
           Divider(height: .5, color: IosColors.separator),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: CupertinoSearchTextField(
+              controller: _search,
+              placeholder: T('i18n.search_history'),
+              onChanged: (_) {
+                _searchRevision++;
+                _debounce?.cancel();
+                setState(() => _searching = _search.text.trim().isNotEmpty);
+                _debounce = Timer(
+                  const Duration(milliseconds: 250),
+                  _searchHistory,
+                );
+              },
+            ),
+          ),
+          CupertinoButton(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            onPressed: _chooseProject,
+            child: Row(
+              children: [
+                const Icon(CupertinoIcons.folder, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _selection.id == null
+                        ? T(
+                            _selection.ungrouped
+                                ? 'i18n.ungrouped_chats'
+                                : 'i18n.all_chats',
+                          )
+                        : _projects
+                                  .where((p) => p.id == _selection.id)
+                                  .firstOrNull
+                                  ?.name ??
+                              '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const Icon(CupertinoIcons.chevron_down, size: 14),
+              ],
+            ),
+          ),
+          if (_error != null)
+            Text(_error!, style: TextStyle(color: IosColors.destructive)),
           Expanded(
             child: ListView(
               children: [
-                if (_topics.isEmpty)
+                if (_search.text.trim().isNotEmpty) ...[
+                  if (_searching)
+                    const CupertinoActivityIndicator()
+                  else if (_matches.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Text(
+                        T('i18n.no_search_results'),
+                        style: TextStyle(color: IosColors.secondary),
+                      ),
+                    )
+                  else
+                    IosSection(
+                      title: T('i18n.history_matches'),
+                      footer: T('i18n.history_matches_detail'),
+                      children: [
+                        for (final match in _matches)
+                          IosRow(
+                            title: match.topic.title,
+                            subtitle: match.excerpt,
+                            leading: _topicIcon(match.topic),
+                            onTap: () {
+                              if (widget.onSearchSelect != null) {
+                                widget.onSearchSelect!(
+                                  match.topic.id,
+                                  match.messageId,
+                                );
+                              } else {
+                                widget.onSelect(match.topic.id);
+                              }
+                            },
+                          ),
+                      ],
+                    ),
+                ] else if (_visibleTopics.isEmpty)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 90, 20, 0),
                     child: Column(
@@ -266,11 +485,11 @@ class _TopicScreenState extends State<TopicScreen> {
                   IosSection(
                     title: T('i18n.recent'),
                     children: [
-                      for (final topic in _topics)
+                      for (final topic in _visibleTopics)
                         IosRow(
                           title: topic.title,
                           subtitle:
-                              '${_providers.where((p) => p.id == topic.providerId).firstOrNull?.name ?? T('i18n.service_deleted')} · ${topic.model}',
+                              '${topic.pinnedAt > 0 ? '${T('i18n.pinned_chat')} · ' : ''}${_projects.where((p) => p.id == topic.projectId).firstOrNull?.name ?? ''}${topic.projectId != null ? ' · ' : ''}${_providers.where((p) => p.id == topic.providerId).firstOrNull?.name ?? T('i18n.service_deleted')} · ${topic.model}',
                           leading: _topicIcon(topic),
                           trailing: CupertinoButton(
                             padding: const EdgeInsets.symmetric(horizontal: 6),

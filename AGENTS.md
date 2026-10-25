@@ -31,7 +31,9 @@
 - `lib/chat/widgets/chat_attachments.dart`：草稿和历史附件卡片、移除、图片缩放及文本预览；PDF 显示文件说明，不内置页面阅读器。
 - `lib/chat/chat_more_menu.dart`：聊天页右上角“更多”操作表，仅包含新对话、切换模型、消息设置和设置，不显示标题。
 - `lib/chat/chat_model_title.dart`：聊天页顶部当前服务与模型标题，可点按切换模型。
-- `lib/chat/topic_screen.dart`：左侧会话抽屉，以及话题重命名、删除；底部设置入口。
+- `lib/chat/topic_screen.dart`：会话抽屉/桌面侧栏、本地标题正文搜索、消息定位、置顶、项目筛选与会话移动，以及重命名、删除；底部设置入口。
+- `lib/chat/project_screen.dart`：项目选择与管理、独立说明/手动记忆、UTF-8 知识文件导入和笔记；手机/桌面复用。桌面路由使用 ChatHome 的详情导航器，保留会话侧栏。
+- `lib/chat/widgets/knowledge_sources.dart`：展示实际提供给模型的文件与分段快照，不声称模型必然引用。
 - 手表参与过的话题通过本机 `settings` 中的手表会话映射识别，侧栏显示手表图标；普通对话显示消息气泡。对话中有已保存的搜索来源时，在主图标右下角显示地球角标，不随当前搜索开关变化；手机和手表都参与过时保留手表图标。设置入口贴在抽屉左下角。
 - `lib/chat/chat_model_selector.dart`：聊天页统一的服务与模型选择，支持最近使用、服务端列表和手动 ID。
 - `lib/chat/chat_scroll.dart`：流式回复时的底部跟随，用户滑离底部后保留阅读位置。
@@ -46,6 +48,8 @@
 - `lib/chat/desktop_chat.dart`：桌面分栏布局与键盘快捷键外壳。macOS 用 Command，Windows 与 Linux 用 Control。Windows 原生 File 菜单只在点击时调用 `between_models/desktop_menu`，菜单文字里写着 Ctrl+N 与 Ctrl+,，但不注册 Win32 加速键，避免和 Flutter 快捷键各触发一次。格式化复制在 Windows 写入 CF_UNICODETEXT 与 `HTML Format`；通道失败时退回纯文本。窗口标题为 AI Link，默认 1100×760，最小 600×500。
 
 ### 核心数据（core/）
+
+- `lib/core/project.dart`、`project_store.dart`：SQLite v7 项目/知识文档/分段、会话项目关联与置顶、标题正文搜索、本地中英文关键词检索。项目说明和记忆仅在手机/桌面的项目对话中使用，不读取或总结到全局记忆；移动/删除项目推进旧历史的记忆游标。知识正文和引用快照是本机明文；命中资料只发当前模型，不发向量服务或搜索服务。容量、迁移与验证见 `doc/PROJECT_SPACES.md`。
 
 - `lib/core/data.dart`：服务配置、话题、消息模型；SQLite 和密钥存储。
 - `lib/core/chat_attachment.dart` 与 `lib/core/attachment_store.dart`：附件元数据与私有文件管理，SQLite v6 只新增可空 `attachments` 列；附件正文不写 Base64 入库。类型由文件内容识别：已知图片、PDF 与合法 UTF-8 文本按类型发送，其它非空文件原样保存为通用文件，是否支持由模型或接口返回决定；相册和拍照仍只接受 JPEG、PNG、GIF、WebP。每条图片与文件合计最多 9 个，单个附件 30 MB（图片按压缩后计算），单条消息与已选请求上下文总计 90 MB；相册在选择时按剩余数量限制，不支持限量的系统使用单选累加，图片统一参考 Luban 压缩。取消草稿、删除话题、清空数据及启动时孤儿清理须同步处理文件，不能删除用户选择的原文件。

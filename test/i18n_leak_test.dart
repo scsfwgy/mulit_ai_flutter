@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:mulit_ai_flutter/provider/provider_screen.dart';
+import 'package:mulit_ai_flutter/chat/project_screen.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
 import 'package:mulit_ai_flutter/search/search_settings_screen.dart';
 import 'package:mulit_ai_flutter/settings/privacy_screen.dart';
@@ -87,6 +88,8 @@ void main() {
     '记忆编辑': () => const MemoryEditor(initial: ''),
     '提示词设置': PromptSettingsScreen.new,
     '资源库': ResourceLibraryScreen.new,
+    '项目列表': ProjectsScreen.new,
+    '项目编辑': ProjectScreen.new,
     '服务列表': ProviderScreen.new,
     '服务编辑器': ProviderEditor.new,
     '搜索设置': SearchSettingsScreen.new,

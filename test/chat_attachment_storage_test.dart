@@ -49,9 +49,14 @@ void main() {
     addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
     final store = ChatStore.instance;
     await store.db;
-    expect(statements.where((s) => s.startsWith('ALTER TABLE')), [
-      'ALTER TABLE messages ADD COLUMN attachments TEXT',
-    ]);
+    expect(
+      statements.where((s) => s.startsWith('ALTER TABLE')),
+      contains('ALTER TABLE messages ADD COLUMN attachments TEXT'),
+    );
+    expect(
+      statements,
+      contains('ALTER TABLE messages ADD COLUMN knowledge_sources TEXT'),
+    );
     expect(
       statements.any((s) => s.startsWith('DELETE') || s.startsWith('DROP')),
       isFalse,
