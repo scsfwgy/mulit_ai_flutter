@@ -7,8 +7,82 @@ import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/chat/desktop_chat.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 import 'package:mulit_ai_flutter/settings/settings_screen.dart';
+import 'package:mulit_ai_flutter/settings/memory_settings_screen.dart';
+import 'package:mulit_ai_flutter/chat/topic_screen.dart';
+
+import 'sqflite_stub.dart';
 
 void main() {
+  setUpAll(useSqflitePluginFactory);
+
+  testWidgets(
+    'desktop settings keeps topics and returns through the phone hierarchy',
+    (tester) async {
+      installEmptyDatabaseStub();
+      tester.view.physicalSize = const Size(1100, 760);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final navigator = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DesktopChatLayout(
+            showSidebar: true,
+            sidebar: TopicScreen(
+              persistent: true,
+              onClose: () {},
+              onSelect: (_) {},
+              onNew: () {},
+              onSettings: () => navigator.currentState!.push(
+                appPageRoute<void>(builder: (_) => const SettingsScreen()),
+              ),
+              onChanged: () {},
+            ),
+            chat: Navigator(
+              key: navigator,
+              onGenerateRoute: (_) => appPageRoute<void>(
+                builder: (_) => const Scaffold(body: Text('chat')),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final sidebarState = tester.state(find.byType(TopicScreen));
+      await tester.tap(
+        find.descendant(
+          of: find.byType(TopicScreen),
+          matching: find.text(T('i18n.settings')),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsScreen), findsOneWidget);
+      expect(tester.state(find.byType(TopicScreen)), same(sidebarState));
+      expect(find.text(T('i18n.model_settings')), findsOneWidget);
+      await tester.tap(find.widgetWithText(IosRow, T('i18n.model_settings')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(IosRow, T('i18n.memory')));
+      await tester.pumpAndSettle();
+      expect(find.byType(MemorySettingsScreen), findsOneWidget);
+      final back = find.byWidgetPredicate(
+        (widget) =>
+            widget is IosNavButton && widget.icon == CupertinoIcons.back,
+      );
+      await tester.tap(back);
+      await tester.pumpAndSettle();
+      expect(find.byType(ModelSettingsScreen), findsOneWidget);
+      await tester.tap(back);
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsScreen), findsOneWidget);
+      await tester.tap(back);
+      await tester.pumpAndSettle();
+      expect(find.text('chat'), findsOneWidget);
+      expect(tester.state(find.byType(TopicScreen)), same(sidebarState));
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant.desktop(),
+  );
+
   testWidgets('desktop pages open and close without slide transitions', (
     tester,
   ) async {
@@ -82,28 +156,9 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: SettingsScreen()));
     expect(find.text('手表'), findsNothing);
     expect(find.text(T('i18n.model_settings')), findsOneWidget);
-    expect(find.text(T('i18n.appearance_skin')), findsOneWidget);
+    expect(find.text(T('i18n.general')), findsOneWidget);
     expect(supportsWatchCompanion, isFalse);
   }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
-
-  testWidgets('desktop menu offers the shared model settings entry', (
-    tester,
-  ) async {
-    DesktopSection? selected;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: DesktopNavigationMenu(
-            selected: DesktopSection.settings,
-            onSelect: (section) => selected = section,
-          ),
-        ),
-      ),
-    );
-    await tester.tap(find.byKey(const ValueKey('desktop-section-models')));
-    expect(selected, DesktopSection.models);
-    expect(find.text(T('i18n.model_settings')), findsOneWidget);
-  }, variant: TargetPlatformVariant.desktop());
 
   testWidgets('mobile settings retains watch pairing', (tester) async {
     await tester.pumpWidget(const MaterialApp(home: SettingsScreen()));

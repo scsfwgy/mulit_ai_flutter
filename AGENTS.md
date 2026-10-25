@@ -95,7 +95,7 @@
 
 ### 设置与其它页面（settings/）
 
-- `lib/settings/settings_screen.dart`：手机与桌面共用的设置页，包含模型设置、语言、换肤、关于及开源许可入口；桌面侧栏的模型设置复用 `ModelSettingsScreen`，跨会话记忆、服务、提示词与上下文设置统一从此进入，避免另建菜单漏掉功能。
+- `lib/settings/settings_screen.dart`：手机与桌面共用的设置页，包含模型设置、语言、换肤、关于及开源许可入口；桌面保留会话侧栏，不另建设置侧栏；设置内按与手机一致的层级进入 `ModelSettingsScreen` 等子页并逐级返回。设置一级页的「通用」统一收纳数据与隐私、语言、换肤和关于；数据与隐私在通用内独立成组，不在关于、模型设置或服务列表重复放置。
 - `lib/settings/resource_library_screen.dart`：按本地日期列出各话题消息上已保存的附件；图片可预览，长按可定位到原消息或分享。手机用底部操作表，桌面用贴在文件旁的小菜单，并可在访达、资源管理器或文件管理器中打开该文件。模型回复目前不落附件，库里只出现消息上已有的文件。
 - `lib/settings/prompt_screen.dart`：全局与单模型提示词设置。
 - `lib/settings/memory_settings_screen.dart`：模型设置中独立的跨会话记忆入口，管理总开关、对话默认使用、资料编辑及清空；不归属提示词设置。

@@ -4,7 +4,6 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'package:mulit_ai_flutter/core/storefront_policy.dart';
-import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/core/app_platform.dart';
 
 import 'package:mulit_ai_flutter/api/api_client.dart';
@@ -13,15 +12,12 @@ import 'package:mulit_ai_flutter/provider/api_key_help.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 import 'package:mulit_ai_flutter/chat/model_picker.dart';
-import 'package:mulit_ai_flutter/settings/privacy_screen.dart';
 import 'package:mulit_ai_flutter/provider/provider_qr_scanner.dart';
 import 'package:mulit_ai_flutter/settings/prompt_screen.dart';
 import 'package:mulit_ai_flutter/provider/provider_badge.dart';
 
 class ProviderScreen extends StatefulWidget {
-  const ProviderScreen({super.key, this.canClearData});
-
-  final bool Function()? canClearData;
+  const ProviderScreen({super.key});
 
   @override
   State<ProviderScreen> createState() => _ProviderScreenState();
@@ -63,20 +59,6 @@ class _ProviderScreenState extends State<ProviderScreen> with StorefrontAware {
     );
     if (imported == true) {
       _changed = true;
-      await _load();
-    }
-  }
-
-  Future<void> _openPrivacy() async {
-    final cleared = await Navigator.push<bool>(
-      context,
-      appPageRoute(
-        builder: (_) => PrivacyScreen(canClearData: widget.canClearData),
-      ),
-    );
-    if (cleared == true) {
-      _changed = true;
-      await AppPreferences.instance.load();
       await _load();
     }
   }
@@ -213,21 +195,6 @@ class _ProviderScreenState extends State<ProviderScreen> with StorefrontAware {
                   context,
                   appPageRoute(builder: (_) => const PromptSettingsScreen()),
                 ),
-              ),
-            ],
-          ),
-          IosSection(
-            title: T('i18n.privacy_data'),
-            children: [
-              IosRow(
-                title: T('i18n.data_privacy'),
-                subtitle: T('i18n.review_storage_and_clear_local'),
-                leading: Icon(
-                  CupertinoIcons.lock_shield,
-                  color: IosColors.blue,
-                  size: 22,
-                ),
-                onTap: _openPrivacy,
               ),
             ],
           ),

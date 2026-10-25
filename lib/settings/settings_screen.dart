@@ -33,51 +33,12 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  final _preferences = AppPreferences.instance;
-
   Future<void> _openLibrary() async {
     final file = await Navigator.push<StoredChatFile>(
       context,
       appPageRoute(builder: (_) => const ResourceLibraryScreen()),
     );
     if (file != null && mounted) Navigator.pop(context, file);
-  }
-
-  Future<void> _chooseLanguage() async {
-    final choice = await showAppModalPopup<AppLanguage>(
-      context: context,
-      builder: (sheetContext) => CupertinoActionSheet(
-        title: Text(T('i18n.language')),
-        actions: [
-          for (final language in AppLanguage.values)
-            CupertinoActionSheetAction(
-              onPressed: () => Navigator.pop(sheetContext, language),
-              child: Text(_languageName(language)),
-            ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          onPressed: () => Navigator.pop(sheetContext),
-          child: Text(T('i18n.cancel')),
-        ),
-      ),
-    );
-    if (choice == null) return;
-    await _preferences.setLanguage(choice);
-    if (mounted) setState(() {});
-  }
-
-  String _languageName(AppLanguage language) =>
-      languageSelfName(language) ?? T('i18n.follow_system');
-
-  Future<void> _openPrivacy() async {
-    final cleared = await Navigator.push<bool>(
-      context,
-      appPageRoute(
-        builder: (_) => PrivacyScreen(canClearData: widget.canClearData),
-      ),
-    );
-    if (cleared == true) await _preferences.load();
-    if (mounted) setState(() {});
   }
 
   @override
@@ -137,12 +98,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 onTap: () => Navigator.push<void>(
                   context,
-                  appPageRoute(
-                    builder: (_) => ModelSettingsScreen(
-                      canClearData: widget.canClearData,
-                      onPrivacy: _openPrivacy,
-                    ),
-                  ),
+                  appPageRoute(builder: (_) => const ModelSettingsScreen()),
                 ),
               ),
               IosRow(
@@ -186,6 +142,103 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
               IosRow(
+                title: T('i18n.general'),
+                leading: Icon(CupertinoIcons.gear, color: IosColors.blue),
+                onTap: () => Navigator.push<void>(
+                  context,
+                  appPageRoute(
+                    builder: (_) => GeneralSettingsScreen(
+                      canClearData: widget.canClearData,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 28),
+        ],
+      ),
+    ),
+  );
+}
+
+class GeneralSettingsScreen extends StatefulWidget {
+  const GeneralSettingsScreen({super.key, this.canClearData});
+
+  final bool Function()? canClearData;
+
+  @override
+  State<GeneralSettingsScreen> createState() => _GeneralSettingsScreenState();
+}
+
+class _GeneralSettingsScreenState extends State<GeneralSettingsScreen> {
+  final _preferences = AppPreferences.instance;
+
+  Future<void> _chooseLanguage() async {
+    final choice = await showAppModalPopup<AppLanguage>(
+      context: context,
+      builder: (sheetContext) => CupertinoActionSheet(
+        title: Text(T('i18n.language')),
+        actions: [
+          for (final language in AppLanguage.values)
+            CupertinoActionSheetAction(
+              onPressed: () => Navigator.pop(sheetContext, language),
+              child: Text(_languageName(language)),
+            ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          onPressed: () => Navigator.pop(sheetContext),
+          child: Text(T('i18n.cancel')),
+        ),
+      ),
+    );
+    if (choice == null) return;
+    await _preferences.setLanguage(choice);
+    if (mounted) setState(() {});
+  }
+
+  String _languageName(AppLanguage language) =>
+      languageSelfName(language) ?? T('i18n.follow_system');
+
+  Future<void> _openPrivacy() async {
+    final cleared = await Navigator.push<bool>(
+      context,
+      appPageRoute(
+        builder: (_) => PrivacyScreen(canClearData: widget.canClearData),
+      ),
+    );
+    if (cleared == true) await _preferences.load();
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: IosColors.background,
+    appBar: iosAppBar(
+      title: T('i18n.general'),
+      leading: IosNavButton(
+        icon: CupertinoIcons.back,
+        onPressed: () => Navigator.pop(context),
+      ),
+    ),
+    body: SafeArea(
+      child: ListView(
+        children: [
+          IosSection(
+            children: [
+              IosRow(
+                title: T('i18n.data_privacy'),
+                leading: Icon(
+                  CupertinoIcons.lock_shield,
+                  color: IosColors.blue,
+                ),
+                onTap: _openPrivacy,
+              ),
+            ],
+          ),
+          IosSection(
+            children: [
+              IosRow(
                 title: T('i18n.language'),
                 subtitle: _languageName(_preferences.language),
                 leading: Icon(CupertinoIcons.globe, color: IosColors.blue),
@@ -220,7 +273,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 28),
         ],
       ),
     ),
@@ -423,14 +475,7 @@ class _MessageSettingsScreenState extends State<MessageSettingsScreen> {
 }
 
 class ModelSettingsScreen extends StatelessWidget {
-  const ModelSettingsScreen({
-    super.key,
-    this.canClearData,
-    required this.onPrivacy,
-  });
-
-  final bool Function()? canClearData;
-  final VoidCallback onPrivacy;
+  const ModelSettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -472,9 +517,7 @@ class ModelSettingsScreen extends StatelessWidget {
                 ),
                 onTap: () => Navigator.push<void>(
                   context,
-                  appPageRoute(
-                    builder: (_) => ProviderScreen(canClearData: canClearData),
-                  ),
+                  appPageRoute(builder: (_) => const ProviderScreen()),
                 ),
               ),
               IosRow(
@@ -496,14 +539,6 @@ class ModelSettingsScreen extends StatelessWidget {
                   context,
                   appPageRoute(builder: (_) => const ChatContextScreen()),
                 ),
-              ),
-              IosRow(
-                title: T('i18n.data_privacy'),
-                leading: Icon(
-                  CupertinoIcons.lock_shield,
-                  color: IosColors.blue,
-                ),
-                onTap: onPrivacy,
               ),
             ],
           ),
@@ -709,28 +744,6 @@ class _AboutScreenState extends State<AboutScreen> {
             ],
           ),
           IosSection(
-            title: T('i18n.data_privacy'),
-            children: [
-              _AboutNote(
-                title: T('i18n.stored_locally'),
-                detail: T('i18n.chats_and_messages_are_stored'),
-              ),
-              _AboutNote(
-                title: T('i18n.direct_requests'),
-                detail: T('i18n.requests_go_directly'),
-              ),
-              IosRow(
-                title: T('i18n.privacy_policy'),
-                subtitle: 'tools24.uk/app/ai-link/privacy',
-                leading: Icon(CupertinoIcons.doc_text, color: IosColors.blue),
-                onTap: () => launchUrl(
-                  Uri.parse('https://www.tools24.uk/app/ai-link/privacy'),
-                  mode: LaunchMode.externalApplication,
-                ),
-              ),
-            ],
-          ),
-          IosSection(
             children: [
               IosRow(
                 title: T('i18n.official_website'),
@@ -763,35 +776,6 @@ class _AboutScreenState extends State<AboutScreen> {
                 ),
               ),
             ],
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-class _AboutNote extends StatelessWidget {
-  const _AboutNote({required this.title, required this.detail});
-
-  final String title;
-  final String detail;
-
-  @override
-  Widget build(BuildContext context) => SizedBox(
-    width: double.infinity,
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            detail,
-            style: TextStyle(fontSize: 13, color: IosColors.secondary),
           ),
         ],
       ),

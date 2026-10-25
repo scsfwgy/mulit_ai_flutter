@@ -45,7 +45,6 @@ import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/provider/provider_screen.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
 import 'package:mulit_ai_flutter/search/search_settings_screen.dart';
-import 'package:mulit_ai_flutter/settings/privacy_screen.dart';
 import 'package:mulit_ai_flutter/settings/purchase_screen.dart';
 import 'package:mulit_ai_flutter/settings/settings_screen.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
@@ -72,20 +71,14 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _desktopNavigator = GlobalKey<NavigatorState>();
   final _desktopRevision = ValueNotifier<int>(0);
-  DesktopSection _desktopSection = DesktopSection.chat;
   bool _desktopWide = false;
-  late final _desktopObserver = DesktopNavigationObserver(() {
-    if (mounted) setState(() => _desktopSection = DesktopSection.chat);
-  });
-
   NavigatorState get _navigation =>
       isDesktopApp ? _desktopNavigator.currentState! : Navigator.of(context);
 
-  Future<T?> _pushRoute<T>(PageRoute<T> route, {DesktopSection? section}) {
-    if (isDesktopApp && section != null) {
+  Future<T?> _pushRoute<T>(PageRoute<T> route, {bool resetToChat = false}) {
+    if (isDesktopApp && resetToChat) {
       _inputFocus.unfocus();
       _navigation.popUntil((route) => route.isFirst);
-      setState(() => _desktopSection = section);
     }
     return _navigation.push(route);
   }
@@ -93,53 +86,6 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   void _showDesktopChat() {
     if (!isDesktopApp) return;
     _navigation.popUntil((route) => route.isFirst);
-    setState(() => _desktopSection = DesktopSection.chat);
-  }
-
-  void _selectDesktopSection(DesktopSection section) {
-    switch (section) {
-      case DesktopSection.chat:
-        _showDesktopChat();
-      case DesktopSection.providers:
-        _openProviders();
-      case DesktopSection.voice:
-        _openVoiceSettings();
-      case DesktopSection.search:
-        _openSearchSettings();
-      case DesktopSection.settings:
-        _openSettings();
-      case DesktopSection.models:
-        _openModelSettings();
-      case DesktopSection.messages:
-        _pushRoute<void>(
-          appPageRoute(
-            builder: (_) => MessageSettingsScreen(
-              canChangeSearch: _canChangeSearch,
-              chatUsesMemory: _chatUsesMemory,
-              onToggleChatMemory: _toggleChatMemory,
-            ),
-          ),
-          section: section,
-        );
-      case DesktopSection.privacy:
-        _pushRoute<bool>(
-          appPageRoute(
-            builder: (_) => PrivacyScreen(canClearData: _canClearData),
-          ),
-          section: section,
-        ).then((cleared) async {
-          if (cleared == true) {
-            await _discardDraftAttachments();
-            await AppPreferences.instance.load();
-            await _load();
-          }
-        });
-      case DesktopSection.about:
-        _pushRoute<void>(
-          appPageRoute(builder: (_) => const AboutScreen()),
-          section: section,
-        );
-    }
   }
 
   final _input = TextEditingController();
@@ -529,8 +475,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
 
   Future<void> _openProviders() async {
     await _pushRoute<bool>(
-      appPageRoute(builder: (_) => ProviderScreen(canClearData: _canClearData)),
-      section: DesktopSection.providers,
+      appPageRoute(builder: (_) => const ProviderScreen()),
+      resetToChat: true,
     );
     await _load();
   }
@@ -538,7 +484,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   Future<void> _openSettings() async {
     final file = await _pushRoute<StoredChatFile>(
       appPageRoute(builder: (_) => SettingsScreen(canClearData: _canClearData)),
-      section: DesktopSection.settings,
+      resetToChat: true,
     );
     if (file != null) {
       _showDesktopChat();
@@ -551,7 +497,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   Future<void> _openSearchSettings() async {
     await _pushRoute<void>(
       appPageRoute(builder: (_) => const SearchSettingsScreen()),
-      section: DesktopSection.search,
+      resetToChat: true,
     );
     await _load();
   }
@@ -574,31 +520,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
 
   Future<void> _openModelSettings() async {
     await _pushRoute<void>(
-      appPageRoute(
-        builder: (_) => ModelSettingsScreen(
-          canClearData: _canClearData,
-          onPrivacy: _openPrivacy,
-        ),
-      ),
-      section: DesktopSection.models,
-    );
-    await _load();
-  }
-
-  Future<void> _openPrivacy() async {
-    final cleared = await _pushRoute<bool>(
-      appPageRoute(builder: (_) => PrivacyScreen(canClearData: _canClearData)),
-    );
-    if (cleared == true) {
-      await _discardDraftAttachments();
-      await AppPreferences.instance.load();
-    }
-  }
-
-  Future<void> _openVoiceSettings() async {
-    await _pushRoute<void>(
-      appPageRoute(builder: (_) => const VoiceSettingsScreen()),
-      section: DesktopSection.voice,
+      appPageRoute(builder: (_) => const ModelSettingsScreen()),
+      resetToChat: true,
     );
     await _load();
   }
@@ -1926,15 +1849,9 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         onSettings: _openSettings,
         child: DesktopChatLayout(
           showSidebar: wide,
-          sidebar: _desktopSection == DesktopSection.chat
-              ? _topicsPanel(persistent: true)
-              : DesktopNavigationMenu(
-                  selected: _desktopSection,
-                  onSelect: _selectDesktopSection,
-                ),
+          sidebar: _topicsPanel(persistent: true),
           chat: Navigator(
             key: _desktopNavigator,
-            observers: [_desktopObserver],
             onGenerateRoute: (_) => PageRouteBuilder<void>(
               transitionDuration: Duration.zero,
               reverseTransitionDuration: Duration.zero,

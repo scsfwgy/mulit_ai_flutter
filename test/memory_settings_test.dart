@@ -58,9 +58,7 @@ void main() {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
-      await tester.pumpWidget(
-        MaterialApp(home: ModelSettingsScreen(onPrivacy: () {})),
-      );
+      await tester.pumpWidget(MaterialApp(home: const ModelSettingsScreen()));
       await tester.pumpAndSettle();
       final memoryRow = find.widgetWithText(IosRow, T('i18n.memory'));
       final promptsRow = find.widgetWithText(IosRow, T('i18n.prompts'));

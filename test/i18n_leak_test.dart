@@ -77,11 +77,12 @@ void main() {
   final screens = <String, Widget Function()>{
     '搜索服务编辑器（新建）': SearchServiceEditor.new,
     '搜索服务编辑器（已保存）': () => const SearchServiceEditor(service: savedSearch),
+    '通用设置': GeneralSettingsScreen.new,
     '外观设置': AppearanceScreen.new,
     '消息设置': MessageSettingsScreen.new,
     '关于': AboutScreen.new,
     '隐私与数据': PrivacyScreen.new,
-    '模型设置': () => ModelSettingsScreen(onPrivacy: () {}),
+    '模型设置': () => const ModelSettingsScreen(),
     '跨会话记忆': MemorySettingsScreen.new,
     '记忆编辑': () => const MemoryEditor(initial: ''),
     '提示词设置': PromptSettingsScreen.new,

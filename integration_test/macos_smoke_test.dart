@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
-import 'package:mulit_ai_flutter/chat/desktop_chat.dart';
+import 'package:mulit_ai_flutter/ui/ios_style.dart';
 import 'package:mulit_ai_flutter/main.dart' as app;
 import 'package:mulit_ai_flutter/chat/message_copy.dart';
 import 'package:mulit_ai_flutter/settings/settings_screen.dart';
@@ -109,7 +109,6 @@ void main() {
       }
       expect(find.text('无法打开本地数据'), findsNothing);
       expect(find.byType(TopicScreen), findsOneWidget);
-      expect(find.byType(DesktopNavigationMenu), findsNothing);
       final editor = find.byType(CupertinoTextField).first;
       await tester.tap(editor);
       await tester.enterText(editor, 'Mac local test');
@@ -144,17 +143,18 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(SettingsScreen), findsOneWidget);
       expect(find.text('手表'), findsNothing);
-      expect(find.byType(DesktopNavigationMenu), findsOneWidget);
-      expect(find.byType(TopicScreen), findsNothing);
-      await tester.tap(find.byKey(const ValueKey('desktop-section-providers')));
+      expect(find.byType(TopicScreen), findsOneWidget);
+      await tester.tap(find.widgetWithText(IosRow, '模型设置'));
+      await tester.pumpAndSettle();
+      expect(find.byType(ModelSettingsScreen), findsOneWidget);
+      await tester.tap(find.widgetWithText(IosRow, '模型服务'));
       await tester.pumpAndSettle();
       expect(find.byType(ProviderScreen), findsOneWidget);
       expect(find.byType(SettingsScreen), findsNothing);
       await tester.tap(find.text('Mac local smoke test'));
       await tester.pumpAndSettle();
       expect(find.byType(ProviderEditor), findsOneWidget);
-      expect(find.byType(DesktopNavigationMenu), findsOneWidget);
-      expect(find.byType(TopicScreen), findsNothing);
+      expect(find.byType(TopicScreen), findsOneWidget);
       await tester.tap(
         find.descendant(
           of: find.byType(ProviderEditor),
@@ -164,11 +164,25 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(ProviderEditor), findsNothing);
       expect(find.byType(ProviderScreen), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('desktop-section-chat')));
+      for (final page in [ModelSettingsScreen, SettingsScreen]) {
+        await tester.tap(
+          find.byWidgetPredicate(
+            (widget) =>
+                widget is IosNavButton && widget.icon == CupertinoIcons.back,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(page), findsOneWidget);
+      }
+      await tester.tap(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is IosNavButton && widget.icon == CupertinoIcons.back,
+        ),
+      );
       await tester.pumpAndSettle();
       expect(find.byType(ProviderScreen), findsNothing);
       expect(find.byType(TopicScreen), findsOneWidget);
-      expect(find.byType(DesktopNavigationMenu), findsNothing);
       expect(
         tester.widget<CupertinoTextField>(editor).controller?.text,
         'desktop draft preserved',

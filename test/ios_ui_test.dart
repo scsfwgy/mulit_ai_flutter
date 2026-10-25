@@ -84,7 +84,7 @@ void main() {
     expect(find.textContaining('—'), findsNothing);
   });
 
-  testWidgets('about privacy policy opens the official URL in the browser', (
+  testWidgets('privacy screen opens the official policy URL in the browser', (
     tester,
   ) async {
     const channel = MethodChannel('plugins.flutter.io/url_launcher');
@@ -98,19 +98,84 @@ void main() {
       return true;
     });
     addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
-    await tester.pumpWidget(const MaterialApp(home: AboutScreen()));
+    await tester.pumpWidget(const MaterialApp(home: PrivacyScreen()));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('隐私协议'));
-    await tester.tap(find.text('隐私协议'));
+    await tester.scrollUntilVisible(
+      find.text(T('i18n.full_privacy_policy')),
+      250,
+    );
+    await tester.tap(find.text(T('i18n.full_privacy_policy')));
     await tester.pumpAndSettle();
     expect(opened, 'https://www.tools24.uk/app/ai-link/privacy');
   });
 
-  testWidgets('settings exposes model, language, appearance, and about', (
+  testWidgets(
+    'general groups shared preferences and preserves the privacy guard',
+    (tester) async {
+      bool canClear() => false;
+      await tester.pumpWidget(
+        MaterialApp(home: SettingsScreen(canClearData: canClear)),
+      );
+      for (final key in [
+        'i18n.data_privacy',
+        'i18n.language',
+        'i18n.appearance_skin',
+        'i18n.about',
+      ]) {
+        expect(find.text(T(key)), findsNothing);
+      }
+      await tester.tap(find.widgetWithText(IosRow, T('i18n.general')));
+      await tester.pumpAndSettle();
+      expect(find.byType(GeneralSettingsScreen), findsOneWidget);
+      for (final key in [
+        'i18n.data_privacy',
+        'i18n.language',
+        'i18n.appearance_skin',
+        'i18n.about',
+      ]) {
+        expect(find.widgetWithText(IosRow, T(key)), findsOneWidget);
+      }
+      final row = find.widgetWithText(IosRow, T('i18n.data_privacy'));
+      await tester.scrollUntilVisible(row, 200);
+      await tester.pumpAndSettle();
+      final section = find.ancestor(of: row, matching: find.byType(IosSection));
+      expect(
+        find.descendant(of: section, matching: find.byType(IosRow)),
+        findsOneWidget,
+      );
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      expect(find.byType(PrivacyScreen), findsOneWidget);
+      expect(
+        tester.widget<PrivacyScreen>(find.byType(PrivacyScreen)).canClearData,
+        same(canClear),
+      );
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(const MaterialApp(home: ModelSettingsScreen()));
+      await tester.pumpAndSettle();
+      expect(find.text(T('i18n.data_privacy')), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(const MaterialApp(home: AboutScreen()));
+      await tester.pumpAndSettle();
+      expect(find.text(T('i18n.data_privacy')), findsNothing);
+      expect(find.text(T('i18n.privacy_policy')), findsNothing);
+    },
+    variant: TargetPlatformVariant.all(),
+  );
+
+  testWidgets('settings opens model settings and general preferences', (
     tester,
   ) async {
     await tester.pumpWidget(const MaterialApp(home: SettingsScreen()));
     expect(find.text('模型设置'), findsOneWidget);
+    await tester.tap(find.text('模型设置'));
+    await tester.pumpAndSettle();
+    expect(find.text('模型服务'), findsOneWidget);
+    expect(find.text('提示词'), findsOneWidget);
+    await tester.tap(find.byIcon(CupertinoIcons.back));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(T('i18n.general')));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('语言'));
     await tester.pumpAndSettle();
     expect(find.text('English'), findsOneWidget);
@@ -130,12 +195,6 @@ void main() {
     expect(find.text('紫罗兰'), findsOneWidget);
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(CupertinoIcons.back));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('模型设置'));
-    await tester.pumpAndSettle();
-    expect(find.text('模型服务'), findsOneWidget);
-    expect(find.text('提示词'), findsOneWidget);
     await tester.tap(find.byIcon(CupertinoIcons.back));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('关于'));
@@ -175,7 +234,7 @@ void main() {
       expect(IosColors.label, const Color(0xFFF5F5F7));
       expect(IosColors.userBubble, isNot(IosColors.blue));
       expect(IosColors.userBubbleText, IosColors.label);
-      expect(find.text('换肤'), findsOneWidget);
+      expect(find.text(T('i18n.general')), findsOneWidget);
     } finally {
       preferences.appearance = previous;
     }
