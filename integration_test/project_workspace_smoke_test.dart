@@ -9,12 +9,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:mulit_ai_flutter/chat/project_screen.dart';
+import 'package:mulit_ai_flutter/chat/chat_home.dart';
+import 'package:mulit_ai_flutter/chat/chat_more_menu.dart';
+import 'package:mulit_ai_flutter/chat/widgets/chat_composer.dart';
 import 'package:mulit_ai_flutter/chat/topic_screen.dart';
 import 'package:mulit_ai_flutter/chat/widgets/knowledge_sources.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/core/project_store.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
-import 'package:mulit_ai_flutter/i18n/app_language.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 
 class _WorkspaceTestBinding extends IntegrationTestWidgetsFlutterBinding {
@@ -101,7 +104,33 @@ void main() {
         await tester.pumpWidget(
           RepaintBoundary(
             key: boundary,
-            child: MaterialApp(home: child),
+            child: MaterialApp(
+              key: UniqueKey(),
+              theme: ThemeData(
+                useMaterial3: false,
+                brightness: AppPreferences.instance.dark
+                    ? Brightness.dark
+                    : Brightness.light,
+                scaffoldBackgroundColor: IosColors.background,
+                colorScheme: ColorScheme.fromSeed(
+                  seedColor: IosColors.blue,
+                  surface: IosColors.surface,
+                  brightness: AppPreferences.instance.dark
+                      ? Brightness.dark
+                      : Brightness.light,
+                ),
+              ),
+              builder: (context, content) => CupertinoTheme(
+                data: CupertinoThemeData(
+                  primaryColor: IosColors.blue,
+                  brightness: AppPreferences.instance.dark
+                      ? Brightness.dark
+                      : Brightness.light,
+                ),
+                child: content!,
+              ),
+              home: child,
+            ),
           ),
         );
         await settle();
@@ -255,6 +284,102 @@ void main() {
         debugPrint(
           'Workspace QA: compact project UI and source excerpt navigation passed',
         );
+
+        // Exercise ChatHome's real narrow desktop drawer: it is disposed when
+        // opening the project picker, just like the phone drawer.
+        const secrets = MethodChannel(
+          'plugins.it_nomads.com/flutter_secure_storage',
+        );
+        messenger.setMockMethodCallHandler(secrets, (_) async => null);
+        await show(const ChatHome(), width: 700);
+        final countBefore = (await store.topics()).length;
+        Future<void> openDrawer() async {
+          await tester.tap(find.byIcon(CupertinoIcons.line_horizontal_3));
+          await settle();
+        }
+
+        Future<void> chooseFilter(String current, String next) async {
+          await tester.tap(find.text(current));
+          await settle();
+          expect(find.byType(TopicScreen), findsNothing);
+          await tester.tap(find.text(next));
+          await settle();
+        }
+
+        await openDrawer();
+        await chooseFilter(T('i18n.all_chats'), '$marker Alpha');
+        expect(find.text('$marker chat 0'), findsOneWidget);
+        expect(find.text('$marker chat 1'), findsNothing);
+        await tester.tap(find.byIcon(CupertinoIcons.xmark));
+        await settle();
+        await openDrawer();
+        expect(find.text('$marker Alpha'), findsOneWidget);
+        await chooseFilter('$marker Alpha', '$marker Beta');
+        expect(find.text('$marker chat 0'), findsNothing);
+        expect(find.text('$marker chat 1'), findsOneWidget);
+        await tester.tap(find.byIcon(CupertinoIcons.xmark));
+        await settle();
+        final draft = tester
+            .widget<ChatComposer>(find.byType(ChatComposer))
+            .controller;
+        draft.text = 'Draft stays in place';
+        await settle();
+        Future<void> moreProject(String label, String destination) async {
+          await tester.tap(
+            find.descendant(
+              of: find.byType(ChatMoreButton),
+              matching: find.byIcon(CupertinoIcons.ellipsis),
+            ),
+          );
+          await settle();
+          await tester.tap(find.text(label));
+          await settle();
+          await tester.tap(find.text(destination));
+          await settle();
+        }
+
+        await moreProject(T('i18n.add_to_project'), '$marker Alpha');
+        expect(draft.text, 'Draft stays in place');
+        expect((await store.topics()).length, countBefore);
+        expect(find.text('$marker Alpha'), findsOneWidget);
+        await openDrawer();
+        expect(find.text('$marker chat 0'), findsOneWidget);
+        expect(find.text('$marker chat 1'), findsNothing);
+        await tester.tap(find.text('$marker chat 0'));
+        await settle();
+        await moreProject(T('i18n.move_to_project'), '$marker Beta');
+        expect(
+          (await store.topics())
+              .firstWhere((t) => t.id == topics.first)
+              .projectId,
+          ids.last,
+        );
+        await openDrawer();
+        expect(find.text('$marker chat 0'), findsOneWidget);
+        expect(find.text('$marker chat 1'), findsOneWidget);
+        await capture('macos-project-drawer-filter');
+        await tester.tap(find.byIcon(CupertinoIcons.xmark));
+        await settle();
+        await tester.binding.setSurfaceSize(const Size(1100, 760));
+        await settle();
+        await capture('macos-chat-header-alignment');
+        await tester.tap(
+          find.descendant(
+            of: find.byType(ChatMoreButton),
+            matching: find.byIcon(CupertinoIcons.ellipsis),
+          ),
+        );
+        await settle();
+        expect(find.byType(CupertinoActionSheet), findsNothing);
+        expect(
+          find.byKey(const ValueKey('desktop-popup-menu')),
+          findsOneWidget,
+        );
+        await capture('macos-chat-more-popover');
+
+        debugPrint(
+          'Workspace QA: real drawer recreation, project filters, draft assignment and More move passed',
+        );
       } finally {
         await tester.pumpWidget(const SizedBox.shrink());
         for (final topic in topics) {
@@ -270,6 +395,10 @@ void main() {
           await store.deleteProject(id);
         }
         messenger.setMockMessageHandler(picker, null);
+        messenger.setMockMethodCallHandler(
+          const MethodChannel('plugins.it_nomads.com/flutter_secure_storage'),
+          null,
+        );
         await root.delete(recursive: true);
         await tester.binding.setSurfaceSize(null);
       }

@@ -108,6 +108,8 @@ abstract final class IosColors {
       _dark ? const Color(0xFF3D2223) : const Color(0xFFFFE9E8);
 }
 
+const desktopToolbarHeight = 64.0;
+
 AppBar iosAppBar({
   required String title,
   Widget? titleWidget,
@@ -126,7 +128,7 @@ AppBar iosAppBar({
   foregroundColor: IosColors.label,
   elevation: 0,
   scrolledUnderElevation: 0,
-  toolbarHeight: isDesktopApp ? 64 : 54,
+  toolbarHeight: isDesktopApp ? desktopToolbarHeight : 54,
   titleTextStyle: TextStyle(
     color: IosColors.label,
     fontSize: isDesktopApp ? 21 : 17,

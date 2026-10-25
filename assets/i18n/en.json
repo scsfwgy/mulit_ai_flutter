@@ -684,5 +684,6 @@
   "i18n.pin_chat": "Pin chat",
   "i18n.unpin_chat": "Unpin chat",
   "i18n.pinned_chat": "Pinned",
-  "i18n.project_privacy": "Project instructions, memory, and knowledge text are stored unencrypted in local SQLite. Retrieval runs locally; matched excerpts go directly to the selected model service with your chat, with no embedding service. Saved replies retain the supplied excerpts after project or document deletion. Delete the corresponding chat or clear local data to remove those excerpts."
+  "i18n.project_privacy": "Project instructions, memory, and knowledge text are stored unencrypted in local SQLite. Retrieval runs locally; matched excerpts go directly to the selected model service with your chat, with no embedding service. Saved replies retain the supplied excerpts after project or document deletion. Delete the corresponding chat or clear local data to remove those excerpts.",
+  "i18n.add_to_project": "Add to project"
 }

@@ -29,9 +29,9 @@
 - `lib/chat/widgets/chat_composer.dart`：底部输入区，语音/文字切换、按住说话与发送按钮。
 - `lib/chat/widgets/desktop_attachment_drop.dart`：桌面聊天投递区与悬停反馈，忙碌或被页面遮挡时禁用；桌面「＋」直开文件选择器，macOS 拖入文件在私有复制期间临时开启并释放 security-scoped access。
 - `lib/chat/widgets/chat_attachments.dart`：草稿和历史附件卡片、移除、图片缩放及文本预览；PDF 显示文件说明，不内置页面阅读器。
-- `lib/chat/chat_more_menu.dart`：聊天页右上角“更多”操作表，仅包含新对话、切换模型、消息设置和设置，不显示标题。
+- `lib/chat/chat_more_menu.dart`：聊天页右上角“更多”操作表，包含新对话、切换模型、添加到项目（已有归属时为移动到项目）、消息设置和设置，不显示标题。
 - `lib/chat/chat_model_title.dart`：聊天页顶部当前服务与模型标题，可点按切换模型。
-- `lib/chat/topic_screen.dart`：会话抽屉/桌面侧栏、本地标题正文搜索、消息定位、置顶、项目筛选与会话移动，以及重命名、删除；底部设置入口。
+- `lib/chat/topic_screen.dart`：会话抽屉/桌面侧栏、本地标题正文搜索、消息定位、置顶、项目筛选与会话移动，以及重命名、删除；底部设置入口。项目筛选由 ChatHome 持有并传入，不能仅放在抽屉的 State 中，抽屉关闭销毁后也要保留。
 - `lib/chat/project_screen.dart`：项目选择与管理、独立说明/手动记忆、UTF-8 知识文件导入和笔记；手机/桌面复用。桌面路由使用 ChatHome 的详情导航器，保留会话侧栏。
 - `lib/chat/widgets/knowledge_sources.dart`：展示实际提供给模型的文件与分段快照，不声称模型必然引用。
 - 手表参与过的话题通过本机 `settings` 中的手表会话映射识别，侧栏显示手表图标；普通对话显示消息气泡。对话中有已保存的搜索来源时，在主图标右下角显示地球角标，不随当前搜索开关变化；手机和手表都参与过时保留手表图标。设置入口贴在抽屉左下角。
@@ -45,7 +45,7 @@
 - `lib/chat/message_copy.dart`：复制 Markdown 原文或包含 HTML 与纯文本的格式化内容；Android/iOS 原生剪贴板通道负责富文本。
 - `lib/chat/model_picker.dart`：聊天与服务配置共用的可搜索模型列表；大列表按 `平台/模型` 或 `家族-型号` 前缀折叠分组。
 - `lib/chat/assistant_markdown.dart`：模型回复的 Markdown 展示。
-- `lib/chat/desktop_chat.dart`：桌面分栏布局与键盘快捷键外壳。macOS 用 Command，Windows 与 Linux 用 Control。Windows 原生 File 菜单只在点击时调用 `between_models/desktop_menu`，菜单文字里写着 Ctrl+N 与 Ctrl+,，但不注册 Win32 加速键，避免和 Flutter 快捷键各触发一次。格式化复制在 Windows 写入 CF_UNICODETEXT 与 `HTML Format`；通道失败时退回纯文本。窗口标题为 AI Link，默认 1100×760，最小 600×500。
+- `lib/chat/desktop_chat.dart`：桌面分栏布局与键盘快捷键外壳。macOS 用 Command，Windows 与 Linux 用 Control。侧栏和聊天顶栏共用 `desktopToolbarHeight`；桌面聊天及会话行的更多操作通过 `ui/desktop_popup_menu.dart` 显示锚定按钮的小菜单，手机仍用操作表。Windows 原生 File 菜单只在点击时调用 `between_models/desktop_menu`，菜单文字里写着 Ctrl+N 与 Ctrl+,，但不注册 Win32 加速键，避免和 Flutter 快捷键各触发一次。格式化复制在 Windows 写入 CF_UNICODETEXT 与 `HTML Format`；通道失败时退回纯文本。窗口标题为 AI Link，默认 1100×760，最小 600×500。
 
 ### 核心数据（core/）
 
@@ -140,7 +140,7 @@
 - 聊天页新对话先作为内存中的草稿显示；发送第一条消息时再将话题和消息一起写入 SQLite。切换草稿模型不应生成空白话题。网络失败后的“重试回复”只重新请求回复，不重复写入用户消息。
 - 上次选中的文字服务 ID 和完整模型 ID 保存在本机 `settings` 表；冷启动恢复为新会话草稿，不自动创建话题。服务已删除时，从最近仍可用的话题或现有服务默认模型回退；手动输入的模型 ID 不依赖服务端列表验证。
 - 首轮助手回复成功后，使用当前服务和模型发起一次短请求，根据首轮用户与助手内容生成会话标题；限制输入长度与输出 token，生成失败保留首条消息标题，且不得覆盖用户手动重命名。标题仅存本机 SQLite。输入框回车/发送键与发送按钮执行同一逻辑。
-- 聊天页顶部保留左侧会话抽屉入口、可点按切换的当前服务与模型标题、右侧“更多”。边缘右滑也可打开会话列表；设置入口在抽屉左下角。“更多”仅放新对话、切换模型、消息设置和设置，不显示标题；当前对话的记忆开关放在消息设置中。
+- 聊天页顶部保留左侧会话抽屉入口、可点按切换的当前服务与模型标题、右侧“更多”。边缘右滑也可打开会话列表；设置入口在抽屉左下角。“更多”放新对话、切换模型、添加到项目（已有归属时为移动到项目）、消息设置和设置，不显示标题；当前对话的记忆开关放在消息设置中。
 - 服务端模型数量少时直接列出；大列表按 `平台/模型` 或 `家族-型号` 前缀分组，单独型号放“其他模型”；搜索仍覆盖完整列表，选中时保留完整模型 ID。
 - 服务端模型列表按服务 ID 缓存在本机 SQLite `settings` 表中；进入选择页优先展示缓存，手动刷新成功后覆盖，刷新失败时保留旧列表。修改服务地址、协议或密钥后不得继续使用旧缓存，删除服务或清空本地数据时一并清除缓存。缓存包含模型 ID、接口地址、协议和更新时间，不含密钥。
 - 新消息记录发送时的模型 ID；助手回复额外记录首段可见文字耗时、流式总耗时与服务端报告的输入/输出 Token。历史消息和未报告用量的服务保留空值，不推算为精确 Token。OpenAI 兼容流式请求可带 `stream_options.include_usage`，遇到明确不支持该字段的 400/422 响应时重试普通流式请求；Claude Messages 从 `message_start`/`message_delta` 读取用量。

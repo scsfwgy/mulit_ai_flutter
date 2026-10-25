@@ -140,6 +140,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   List<ChatMessage> _messages = [];
   ChatTopic? _topic;
   int? _draftProjectId;
+  ProjectSelection _topicProjectFilter = const ProjectSelection(null);
+  int _chatLocationRevision = 0;
   List<ChatProject> _projects = [];
   List<KnowledgeSource> _replyKnowledge = [];
   int? get _currentProjectId =>
@@ -453,6 +455,11 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         _watchProcessing = watchProcessing;
         _topics = topics;
         _projects = projects;
+        if (_topicProjectFilter.id != null &&
+            !projects.any((p) => p.id == _topicProjectFilter.id)) {
+          _topicProjectFilter = const ProjectSelection(null);
+        }
+        if (_topic?.id != selected?.id) _chatLocationRevision++;
         if (_draftProjectId != null &&
             !projects.any((p) => p.id == _draftProjectId)) {
           _draftProjectId = null;
@@ -581,6 +588,53 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     await _selectTopic(id, messageId: messageId);
   }
 
+  Future<ProjectSelection?> _chooseProjects(bool moving) async {
+    _closeTopics();
+    final result = await _pushRoute<ProjectSelection>(
+      appPageRoute(builder: (_) => ProjectsScreen(moving: moving)),
+    );
+    if (!mounted) return null;
+    if (!moving && result != null) {
+      setState(() => _topicProjectFilter = result);
+    }
+    await _load();
+    if (!moving && mounted && (!isDesktopApp || !_desktopWide)) {
+      _scaffoldKey.currentState?.openDrawer();
+    }
+    return result;
+  }
+
+  bool get _canAssignProject =>
+      !_loading &&
+      !_starting &&
+      !_sending &&
+      !_pickingAttachment &&
+      !_recording &&
+      !_transcribing;
+
+  Future<void> _assignCurrentProject() async {
+    if (!_canAssignProject) return;
+    final revision = _chatLocationRevision;
+    final result = await _chooseProjects(true);
+    if (!mounted ||
+        result == null ||
+        revision != _chatLocationRevision ||
+        !_canAssignProject) {
+      return;
+    }
+    try {
+      if (_topic case final topic?) {
+        await ChatStore.instance.moveTopic(topic.id, result.id);
+      } else {
+        setState(() => _draftProjectId = result.id);
+      }
+      setState(() => _topicProjectFilter = result);
+      await _load();
+    } catch (_) {
+      if (mounted) _notify(T('i18n.project_operation_failed'));
+    }
+  }
+
   Future<void> _manageCurrentProject() async {
     final project = await ChatStore.instance.project(_currentProjectId);
     if (!mounted || project == null) return;
@@ -614,6 +668,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     await _discardDraftAttachments();
     if (!mounted) return;
     setState(() {
+      _chatLocationRevision++;
       _topic = null;
       _draftProjectId = nextProjectId;
       _draftProviderId = provider.id;
@@ -658,6 +713,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     await _discardDraftAttachments();
     if (!mounted) return;
     setState(() {
+      _chatLocationRevision++;
       _topic = topic;
       _draftProjectId = null;
       _draftProviderId = null;
@@ -1902,12 +1958,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         ),
       ),
     ),
-    onChooseProject: (moving) {
-      _closeTopics();
-      return _pushRoute<ProjectSelection>(
-        appPageRoute(builder: (_) => ProjectsScreen(moving: moving)),
-      );
-    },
+    selection: _topicProjectFilter,
+    onChooseProject: _chooseProjects,
     onSearchSelect: _chooseSearchMatch,
     onNewInProject: _newInProject,
     persistent: persistent,
@@ -2009,6 +2061,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         actions: [
           ChatMoreButton(
             onNewTopic: _newTopic,
+            onProject: _canAssignProject ? _assignCurrentProject : null,
+            projectAssigned: _currentProjectId != null,
             onModel: _changeModel,
             onSettings: _openSettings,
             onMessageSettings: _openMessageSettings,

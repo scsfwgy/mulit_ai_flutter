@@ -4,6 +4,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/core/app_platform.dart';
+import 'package:mulit_ai_flutter/ui/desktop_popup_menu.dart';
 import 'package:mulit_ai_flutter/core/project.dart';
 import 'package:mulit_ai_flutter/core/project_store.dart';
 import 'package:mulit_ai_flutter/chat/project_screen.dart';
@@ -17,6 +19,7 @@ class TopicScreen extends StatefulWidget {
     this.generatingTopicId,
     this.persistent = false,
     this.revision,
+    this.selection,
     this.onSearchSelect,
     this.onNewInProject,
     this.onChooseProject,
@@ -28,6 +31,7 @@ class TopicScreen extends StatefulWidget {
   });
 
   final Object? revision;
+  final ProjectSelection? selection;
   final void Function(int topicId, int? messageId)? onSearchSelect;
   final ValueChanged<int?>? onNewInProject;
   final Future<ProjectSelection?> Function(bool moving)? onChooseProject;
@@ -47,7 +51,8 @@ class TopicScreen extends StatefulWidget {
 class _TopicScreenState extends State<TopicScreen> {
   List<ChatTopic> _topics = [];
   List<ChatProject> _projects = [];
-  ProjectSelection _selection = const ProjectSelection(null);
+  ProjectSelection _localSelection = const ProjectSelection(null);
+  ProjectSelection get _selection => widget.selection ?? _localSelection;
   final _search = TextEditingController();
   Timer? _debounce;
   int _searchRevision = 0;
@@ -65,7 +70,11 @@ class _TopicScreenState extends State<TopicScreen> {
   @override
   void didUpdateWidget(covariant TopicScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.revision != widget.revision) _load();
+    if (oldWidget.revision != widget.revision ||
+        oldWidget.selection != widget.selection) {
+      _searchRevision++;
+      _load();
+    }
   }
 
   Future<void> _run(Future<void> Function() action) async {
@@ -118,7 +127,9 @@ class _TopicScreenState extends State<TopicScreen> {
             appPageRoute(builder: (_) => const ProjectsScreen()),
           );
     if (!mounted) return;
-    if (result != null) setState(() => _selection = result);
+    if (result != null && widget.selection == null) {
+      setState(() => _localSelection = result);
+    }
     await _load();
     widget.onChanged();
   }
@@ -166,7 +177,7 @@ class _TopicScreenState extends State<TopicScreen> {
         _projects = projects;
         if (_selection.id != null &&
             !projects.any((p) => p.id == _selection.id)) {
-          _selection = const ProjectSelection(null);
+          _localSelection = const ProjectSelection(null);
         }
         _providers = providers;
         _watchTopicIds = watchTopicIds;
@@ -221,39 +232,47 @@ class _TopicScreenState extends State<TopicScreen> {
     );
   }
 
-  Future<void> _actions(ChatTopic topic) async {
-    final action = await showAppModalPopup<String>(
-      context: context,
-      builder: (context) => CupertinoActionSheet(
-        title: Text(topic.title),
-        actions: [
-          CupertinoActionSheetAction(
-            onPressed: () => Navigator.pop(context, 'pin'),
-            child: Text(
-              T(topic.pinnedAt > 0 ? 'i18n.unpin_chat' : 'i18n.pin_chat'),
-            ),
-          ),
-          if (topic.id != widget.generatingTopicId)
-            CupertinoActionSheetAction(
-              onPressed: () => Navigator.pop(context, 'move'),
-              child: Text(T('i18n.move_to_project')),
-            ),
-          CupertinoActionSheetAction(
-            onPressed: () => Navigator.pop(context, 'rename'),
-            child: Text(T('i18n.rename')),
-          ),
-          CupertinoActionSheetAction(
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(context, 'delete'),
-            child: Text(T('i18n.delete_chat')),
-          ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          onPressed: () => Navigator.pop(context),
-          child: Text(T('i18n.cancel')),
-        ),
+  Future<void> _actions(ChatTopic topic, BuildContext anchorContext) async {
+    final entries = [
+      DesktopPopupEntry(
+        'pin',
+        T(topic.pinnedAt > 0 ? 'i18n.unpin_chat' : 'i18n.pin_chat'),
+        CupertinoIcons.pin,
       ),
-    );
+      if (topic.id != widget.generatingTopicId)
+        DesktopPopupEntry(
+          'move',
+          T('i18n.move_to_project'),
+          CupertinoIcons.folder,
+        ),
+      DesktopPopupEntry('rename', T('i18n.rename'), CupertinoIcons.pencil),
+      DesktopPopupEntry(
+        'delete',
+        T('i18n.delete_chat'),
+        CupertinoIcons.trash,
+        destructive: true,
+      ),
+    ];
+    final action = isDesktopApp
+        ? await showDesktopPopupMenu(context: anchorContext, entries: entries)
+        : await showAppModalPopup<String>(
+            context: context,
+            builder: (context) => CupertinoActionSheet(
+              title: Text(topic.title),
+              actions: [
+                for (final entry in entries)
+                  CupertinoActionSheetAction(
+                    isDestructiveAction: entry.destructive,
+                    onPressed: () => Navigator.pop(context, entry.value),
+                    child: Text(entry.label),
+                  ),
+              ],
+              cancelButton: CupertinoActionSheetAction(
+                onPressed: () => Navigator.pop(context),
+                child: Text(T('i18n.cancel')),
+              ),
+            ),
+          );
     if (!mounted) return;
     if (action == 'pin') {
       await _run(() async {
@@ -349,7 +368,7 @@ class _TopicScreenState extends State<TopicScreen> {
       child: Column(
         children: [
           SizedBox(
-            height: 56,
+            height: isDesktopApp ? desktopToolbarHeight : 56,
             child: Row(
               children: [
                 if (!widget.persistent)
@@ -491,14 +510,18 @@ class _TopicScreenState extends State<TopicScreen> {
                           subtitle:
                               '${topic.pinnedAt > 0 ? '${T('i18n.pinned_chat')} · ' : ''}${_projects.where((p) => p.id == topic.projectId).firstOrNull?.name ?? ''}${topic.projectId != null ? ' · ' : ''}${_providers.where((p) => p.id == topic.providerId).firstOrNull?.name ?? T('i18n.service_deleted')} · ${topic.model}',
                           leading: _topicIcon(topic),
-                          trailing: CupertinoButton(
-                            padding: const EdgeInsets.symmetric(horizontal: 6),
-                            minimumSize: const Size(38, 38),
-                            onPressed: () => _actions(topic),
-                            child: Icon(
-                              CupertinoIcons.ellipsis,
-                              color: IosColors.secondary,
-                              size: 21,
+                          trailing: Builder(
+                            builder: (anchorContext) => CupertinoButton(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                              ),
+                              minimumSize: const Size(38, 38),
+                              onPressed: () => _actions(topic, anchorContext),
+                              child: Icon(
+                                CupertinoIcons.ellipsis,
+                                color: IosColors.secondary,
+                                size: 21,
+                              ),
                             ),
                           ),
                           chevron: false,
