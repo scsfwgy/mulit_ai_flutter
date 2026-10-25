@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:sqflite/sqflite.dart';
+import 'package:mulit_ai_flutter/core/database_migrations.dart';
 
 class ChatProject {
   const ChatProject({
@@ -70,13 +71,13 @@ class KnowledgeSource {
 }
 
 Future<void> createProjectTables(DatabaseExecutor db) async {
-  await db.execute('''CREATE TABLE projects (
+  await db.execute('''CREATE TABLE IF NOT EXISTS projects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     instructions TEXT NOT NULL DEFAULT '',
     memory TEXT NOT NULL DEFAULT ''
   )''');
-  await db.execute('''CREATE TABLE knowledge_documents (
+  await db.execute('''CREATE TABLE IF NOT EXISTS knowledge_documents (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
@@ -84,13 +85,32 @@ Future<void> createProjectTables(DatabaseExecutor db) async {
     characters INTEGER NOT NULL,
     bytes INTEGER NOT NULL
   )''');
-  await db.execute('''CREATE TABLE knowledge_chunks (
+  await db.execute('''CREATE TABLE IF NOT EXISTS knowledge_chunks (
     document_id INTEGER NOT NULL REFERENCES knowledge_documents(id) ON DELETE CASCADE,
     position INTEGER NOT NULL,
     content TEXT NOT NULL,
     PRIMARY KEY(document_id, position)
   )''');
   await db.execute(
-    'CREATE INDEX knowledge_project ON knowledge_documents(project_id)',
+    'CREATE INDEX IF NOT EXISTS knowledge_project ON knowledge_documents(project_id)',
+  );
+}
+
+/// Older builds can lower user_version without removing newer tables. Repair
+/// only missing v7 schema objects; keep existing rows, columns and relations.
+Future<void> ensureProjectSchema(DatabaseExecutor db) async {
+  await createProjectTables(db);
+  const additions = {
+    'topics': {
+      'project_id': 'INTEGER REFERENCES projects(id) ON DELETE SET NULL',
+      'pinned_at': 'INTEGER NOT NULL DEFAULT 0',
+    },
+    'messages': {'knowledge_sources': 'TEXT'},
+  };
+  for (final table in additions.entries) {
+    await addMissingColumns(db, table.key, table.value);
+  }
+  await db.execute(
+    'CREATE INDEX IF NOT EXISTS topics_project ON topics(project_id)',
   );
 }

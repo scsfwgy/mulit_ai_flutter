@@ -31,6 +31,9 @@ void main() {
         return null;
       }
       if (call.method == 'query') {
+        if ((sql).startsWith('PRAGMA table_info(')) {
+          return <Map<String, Object?>>[];
+        }
         if (sql == 'PRAGMA user_version') {
           return [
             {'user_version': 4},

@@ -54,3 +54,11 @@ SQLite v7 增加 `projects`、`knowledge_documents`、`knowledge_chunks`；topic
 桌面聊天「更多」和会话行菜单使用按钮旁的小浮层，支持点外部或 Escape 关闭；手机仍使用底部操作表。桌面两侧顶栏共用同一高度并对齐分隔线。回归集成增加真实 ChatHome 窄窗口抽屉销毁/重建、项目切换、新草稿归属（不创建空会话、保留文字）、已有会话移动及桌面菜单截图。
 
 本次交互修复新增 `test/desktop_popup_menu_test.dart`，在三种桌面平台的 widget 环境检查顶栏对齐、菜单锚点/尺寸、动作回调、外部点击和 Escape；真实 macOS 集成再次通过，包括窄窗口抽屉重建与草稿项目归属。桌面截图采用与实际应用一致的深色/主题配置。Android Debug 和 iOS 模拟器重新构建通过；手机真机与 Windows/Linux 原生窗口仍未验证。
+
+## 数据库版本标记回退的恢复
+
+缺少 `onDowngrade` 回调的旧构建重新打开新数据库时，sqflite 可能降低 `PRAGMA user_version`，但保留新的表和列。之后再升级，原来的直接建表或加列会报 `table projects already exists` / duplicate column。当前迁移对表和索引使用 `IF NOT EXISTS`，加列前检查 `PRAGMA table_info`，只补缺失对象；正常升级和版本标记回退均在原有升级事务内完成，不删除、覆盖或重建已有数据。数据库版本仍为 7。新版遇到高于自身支持的数据库时明确拒绝降级，不清空数据。
+
+`test/project_schema_recovery_test.dart` 复现旧构建将 v7 标记退回 v5 后的重新升级，核对服务、设置、项目、记忆、知识正文/分段、会话与消息保留，并确认恢复后可保存模型配置；同时检查部分项目结构的补齐与重复执行。`test/database_downgrade_test.dart` 检查较新版本库被拒绝后版本和数据不变。既有数据库通道桩补上了表结构查询响应。
+
+`integration_test/database_recovery_smoke_test.dart` 使用 macOS 原生 sqflite_darwin，在本次创建的独立临时目录复现 v7→旧构建标记 v6→新版恢复，逐表比较数据，并验证恢复后的服务配置保存。临时覆盖仅作用于测试引擎的数据库目录，结束恢复原路径，不打开正常应用数据库、不访问 API Key、不请求模型服务。运行前先单独构建对应测试入口，再通过现有驱动执行。完成后需重新构建 `lib/main.dart` 普通入口。静态分析通过，全套 352 项测试通过、1 项跳过；原生 macOS 恢复与保存回归通过。尚未直接检查或修改用户正在运行的实际数据库。

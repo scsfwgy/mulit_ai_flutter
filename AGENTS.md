@@ -51,7 +51,7 @@
 
 - `lib/core/project.dart`、`project_store.dart`：SQLite v7 项目/知识文档/分段、会话项目关联与置顶、标题正文搜索、本地中英文关键词检索。项目说明和记忆仅在手机/桌面的项目对话中使用，不读取或总结到全局记忆；移动/删除项目推进旧历史的记忆游标。知识正文和引用快照是本机明文；命中资料只发当前模型，不发向量服务或搜索服务。容量、迁移与验证见 `doc/PROJECT_SPACES.md`。
 
-- `lib/core/data.dart`：服务配置、话题、消息模型；SQLite 和密钥存储。
+- `lib/core/data.dart`：服务配置、话题、消息模型；SQLite 和密钥存储。`database_migrations.dart` 按实际表结构补齐缺失列，迁移建表/建索引须可重复执行；旧构建可能降低版本标记而保留新表，不能只看版本号就无条件重建或加列。明确拒绝降级打开较新数据库，不清空或覆盖用户数据。
 - `lib/core/chat_attachment.dart` 与 `lib/core/attachment_store.dart`：附件元数据与私有文件管理，SQLite v6 只新增可空 `attachments` 列；附件正文不写 Base64 入库。类型由文件内容识别：已知图片、PDF 与合法 UTF-8 文本按类型发送，其它非空文件原样保存为通用文件，是否支持由模型或接口返回决定；相册和拍照仍只接受 JPEG、PNG、GIF、WebP。每条图片与文件合计最多 9 个，单个附件 30 MB（图片按压缩后计算），单条消息与已选请求上下文总计 90 MB；相册在选择时按剩余数量限制，不支持限量的系统使用单选累加，图片统一参考 Luban 压缩。取消草稿、删除话题、清空数据及启动时孤儿清理须同步处理文件，不能删除用户选择的原文件。
 - `lib/core/app_preferences.dart`：本地语言、白天/黑夜/跟随系统和主题色偏好；语言枚举与文案表已迁到 `lib/i18n/`，此处仅 re-export 保持旧导入路径可用。
 - `lib/core/apple_purchases.dart`：Apple 内购状态与刷新。

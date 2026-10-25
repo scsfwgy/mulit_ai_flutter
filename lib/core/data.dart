@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 
 import 'package:mulit_ai_flutter/core/storefront_policy.dart';
 import 'package:mulit_ai_flutter/core/project.dart';
+import 'package:mulit_ai_flutter/core/database_migrations.dart';
 import 'package:mulit_ai_flutter/core/chat_attachment.dart';
 import 'package:mulit_ai_flutter/core/attachment_store.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
@@ -739,6 +740,7 @@ class ChatStore {
     _database = await openDatabase(
       path,
       version: 7,
+      onDowngrade: onDatabaseVersionChangeError,
       onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: (db, _) async {
         await db.execute('''CREATE TABLE providers (
@@ -785,53 +787,33 @@ class ChatStore {
       },
       onUpgrade: (db, oldVersion, _) async {
         if (oldVersion < 2) {
-          await db.execute('ALTER TABLE providers ADD COLUMN preset_id TEXT');
+          await addMissingColumns(db, 'providers', {'preset_id': 'TEXT'});
           await _createPromptTables(db);
         }
         if (oldVersion < 3) {
-          await db.execute('ALTER TABLE messages ADD COLUMN model_id TEXT');
-          await db.execute(
-            'ALTER TABLE messages ADD COLUMN first_token_ms INTEGER',
-          );
-          await db.execute('ALTER TABLE messages ADD COLUMN total_ms INTEGER');
-          await db.execute(
-            'ALTER TABLE messages ADD COLUMN input_tokens INTEGER',
-          );
-          await db.execute(
-            'ALTER TABLE messages ADD COLUMN output_tokens INTEGER',
-          );
+          await addMissingColumns(db, 'messages', {
+            'model_id': 'TEXT',
+            'first_token_ms': 'INTEGER',
+            'total_ms': 'INTEGER',
+            'input_tokens': 'INTEGER',
+            'output_tokens': 'INTEGER',
+          });
         }
         if (oldVersion < 4) {
-          await db.execute(
-            'ALTER TABLE messages ADD COLUMN provider_id INTEGER',
-          );
-          await db.execute(
-            'ALTER TABLE messages ADD COLUMN provider_name TEXT',
-          );
-          await db.execute(
-            'ALTER TABLE messages ADD COLUMN provider_preset_id TEXT',
-          );
+          await addMissingColumns(db, 'messages', {
+            'provider_id': 'INTEGER',
+            'provider_name': 'TEXT',
+            'provider_preset_id': 'TEXT',
+          });
         }
         if (oldVersion < 5) {
-          await db.execute(
-            'ALTER TABLE messages ADD COLUMN search_sources TEXT',
-          );
+          await addMissingColumns(db, 'messages', {'search_sources': 'TEXT'});
         }
         if (oldVersion < 6) {
-          await db.execute('ALTER TABLE messages ADD COLUMN attachments TEXT');
+          await addMissingColumns(db, 'messages', {'attachments': 'TEXT'});
         }
         if (oldVersion < 7) {
-          await createProjectTables(db);
-          await db.execute(
-            'ALTER TABLE topics ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL',
-          );
-          await db.execute(
-            'ALTER TABLE topics ADD COLUMN pinned_at INTEGER NOT NULL DEFAULT 0',
-          );
-          await db.execute(
-            'ALTER TABLE messages ADD COLUMN knowledge_sources TEXT',
-          );
-          await db.execute('CREATE INDEX topics_project ON topics(project_id)');
+          await ensureProjectSchema(db);
         }
       },
     );
@@ -839,11 +821,11 @@ class ChatStore {
   }
 
   static Future<void> _createPromptTables(Database db) async {
-    await db.execute('''CREATE TABLE settings (
+    await db.execute('''CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     )''');
-    await db.execute('''CREATE TABLE model_prompts (
+    await db.execute('''CREATE TABLE IF NOT EXISTS model_prompts (
       provider_id INTEGER NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
       model TEXT NOT NULL,
       prompt TEXT NOT NULL,
