@@ -165,7 +165,13 @@ void main() {
         await tester.pumpAndSettle();
       }
 
+      await show(const ProjectSelection(null));
+      expect(find.text(T('i18n.all_chats')), findsOneWidget);
+      expect(find.text(T('i18n.recent')), findsNothing);
+      expect(find.byIcon(CupertinoIcons.folder), findsNothing);
       await show(const ProjectSelection(1));
+      expect(find.text('Project 1'), findsOneWidget);
+      expect(find.text(T('i18n.all_chats')), findsNothing);
       expect(find.text('Chat 1'), findsOneWidget);
       expect(find.text('Chat 2'), findsNothing);
       await show(const ProjectSelection(2));
@@ -179,9 +185,42 @@ void main() {
       expect(newProject, 2);
       await show(const ProjectSelection(null, ungrouped: true));
       expect(find.text('Chat 3'), findsOneWidget);
+      expect(find.text(T('i18n.ungrouped_chats')), findsOneWidget);
       expect(find.text('Chat 2'), findsNothing);
     },
   );
+
+  testWidgets('empty conversation filter heading remains clickable', (
+    tester,
+  ) async {
+    installEmptyDatabaseStub();
+    var selections = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: TopicScreen(
+            onClose: () {},
+            onSelect: (_) {},
+            onNew: () {},
+            onSettings: () {},
+            onChanged: () {},
+            onChooseProject: (_) async {
+              selections++;
+              return const ProjectSelection(null, ungrouped: true);
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(T('i18n.all_chats')), findsOneWidget);
+    await tester.tap(find.text(T('i18n.all_chats')));
+    await tester.pumpAndSettle();
+    expect(selections, 1);
+    expect(find.text(T('i18n.all_chats')), findsNothing);
+    expect(find.text(T('i18n.ungrouped_chats')), findsOneWidget);
+    expect(find.text(T('i18n.no_chats_yet')), findsOneWidget);
+  });
 
   testWidgets('More assigns drafts and moves existing project chats', (
     tester,

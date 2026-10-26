@@ -14,7 +14,7 @@
 2. 私钥 `AuthKey_<密钥 ID>.p8` 只能在生成时下载一次，请放到 `localConfig/` 并离线备份。
 3. 复制 `scripts/appstore_connect.env.example` 为 `localConfig/appstore-connect.env`，填写 `ASC_KEY_ID` 与 `ASC_ISSUER_ID`；`ASC_KEY_PATH` 可省略，省略时按 `localConfig/AuthKey_<ASC_KEY_ID>.p8` 查找。同名环境变量优先于文件。`localConfig/` 已被 `.gitignore` 忽略，私钥不入库。
 
-本机可将本地证书与手机、手表、复杂功能的分发描述文件映射保存在 `localConfig/ios-export-options.plist`。未显式传导出选项时，`scripts/apple_release.py` 默认读取此文件；目录已忽略，不入库。此配置支持 Xcode 未登录账号时使用已有本地证书导出；换机器、团队或证书后需重新准备配置，也可通过 `--ios-export-options` / `IOS_EXPORT_OPTIONS_PLIST` 覆盖。
+本机可将本地证书与手机、手表、复杂功能的分发描述文件映射保存在 `localConfig/ios-export-options.plist`。未显式传导出选项时，`scripts/apple_release.py` 默认读取此文件；目录已忽略，不入库。分享扩展新增后，映射还需包含 `com.maxhall.ailink.share`。此配置支持 Xcode 未登录账号时使用已有本地证书导出；换机器、团队或证书后需重新准备配置，也可通过 `--ios-export-options` / `IOS_EXPORT_OPTIONS_PLIST` 覆盖。
 
 ### 常用命令
 
@@ -166,3 +166,7 @@ xcrun swiftc -swift-version 5 -parse-as-library \
 - 配置版本仍为 1，新增 optional 字段；旧缓存保持云端模式。两端需要更新才能使用系统语音默认值。没有 ASR 密钥时仍保持旧协议的 `asrReady = false`，避免旧 Watch 误以为云端语音已配置。
 - 验证：216 项 Flutter 测试（含默认值、旧选择、Android 隔离、配置快照、原生桥接错误与 iOS 选择页），原生 Watch 协议与 Markdown 测试；iOS/watchOS Debug 配对模拟器构建及启动通过。独立新安装模拟器的四项设置已核对为系统识别、系统朗读、手机自动朗读关闭、Watch 自动朗读关闭。最终静态分析无问题，Android Debug APK 构建通过；官网本地隐私源码三语更新的 91 项测试通过，尚未发布线上。
 - 真机未验收：中文/英文识别质量、设备音色、扬声器/耳机、权限拒绝与恢复、真实模型请求、锁屏/后台、配对与断连。模拟器启动与编译不代替这些证据。
+
+### 分享扩展与本机签名（2026-10-26）
+
+分享功能需要 Runner 与 AILinkShare 各自的 App ID 都关联对应 App Group，并使用含该权限的显式描述文件；通配 Profile 不可用。Xcode 未登录账号的机器可使用可选的 `localConfig/ios-signing.local.xcconfig` 指定本机开发 Profile，模板见 `scripts/ios-signing.local.xcconfig.example`，配置与验证记录见 `doc/INCOMING_SHARES.md`。安装脚本尊重项目签名方式，只覆盖团队；主应用、手表、Widget 和分享扩展应属于同一团队。

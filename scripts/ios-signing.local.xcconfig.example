@@ -1,0 +1,11 @@
+// Copy to localConfig/ios-signing.local.xcconfig on machines without Xcode account access.
+// Replace every placeholder with an installed development profile name or UUID.
+AILINK_CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY[sdk=iphoneos*] = Apple Development
+PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*] = $(AILINK_PROFILE_$(TARGET_NAME)_$(CONFIGURATION))
+AILINK_PROFILE_Runner_Release = MAIN_RELEASE_DEVELOPMENT_PROFILE
+AILINK_PROFILE_AILinkShare_Release = SHARE_RELEASE_DEVELOPMENT_PROFILE
+AILINK_PROFILE_Runner_Debug = MAIN_DEBUG_DEVELOPMENT_PROFILE
+AILINK_PROFILE_AILinkShare_Debug = SHARE_DEBUG_DEVELOPMENT_PROFILE
+AILINK_PROFILE_Runner_Profile = $(AILINK_PROFILE_Runner_Debug)
+AILINK_PROFILE_AILinkShare_Profile = $(AILINK_PROFILE_AILinkShare_Debug)

@@ -1,1 +1,5 @@
 #include "Generated.xcconfig"
+
+// Local signing remains optional; no profiles or credentials enter source control.
+AILINK_CODE_SIGN_STYLE = Automatic
+#include? "../../localConfig/ios-signing.local.xcconfig"

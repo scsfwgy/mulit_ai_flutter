@@ -29,6 +29,33 @@ import UIKit
       messenger: engineBridge.applicationRegistrar.messenger()
     )
     FlutterMethodChannel(
+      name: "between_models/incoming_share",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    ).setMethodCallHandler { call, result in
+      do {
+        switch call.method {
+        case "peek":
+          if let args = call.arguments as? [String: String], let language = args["language"] {
+            UserDefaults(suiteName: ShareInbox.group)?.set(language, forKey: "language")
+          }
+          result(try ShareInbox.first())
+        case "clear":
+          if let root = ShareInbox.root, FileManager.default.fileExists(atPath: root.path) {
+            try FileManager.default.removeItem(at: root)
+          }
+          result(nil)
+        case "ack":
+          if let args = call.arguments as? [String: String], let id = args["id"] {
+            try ShareInbox.acknowledge(id)
+          }
+          result(nil)
+        default: result(FlutterMethodNotImplemented)
+        }
+      } catch {
+        result(FlutterError(code: "share_failed", message: "Share inbox unavailable", details: nil))
+      }
+    }
+    FlutterMethodChannel(
       name: "between_models/clipboard",
       binaryMessenger: engineBridge.applicationRegistrar.messenger()
     ).setMethodCallHandler { call, result in

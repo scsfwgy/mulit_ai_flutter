@@ -18,6 +18,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:mulit_ai_flutter/core/storefront_policy.dart';
 import 'package:mulit_ai_flutter/chat/attachment_picker.dart';
+import 'package:mulit_ai_flutter/chat/incoming_share.dart';
 import 'package:mulit_ai_flutter/chat/widgets/desktop_attachment_drop.dart';
 import 'package:mulit_ai_flutter/api/api_client.dart';
 import 'package:mulit_ai_flutter/chat/chat_context_screen.dart';
@@ -94,6 +95,11 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   final _input = TextEditingController();
   List<ChatAttachment> _attachments = [];
   bool _pickingAttachment = false;
+  Timer? _shareTimer;
+  bool _checkingShare = false;
+  bool _sharePending = true;
+  final _receivedShares = <String>{};
+  final _deferredShares = <String>{};
   final _inputFocus = FocusNode();
   final _recorder = AudioRecorder();
   final _player = AudioPlayer();
@@ -178,6 +184,17 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    if (supportsIncomingShare) {
+      IncomingShare.channel.setMethodCallHandler((call) async {
+        if (call.method == 'failed' && mounted) {
+          _notify(T('i18n.share_import_failed'));
+        }
+        if (call.method == 'changed') {
+          _sharePending = true;
+          await _receiveShare();
+        }
+      });
+    }
     if (isDesktopApp) {
       _desktopMenu.setMethodCallHandler((call) async {
         if (!mounted || Navigator.of(context).canPop()) return;
@@ -213,7 +230,141 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         });
       }
     });
-    unawaited(_load().then((_) => _recoverAttachments()));
+    unawaited(
+      _load().then((_) async {
+        await _recoverAttachments();
+        if (supportsIncomingShare && mounted) {
+          _shareTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+            unawaited(_receiveShare());
+          });
+          await _receiveShare();
+        }
+      }),
+    );
+  }
+
+  Future<void> _receiveShare() async {
+    if (!_sharePending ||
+        !supportsIncomingShare ||
+        !mounted ||
+        _loading ||
+        _attachmentBusy ||
+        _checkingShare ||
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed ||
+        Navigator.of(context).canPop()) {
+      return;
+    }
+    _checkingShare = true;
+    try {
+      final share = await IncomingShare.peek();
+      if (!mounted) return;
+      if (share == null || _deferredShares.contains(share.id)) {
+        _sharePending = false;
+        return;
+      }
+      if (_receivedShares.contains(share.id)) {
+        await share.acknowledge();
+        return;
+      }
+      _deferredShares.add(share.id);
+      final revision = _chatLocationRevision;
+      if (_input.text.isNotEmpty || _attachments.isNotEmpty) {
+        final accept = await showCupertinoDialog<bool>(
+          context: context,
+          builder: (context) => CupertinoAlertDialog(
+            title: Text(T('i18n.share_received')),
+            content: Text(T('i18n.share_replace_draft')),
+            actions: [
+              CupertinoDialogAction(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(T('i18n.share_later')),
+              ),
+              CupertinoDialogAction(
+                isDestructiveAction: true,
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(T('i18n.share_open')),
+              ),
+            ],
+          ),
+        );
+        if (accept != true) return;
+      }
+      if (!mounted || _attachmentBusy || revision != _chatLocationRevision) {
+        return;
+      }
+      _closeTopics();
+      setState(() => _pickingAttachment = true);
+      List<ChatAttachment> imported;
+      try {
+        imported = await share.import(AttachmentStore.instance);
+      } catch (error) {
+        if (!mounted) return;
+        final discard = await showCupertinoDialog<bool>(
+          context: context,
+          builder: (context) => CupertinoAlertDialog(
+            title: Text(T('i18n.share_import_failed')),
+            content: Text(
+              error is AttachmentException
+                  ? error.toString()
+                  : T('i18n.attachment_unavailable'),
+            ),
+            actions: [
+              CupertinoDialogAction(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(T('i18n.share_later')),
+              ),
+              CupertinoDialogAction(
+                isDestructiveAction: true,
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(T('i18n.delete')),
+              ),
+            ],
+          ),
+        );
+        if (discard == true) await share.acknowledge();
+        return;
+      }
+      if (!mounted) {
+        await AttachmentStore.instance.delete(imported);
+        return;
+      }
+      final previous = _providers
+          .where((p) => p.id == _currentProviderId)
+          .firstOrNull;
+      final provider = previous ?? _providers.firstOrNull;
+      final model = previous == null ? provider?.model : _currentModel;
+      await _discardDraftAttachments();
+      if (!mounted) {
+        await AttachmentStore.instance.delete(imported);
+        return;
+      }
+      _beginDraft(provider, model, null);
+      _input.clear();
+      setState(() {
+        _attachments = imported;
+        _topicProjectFilter = const ProjectSelection(null);
+        _voiceMode = false;
+      });
+      // Mark before ack so a transient native cleanup failure cannot duplicate a draft.
+      _receivedShares.add(share.id);
+      await share.acknowledge();
+      if (mounted) _inputFocus.requestFocus();
+    } on MissingPluginException {
+      _sharePending = false;
+      // Native sharing is unavailable in widget tests and desktop builds.
+    } catch (error) {
+      _sharePending = false;
+      if (mounted) {
+        _notify(
+          error is AttachmentException
+              ? error.toString()
+              : T('i18n.share_import_failed'),
+        );
+      }
+    } finally {
+      if (mounted && _checkingShare) setState(() => _pickingAttachment = false);
+      _checkingShare = false;
+    }
   }
 
   Future<void> _removeStaleVoiceFiles(DateTime startedAt) async {
@@ -236,6 +387,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _shareTimer?.cancel();
+    if (supportsIncomingShare) IncomingShare.channel.setMethodCallHandler(null);
     _revealTimer?.cancel();
     if (!_starting) {
       unawaited(
@@ -289,6 +442,9 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _deferredShares.clear();
+      _sharePending = true;
+      unawaited(_receiveShare());
       unawaited(ApplePurchases.instance.refresh());
       unawaited(_syncWatchConfiguration());
     } else {
@@ -552,6 +708,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   void _openTopics() => _scaffoldKey.currentState?.openDrawer();
 
   bool _canClearData() =>
+      !_checkingShare &&
       !_pickingAttachment &&
       !_sending &&
       !_watchProcessing &&

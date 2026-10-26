@@ -685,5 +685,11 @@
   "i18n.unpin_chat": "Unpin chat",
   "i18n.pinned_chat": "Pinned",
   "i18n.project_privacy": "Project instructions, memory, and knowledge text are stored unencrypted in local SQLite. Retrieval runs locally; matched excerpts go directly to the selected model service with your chat, with no embedding service. Saved replies retain the supplied excerpts after project or document deletion. Delete the corresponding chat or clear local data to remove those excerpts.",
-  "i18n.add_to_project": "Add to project"
+  "i18n.add_to_project": "Add to project",
+  "i18n.share_received": "Shared content received",
+  "i18n.share_replace_draft": "Loading this share starts a new conversation and discards your unsent text and attachments. Choose Later to keep your draft; we will ask again when you reopen the app.",
+  "i18n.share_later": "Later",
+  "i18n.share_open": "Load new conversation",
+  "i18n.share_import_failed": "Unable to import this share. Check the file sizes or share again.",
+  "i18n.shared_text_file": "Shared text.txt"
 }

@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'package:mulit_ai_flutter/core/storefront_policy.dart';
+import 'package:mulit_ai_flutter/core/app_platform.dart';
 import 'package:mulit_ai_flutter/core/project.dart';
 import 'package:mulit_ai_flutter/core/database_migrations.dart';
 import 'package:mulit_ai_flutter/core/chat_attachment.dart';
@@ -1146,6 +1147,14 @@ class ChatStore {
 
   /// Clears app-owned local data after explicit confirmation in the UI.
   Future<void> clearAllData() async {
+    if (supportsIncomingShare) {
+      try {
+        await const MethodChannel('between_models/incoming_share')
+            .invokeMethod<void>('clear');
+      } on MissingPluginException {
+        // Tests and older native hosts do not have an incoming inbox.
+      }
+    }
     await (await db).transaction((transaction) async {
       await transaction.delete('messages');
       await transaction.delete('topics');

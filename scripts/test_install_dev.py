@@ -173,10 +173,12 @@ class InstallDevTest(unittest.TestCase):
         phone = root / "build/ios/iphoneos/Runner.app"
         watch = phone / "Watch/AILinkWatch.app"
         widget = watch / "PlugIns/AILinkWatchWidgets.appex"
+        share = phone / "PlugIns/AILinkShare.appex"
         watch_id = phone_id + ".watchkitapp"
         companion = phone_id if companion is None else companion
         for path, identifier in ((phone, phone_id), (watch, watch_id),
-                                 (widget, watch_id + ".widgets")):
+                                 (widget, watch_id + ".widgets"),
+                                 (share, phone_id + ".share")):
             path.mkdir(parents=True, exist_ok=True)
             info = {"CFBundleIdentifier": identifier}
             if path == watch:
@@ -192,6 +194,7 @@ class InstallDevTest(unittest.TestCase):
                     self.assertEqual(argv, ["flutter", "build", "ios", "--profile"])
                     config = Path(kwargs["env"]["XCODE_XCCONFIG_FILE"])
                     self.assertIn("DEVELOPMENT_TEAM = ABCDE12345", config.read_text())
+                    self.assertNotIn("CODE_SIGN_STYLE", config.read_text())
                     configs.append(config)
                     self.make_apple_artifacts(root)
             with patch.object(installer, "ROOT", root), patch.object(installer, "run", side_effect=command) as run:
@@ -237,6 +240,15 @@ class InstallDevTest(unittest.TestCase):
             self.make_apple_artifacts(root)
             plist = root / "build/ios/iphoneos/Runner.app/Watch/AILinkWatch.app/PlugIns/AILinkWatchWidgets.appex/Info.plist"
             plist.write_bytes(plistlib.dumps({"CFBundleIdentifier": "com.maxhall.ailink.watchkitapp.widgets"}))
+            with patch.object(installer, "ROOT", root), patch.object(installer, "run"), self.assertRaisesRegex(ValueError, "开发版"):
+                installer.build(self.devices[2:], "profile", "ABCDE12345")
+
+    def test_release_share_extension_in_debug_bundle_stops_before_install(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.make_apple_artifacts(root)
+            plist = root / "build/ios/iphoneos/Runner.app/PlugIns/AILinkShare.appex/Info.plist"
+            plist.write_bytes(plistlib.dumps({"CFBundleIdentifier": "com.maxhall.ailink.share"}))
             with patch.object(installer, "ROOT", root), patch.object(installer, "run"), self.assertRaisesRegex(ValueError, "开发版"):
                 installer.build(self.devices[2:], "profile", "ABCDE12345")
 

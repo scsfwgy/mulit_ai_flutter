@@ -361,6 +361,48 @@ class _TopicScreenState extends State<TopicScreen> {
     widget.onChanged();
   }
 
+  Widget _filterHeader() => Semantics(
+    header: true,
+    child: CupertinoButton(
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+      minimumSize: const Size(0, 44),
+      onPressed: _chooseProject,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: Text(
+              _selection.id == null
+                  ? T(
+                      _selection.ungrouped
+                          ? 'i18n.ungrouped_chats'
+                          : 'i18n.all_chats',
+                    )
+                  : _projects
+                            .where((p) => p.id == _selection.id)
+                            .firstOrNull
+                            ?.name ??
+                        '',
+              style: TextStyle(
+                color: IosColors.label,
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 7),
+          Icon(
+            CupertinoIcons.chevron_down,
+            size: 13,
+            color: IosColors.secondary,
+          ),
+        ],
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) => ColoredBox(
     color: IosColors.background,
@@ -415,34 +457,6 @@ class _TopicScreenState extends State<TopicScreen> {
               },
             ),
           ),
-          CupertinoButton(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-            onPressed: _chooseProject,
-            child: Row(
-              children: [
-                const Icon(CupertinoIcons.folder, size: 18),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    _selection.id == null
-                        ? T(
-                            _selection.ungrouped
-                                ? 'i18n.ungrouped_chats'
-                                : 'i18n.all_chats',
-                          )
-                        : _projects
-                                  .where((p) => p.id == _selection.id)
-                                  .firstOrNull
-                                  ?.name ??
-                              '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const Icon(CupertinoIcons.chevron_down, size: 14),
-              ],
-            ),
-          ),
           if (_error != null)
             Text(_error!, style: TextStyle(color: IosColors.destructive)),
           Expanded(
@@ -450,18 +464,31 @@ class _TopicScreenState extends State<TopicScreen> {
               children: [
                 if (_search.text.trim().isNotEmpty) ...[
                   if (_searching)
-                    const CupertinoActivityIndicator()
+                    IosSection(
+                      header: _filterHeader(),
+                      children: const [
+                        Padding(
+                          padding: EdgeInsets.all(20),
+                          child: CupertinoActivityIndicator(),
+                        ),
+                      ],
+                    )
                   else if (_matches.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Text(
-                        T('i18n.no_search_results'),
-                        style: TextStyle(color: IosColors.secondary),
-                      ),
+                    IosSection(
+                      header: _filterHeader(),
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Text(
+                            T('i18n.no_search_results'),
+                            style: TextStyle(color: IosColors.secondary),
+                          ),
+                        ),
+                      ],
                     )
                   else
                     IosSection(
-                      title: T('i18n.history_matches'),
+                      header: _filterHeader(),
                       footer: T('i18n.history_matches_detail'),
                       children: [
                         for (final match in _matches)
@@ -483,26 +510,31 @@ class _TopicScreenState extends State<TopicScreen> {
                       ],
                     ),
                 ] else if (_visibleTopics.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 90, 20, 0),
-                    child: Column(
-                      children: [
-                        Icon(
-                          CupertinoIcons.chat_bubble_2,
-                          size: 42,
-                          color: IosColors.secondary,
+                  IosSection(
+                    header: _filterHeader(),
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 90, 20, 0),
+                        child: Column(
+                          children: [
+                            Icon(
+                              CupertinoIcons.chat_bubble_2,
+                              size: 42,
+                              color: IosColors.secondary,
+                            ),
+                            const SizedBox(height: 14),
+                            Text(
+                              T('i18n.no_chats_yet'),
+                              style: TextStyle(color: IosColors.secondary),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 14),
-                        Text(
-                          T('i18n.no_chats_yet'),
-                          style: TextStyle(color: IosColors.secondary),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   )
                 else
                   IosSection(
-                    title: T('i18n.recent'),
+                    header: _filterHeader(),
                     children: [
                       for (final topic in _visibleTopics)
                         IosRow(

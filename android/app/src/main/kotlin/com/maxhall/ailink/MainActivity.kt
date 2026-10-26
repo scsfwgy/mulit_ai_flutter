@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Bundle
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.wear.remote.interactions.RemoteActivityHelper
 import com.google.android.gms.tasks.Tasks
@@ -19,10 +20,32 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class MainActivity : FlutterActivity() {
+    private val incomingShares = IncomingShareBridge(this)
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        if (savedInstanceState?.getBoolean("ai_link_share_received") == true) {
+            intent?.putExtra("ai_link_share_received", true)
+        }
+        super.onCreate(savedInstanceState)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("ai_link_share_received", intent?.getBooleanExtra("ai_link_share_received", false) == true)
+        super.onSaveInstanceState(outState)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        incomingShares.receive(intent)
+    }
+
     private val companionExecutor = Executors.newSingleThreadExecutor()
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        incomingShares.attach(flutterEngine.dartExecutor.binaryMessenger)
+        incomingShares.receive(intent)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "between_models/attachments")
             .setMethodCallHandler { call, result ->
                 if (call.method == "supportsLimitedPhotoPicker") {
@@ -164,6 +187,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        incomingShares.close()
         companionExecutor.shutdown()
         super.onDestroy()
     }

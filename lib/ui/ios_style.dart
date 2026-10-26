@@ -208,11 +208,13 @@ class IosSection extends StatelessWidget {
   const IosSection({
     super.key,
     this.title,
+    this.header,
     this.footer,
     required this.children,
   });
 
   final String? title;
+  final Widget? header;
   final String? footer;
   final List<Widget> children;
 
@@ -222,7 +224,9 @@ class IosSection extends StatelessWidget {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (title != null)
+        if (header != null)
+          header!
+        else if (title != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 0, 0, 8),
             child: Text(

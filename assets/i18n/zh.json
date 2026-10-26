@@ -685,5 +685,11 @@
   "i18n.unpin_chat": "取消置顶",
   "i18n.pinned_chat": "已置顶",
   "i18n.project_privacy": "项目说明、项目记忆和知识正文以明文保存在本机SQLite。检索在本机执行，命中片段会随聊天直接发送给所选模型服务；不请求向量服务。历史回复保留当时提供的片段，删除项目或知识文件不会移除聊天中的历史片段；删除对应聊天或清空本地数据可移除它们。",
-  "i18n.add_to_project": "添加到项目"
+  "i18n.add_to_project": "添加到项目",
+  "i18n.share_received": "收到分享内容",
+  "i18n.share_replace_draft": "载入分享内容将新建对话，并丢弃当前未发送的文字和附件。选择稍后处理可保留当前草稿，分享内容会在下次打开 App 时再次提示。",
+  "i18n.share_later": "稍后处理",
+  "i18n.share_open": "载入新对话",
+  "i18n.share_import_failed": "无法接收分享内容，请检查文件大小或重新分享。",
+  "i18n.shared_text_file": "分享文字.txt"
 }

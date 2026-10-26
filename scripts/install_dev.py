@@ -202,7 +202,7 @@ def development_team(explicit):
         ], capture=True))["objects"]
         teams = set()
         for target in project.values():
-            if target.get("isa") != "PBXNativeTarget" or target.get("name") not in ("Runner", "AILinkWatch", "AILinkWatchWidgets"):
+            if target.get("isa") != "PBXNativeTarget" or target.get("name") not in ("Runner", "AILinkWatch", "AILinkWatchWidgets", "AILinkShare"):
                 continue
             configs = project[target["buildConfigurationList"]]["buildConfigurations"]
             for config_id in configs:
@@ -240,16 +240,17 @@ def build(selected, ios_mode, team, macos_mode="debug"):
                 if '"' in inherited or '\n' in inherited:
                     raise ValueError("XCODE_XCCONFIG_FILE 路径包含不支持的字符。")
                 contents = f'#include "{inherited}"\n'
-            config.write_text(contents + f"DEVELOPMENT_TEAM = {team}\nCODE_SIGN_STYLE = Automatic\n")
+            config.write_text(contents + f"DEVELOPMENT_TEAM = {team}\n")
             run(["flutter", "build", "ios", f"--{ios_mode}"], env={
                 **os.environ, "XCODE_XCCONFIG_FILE": str(config),
             })
         phone = ROOT / "build/ios/iphoneos/Runner.app"
         watch = phone / "Watch/AILinkWatch.app"
         widget = watch / "PlugIns/AILinkWatchWidgets.appex"
+        share = phone / "PlugIns/AILinkShare.appex"
         phone_id, watch_id = apple_bundle_ids(ios_mode)
         edition = "正式版" if ios_mode == "release" else "开发版"
-        for path, expected in ((phone, phone_id), (watch, watch_id), (widget, watch_id + ".widgets")):
+        for path, expected in ((phone, phone_id), (watch, watch_id), (widget, watch_id + ".widgets"), (share, phone_id + ".share")):
             with (path / "Info.plist").open("rb") as stream:
                 info = plistlib.load(stream)
             if info.get("CFBundleIdentifier") != expected:

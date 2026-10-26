@@ -685,5 +685,11 @@
   "i18n.unpin_chat": "取消置頂",
   "i18n.pinned_chat": "已置頂",
   "i18n.project_privacy": "專案說明、專案記憶和知識正文以明文儲存在本機SQLite。檢索在本機執行，符合的片段會隨聊天直接傳給所選模型服務；不請求向量服務。歷史回覆保留當時提供的片段，刪除專案或知識檔案不會移除聊天中的歷史片段；刪除對應聊天或清除本機資料可移除它們。",
-  "i18n.add_to_project": "加入專案"
+  "i18n.add_to_project": "加入專案",
+  "i18n.share_received": "收到分享內容",
+  "i18n.share_replace_draft": "載入分享內容將新增對話，並捨棄目前未傳送的文字和附件。選擇稍後處理可保留目前草稿，分享內容會在下次開啟 App 時再次提示。",
+  "i18n.share_later": "稍後處理",
+  "i18n.share_open": "載入新對話",
+  "i18n.share_import_failed": "無法接收分享內容，請檢查檔案大小或重新分享。",
+  "i18n.shared_text_file": "分享文字.txt"
 }

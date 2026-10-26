@@ -34,3 +34,5 @@ bool get supportsQrScan =>
       TargetPlatform.iOS,
       TargetPlatform.macOS,
     ].contains(defaultTargetPlatform);
+
+bool get supportsIncomingShare => supportsWatchCompanion;
