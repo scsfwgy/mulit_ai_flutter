@@ -809,5 +809,13 @@
   "i18n.agent_progress_collapse": "Collapse process",
   "i18n.agent_elapsed": "Elapsed {0}",
   "i18n.agent_found_sources": "Found {0} sources",
-  "i18n.agent_extracted_chars": "Extracted {0} characters"
+  "i18n.agent_extracted_chars": "Extracted {0} characters",
+  "i18n.message_info_modes_detail": "Compact mode starts with fewer statistics and keeps copy and speech controls. Customize any switch below; each mode remembers its own choices.",
+  "i18n.return_latest": "Return to latest message",
+  "i18n.stop_generation": "Stop generation",
+  "i18n.draft_save_failed": "Could not save the draft. Retry before switching chats.",
+  "i18n.draft_load_failed": "Could not load the draft. Open this chat again.",
+  "i18n.draft_replace_title": "Replace the new-chat draft?",
+  "i18n.draft_replace_detail": "The target project already has an unsent draft. Replace it with your current input?",
+  "i18n.draft_replace_action": "Replace draft"
 }

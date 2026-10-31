@@ -102,7 +102,7 @@ class _AttachmentTile extends StatelessWidget {
         if (onRemove != null)
           CupertinoButton(
             padding: EdgeInsets.zero,
-            minimumSize: const Size(32, 44),
+            minimumSize: const Size(44, 44),
             onPressed: onRemove,
             child: Icon(
               CupertinoIcons.xmark_circle_fill,

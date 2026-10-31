@@ -21,7 +21,7 @@ class _SearchSourcesState extends State<SearchSources> {
     children: [
       CupertinoButton(
         padding: const EdgeInsets.symmetric(vertical: 6),
-        minimumSize: const Size(0, 34),
+        minimumSize: const Size(44, 44),
         onPressed: () => setState(() => _expanded = !_expanded),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -47,7 +47,7 @@ class _SearchSourcesState extends State<SearchSources> {
         for (var i = 0; i < widget.sources.length; i++)
           CupertinoButton(
             padding: const EdgeInsets.symmetric(vertical: 5),
-            minimumSize: const Size(0, 40),
+            minimumSize: const Size(44, 44),
             onPressed: () => widget.onOpen(widget.sources[i].url),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

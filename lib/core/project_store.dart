@@ -4,6 +4,8 @@ import 'package:sqflite/sqflite.dart';
 
 import 'package:mulit_ai_flutter/chat/chat_context.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/core/chat_draft.dart';
+import 'package:mulit_ai_flutter/core/attachment_store.dart';
 import 'package:mulit_ai_flutter/core/project.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 
@@ -101,6 +103,12 @@ extension ProjectStore on ChatStore {
   }
 
   Future<void> deleteProject(int id) async {
+    ChatDraft draft;
+    try {
+      draft = ChatDraft.decode(await setting(chatDraftKey(projectId: id)));
+    } catch (_) {
+      draft = const ChatDraft();
+    }
     await (await db).transaction((txn) async {
       final topics = await txn.query(
         'topics',
@@ -130,7 +138,13 @@ extension ProjectStore on ChatStore {
         whereArgs: [id],
       );
       await txn.delete('projects', where: 'id = ?', whereArgs: [id]);
+      await txn.delete(
+        'settings',
+        where: 'key = ?',
+        whereArgs: [chatDraftKey(projectId: id)],
+      );
     });
+    await AttachmentStore.instance.delete(draft.attachments);
   }
 
   Future<void> moveTopic(int topicId, int? projectId) async {

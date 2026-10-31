@@ -500,7 +500,8 @@ class _MessageSettingsScreenState extends State<MessageSettingsScreen> {
             ),
             IosSection(
               title: T('i18n.message_info'),
-              footer: T('i18n.your_messages_show_the_model'),
+              footer:
+                  '${T('i18n.message_info_modes_detail')}\n${T('i18n.your_messages_show_the_model')}',
               children: [
                 IosRow(
                   title: T('i18n.simple_mode'),
@@ -511,18 +512,17 @@ class _MessageSettingsScreenState extends State<MessageSettingsScreen> {
                     onChanged: AppPreferences.instance.setSimpleMessageInfo,
                   ),
                 ),
-                if (!AppPreferences.instance.simpleMessageInfo)
-                  for (final field in ChatInfoField.values)
-                    IosRow(
-                      title: T(field.label),
-                      chevron: false,
-                      trailing: CupertinoSwitch(
-                        value: AppPreferences.instance.showChatInfo(field),
-                        activeTrackColor: IosColors.blue,
-                        onChanged: (value) => AppPreferences.instance
-                            .setChatInfoVisible(field, value),
-                      ),
+                for (final field in ChatInfoField.values)
+                  IosRow(
+                    title: T(field.label),
+                    chevron: false,
+                    trailing: CupertinoSwitch(
+                      value: AppPreferences.instance.showChatInfo(field),
+                      activeTrackColor: IosColors.blue,
+                      onChanged: (value) => AppPreferences.instance
+                          .setChatInfoVisible(field, value),
                     ),
+                  ),
               ],
             ),
           ],

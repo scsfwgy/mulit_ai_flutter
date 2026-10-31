@@ -809,5 +809,13 @@
   "i18n.agent_progress_collapse": "收起過程",
   "i18n.agent_elapsed": "已用時 {0}",
   "i18n.agent_found_sources": "找到 {0} 筆資料",
-  "i18n.agent_extracted_chars": "已擷取 {0} 字"
+  "i18n.agent_extracted_chars": "已擷取 {0} 字",
+  "i18n.message_info_modes_detail": "精簡模式預設隱藏次要統計，保留複製與朗讀。下方各項都可重新開啟或關閉，兩種模式分別記住你的選擇。",
+  "i18n.return_latest": "回到最新訊息",
+  "i18n.stop_generation": "停止產生",
+  "i18n.draft_save_failed": "草稿暫時無法儲存，請稍後重試後再切換對話。",
+  "i18n.draft_load_failed": "草稿暫時無法載入，請重新開啟此對話。",
+  "i18n.draft_replace_title": "取代新對話草稿？",
+  "i18n.draft_replace_detail": "目標專案已有未傳送的草稿。要用目前輸入取代它嗎？",
+  "i18n.draft_replace_action": "取代草稿"
 }

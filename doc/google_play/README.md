@@ -2,12 +2,27 @@
 
 包名：`com.maxhall.ailink`。手机与 Wear OS 使用相同包名及上传签名；Wear 为单独的 AAB，`versionCode = 1000000 + Git 提交次数`，手机使用 `git rev-list --count HEAD`。当前手表首次配置依赖手机，因此 manifest 标为 non-standalone。
 
+## 2026-10-31 Wear OS 拒绝修复
+
+拒绝截图对应官方 [Wear OS 视觉体验要求](https://developer.android.com/docs/quality-guidelines/wear-app-quality?hl=zh-cn#visual-experience) 的 WO-V13 和 WO-V15：所有应用页面使用黑色背景；启动时在黑色背景上显示与启动器一致的 48×48dp 图标。
+
+- Wear OS 固定纯黑背景，不再跟随系统进入浅色模式。聊天、设置、首次引导、录音两种模式及配置提示弹窗同步采用黑底，文字使用深色界面的对比度配色。
+- 使用 [AndroidX SplashScreen 官方实现](https://developer.android.com/training/wearables/apps/splash-screen)，入口 Activity 在 `super.onCreate()` 之前安装；启动主题指定纯黑底。居中 48dp 图标是启动器前景按圆形遮罩生成的同一图案，不把自适应图标 XML 交给启动画面，避免系统把图标裁掉后判定缺少图标。
+- `WatchVisualQualityInstrumentation` 在空白 Debug QA 模拟器上验证启动主题、48dp 尺寸、聊天/设置/引导背景及录音模式与三种松手状态；用 `-PwatchTestRunner=com.maxhall.ailink.wear.WatchVisualQualityInstrumentation` 构建测试 APK，并分别在系统日间/夜间模式执行。
+- 2026-10-31 Play API 查询到旧手表包仍分配在 `wear:production`（1000094）、`wear:internal`（1000101）、`wear:手表内部测试V3`（1000082）。查询用编辑已丢弃，没有上传、修改轨道或提交审核；API 的 `completed` 是轨道发布配置，不代表政策审核已经通过。
+
+重新提交时先在 Console 核对拒绝详情关联的版本和轨道。将修复后的正式签名 Wear AAB 加入所有受影响的手表轨道，并确认旧包在“不包含”中；若不合规发布仍是草稿则舍弃草稿。同步更新 Wear OS 商品截图，避免继续使用历史浅色截图。最后在“发布概览”检查实际待审核变更，再提交；本地构建成功不等于 Google 已接受修复。
+
+可用于审核备注的英文说明：
+
+> Fixed WO-V13 and WO-V15. All app-owned Wear OS screen backgrounds now use pure black in both system day and night modes, including chat, settings, onboarding and recording. The launch screen displays the same launcher app icon at 48×48dp, centered on a black background, using AndroidX SplashScreen.
+
 ## 已准备
 
 - `common/app_icon_512.png`：商店图标 512×512 PNG。
 - `common/feature_graphic_1024x500.png`：1024×500 特色大图。
 - `zh-CN/LISTING.md`、`en-US/LISTING.md`：商店文案草稿；上线前按实际功能复核。
-- `wear/`：Wear OS 480×480 模拟器真实界面截图（中英、明暗及设置页），作为审核素材候选；最终上架前仍需核对签名版和实际配置。
+- `wear/`：历史 Wear OS 480×480 模拟器截图；其中浅色截图对应本次拒绝前的界面，重新提交时应换成修复后的黑底真实截图，并核对签名版和实际配置。
 - `zh-CN/phone/`、`en-US/phone/`：各 4 张 1080×1920 的真实手机模拟器截图，已转换为无透明通道的 JPEG。截图来自隔离的 Pixel 10 Pro 模拟器和本地测试签名包，作为商店详情草稿；发布前仍需用最终上传签名版本复核应用界面，并补充真实聊天画面。
 - `../../release.sh`：先运行分析、测试；默认构建并归档正式签名的手机与 Wear OS APK/AAB，`--test` 只构建本地测试签名的两端 APK。`--push-website` 将正式 APK 上传 OSS 并更新 AI Link 官网，`--push-android` 再通过 Google Play API 上传两个 AAB，默认进入内部测试轨道。每次归档记录 SHA-256、签名证书、版本号与官网/Play 状态；APK/AAB 分别保存 R8 映射和 Dart 符号。
 - `../../android/key.properties.example` 和 `../../android/key.test.properties.example`：两套签名配置模板。测试密钥 `localConfig/ai-link-test.jks` 与实际配置 `android/key.test.properties` 已入库，便于共同测试；正式密钥 `localConfig/ai-link-upload.jks` 和实际配置 `android/key.properties` 仅在本机，始终被 Git 忽略。同一套构建中的手机与手表必须使用同一密钥。
@@ -78,7 +93,7 @@ https_proxy=http://127.0.0.1:7897 http_proxy=http://127.0.0.1:7897 \
 5. Play Console 应用已建立；仍需配置 Wear OS form factor，先上传到测试轨道，检查预发布报告、设备兼容性、权限说明、配对和断连流程，再提交审核。不要把本地 AAB 构建成功或商品素材保存当作已上架。
 6. 核对 Android 目标 API：截至 2026-09-29，新手机应用需 API 36+，Wear OS 需 API 35+。重新发布时按当日官方要求复核。
 7. 更换包名后，旧 `com.example.mulit_ai_flutter` 的本地 SQLite 与安全存储不会自动迁移到新包；旧应用可并存。对已有测试数据须先制定迁移或导出方案，不能直接卸载旧包。
-8. 真实手机与至少一款 Wear OS 设备验证安装引导、两端签名一致、语音权限、电话/手表网络切换、离线记录同步、手机 App 语言同步与手表系统日夜模式。iOS 工程存在，但本轮未构建验证。
+8. 真实手机与至少一款 Wear OS 设备验证安装引导、两端签名一致、语音权限、电话/手表网络切换、离线记录同步、手机 App 语言同步，以及 Wear OS 在系统日间/夜间模式下始终保持纯黑背景。iOS 工程存在，但本轮未构建验证。
 
 ## 官方依据
 

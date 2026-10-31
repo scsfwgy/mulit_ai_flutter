@@ -12,6 +12,7 @@ import 'package:mulit_ai_flutter/core/app_platform.dart';
 import 'package:mulit_ai_flutter/core/project.dart';
 import 'package:mulit_ai_flutter/core/database_migrations.dart';
 import 'package:mulit_ai_flutter/core/chat_attachment.dart';
+import 'package:mulit_ai_flutter/core/chat_draft.dart';
 import 'package:mulit_ai_flutter/core/attachment_store.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
@@ -1583,6 +1584,7 @@ class ChatStore {
     String content, {
     List<ChatAttachment> attachments = const [],
     int? projectId,
+    String? draftKey,
   }) async {
     final title = initialTopicTitle(
       content.isEmpty ? attachments.map((a) => a.name).join(', ') : content,
@@ -1607,6 +1609,13 @@ class ChatStore {
         'model_id': model,
         'attachments': ChatAttachment.encode(attachments),
       });
+      if (draftKey != null) {
+        await transaction.delete(
+          'settings',
+          where: 'key = ?',
+          whereArgs: [draftKey],
+        );
+      }
       return topicId;
     });
   }
@@ -1769,9 +1778,16 @@ class ChatStore {
   }
 
   Future<void> deleteTopic(int id) async {
-    final attachments = (await messages(id))
-        .expand((m) => m.attachments)
-        .toList();
+    ChatDraft draft;
+    try {
+      draft = ChatDraft.decode(await setting(chatDraftKey(topicId: id)));
+    } catch (_) {
+      draft = const ChatDraft();
+    }
+    final attachments = [
+      ...draft.attachments,
+      ...(await messages(id)).expand((m) => m.attachments),
+    ];
     final database = await db;
     final linked = <String, String>{};
     for (final row in await database.query(
@@ -1790,6 +1806,11 @@ class ChatStore {
     }
     await database.transaction((txn) async {
       await txn.delete('topics', where: 'id = ?', whereArgs: [id]);
+      await txn.delete(
+        'settings',
+        where: 'key = ?',
+        whereArgs: [chatDraftKey(topicId: id)],
+      );
       for (final key in linked.keys) {
         await txn.delete('settings', where: 'key = ?', whereArgs: [key]);
         await txn.delete(
@@ -1818,6 +1839,22 @@ class ChatStore {
         .expand((row) => ChatAttachment.decode(row['attachments'] as String?))
         .map((a) => a.fileName)
         .toSet();
+    for (final row in await (await db).query(
+      'settings',
+      columns: ['value'],
+      where: 'key GLOB ?',
+      whereArgs: ['chat_draft:*'],
+    )) {
+      try {
+        retained.addAll(
+          ChatDraft.decode(row['value'] as String).attachments
+              .map((a) => a.fileName),
+        );
+      } catch (_) {
+        // Keep files when a damaged draft cannot safely identify its references.
+        return;
+      }
+    }
     await AttachmentStore.instance.removeOrphans(retained, before);
   }
 
@@ -1861,6 +1898,7 @@ class ChatStore {
     String role,
     String content, {
     String? modelId,
+    String? draftKey,
     ProviderConfig? provider,
     int? firstTokenMs,
     int? totalMs,
@@ -1901,6 +1939,13 @@ class ChatStore {
         where: 'id = ?',
         whereArgs: [topicId],
       );
+      if (draftKey != null) {
+        await transaction.delete(
+          'settings',
+          where: 'key = ?',
+          whereArgs: [draftKey],
+        );
+      }
       return id;
     });
   }

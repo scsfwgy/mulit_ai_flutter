@@ -25,6 +25,8 @@ import 'package:mulit_ai_flutter/chat/chat_model_selector.dart';
 import 'package:mulit_ai_flutter/chat/chat_model_title.dart';
 import 'package:mulit_ai_flutter/chat/chat_more_menu.dart';
 import 'package:mulit_ai_flutter/chat/chat_scroll.dart';
+import 'package:mulit_ai_flutter/chat/chat_draft_store.dart';
+import 'package:mulit_ai_flutter/core/chat_draft.dart';
 import 'package:mulit_ai_flutter/chat/chat_streaming_reply.dart';
 import 'package:mulit_ai_flutter/chat/desktop_chat.dart';
 import 'package:mulit_ai_flutter/chat/incoming_share.dart';
@@ -98,6 +100,121 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
 
   final _input = TextEditingController();
   List<ChatAttachment> _attachments = [];
+  final _drafts = ChatDraftStore();
+  Timer? _draftTimer;
+  bool _draftReady = false;
+  bool _switchingDraft = false;
+  bool _draftSaveFailed = false;
+  String get _draftKey =>
+      chatDraftKey(topicId: _topic?.id, projectId: _draftProjectId);
+  ChatDraft get _composition =>
+      ChatDraft(text: _input.text, attachments: List.of(_attachments));
+
+  void _draftChanged() {
+    if (!_draftReady || _switchingDraft) return;
+    _draftTimer?.cancel();
+    _draftTimer = Timer(
+      const Duration(milliseconds: 350),
+      () => unawaited(_saveDraft()),
+    );
+  }
+
+  Future<bool> _saveDraft() async {
+    _draftTimer?.cancel();
+    if (!_draftReady) return true;
+    try {
+      await _drafts.save(_draftKey, _composition);
+      _draftSaveFailed = false;
+      return true;
+    } catch (_) {
+      if (mounted && !_draftSaveFailed) _notify(T('i18n.draft_save_failed'));
+      _draftSaveFailed = true;
+      return false;
+    }
+  }
+
+  Future<void> _restoreDraft() async {
+    _draftTimer?.cancel();
+    _draftReady = false;
+    final key = _draftKey;
+    // Never show another conversation's input while loading this draft.
+    _input.clear();
+    _attachments = [];
+    final draft = await _drafts.read(key);
+    if (!mounted || key != _draftKey) return;
+    setState(() {
+      _input.value = TextEditingValue(
+        text: draft.text,
+        selection: TextSelection.collapsed(offset: draft.text.length),
+      );
+      _attachments = List.of(draft.attachments);
+      _draftReady = true;
+    });
+  }
+
+  Future<bool> _draftToProject(
+    ProviderConfig? provider,
+    String? model,
+    int? projectId,
+  ) async {
+    if (_switchingDraft) return false;
+    setState(() => _switchingDraft = true);
+    try {
+      if (!await _saveDraft() || !mounted) return false;
+      final sourceKey = _draftKey;
+      final targetKey = chatDraftKey(projectId: projectId);
+      final source = _composition;
+      final target = await _drafts.read(targetKey);
+      if (!source.isEmpty && sourceKey != targetKey && !target.isEmpty) {
+        if (!mounted) return false;
+        final confirmed = await showCupertinoDialog<bool>(
+          context: context,
+          builder: (context) => CupertinoAlertDialog(
+            title: Text(T('i18n.draft_replace_title')),
+            content: Text(T('i18n.draft_replace_detail')),
+            actions: [
+              CupertinoDialogAction(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(T('i18n.cancel')),
+              ),
+              CupertinoDialogAction(
+                isDestructiveAction: true,
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(T('i18n.draft_replace_action')),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true) return false;
+      }
+      if (!source.isEmpty && sourceKey != targetKey) {
+        await _drafts.save(targetKey, source, moveFrom: sourceKey);
+        final kept = source.attachments.map((a) => a.fileName).toSet();
+        try {
+          await AttachmentStore.instance.delete(
+            target.attachments
+                .where((a) => !kept.contains(a.fileName))
+                .toList(),
+          );
+        } catch (_) {}
+      }
+      if (!mounted) return false;
+      _beginDraft(provider, model, projectId);
+      await _restoreDraft();
+      return true;
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _error = T('i18n.draft_load_failed');
+          _errorAction = ChatErrorAction.none;
+        });
+      }
+      return false;
+    } finally {
+      if (mounted) setState(() => _switchingDraft = false);
+    }
+  }
+
   bool _pickingAttachment = false;
   Timer? _shareTimer;
   bool _checkingShare = false;
@@ -195,6 +312,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    _input.addListener(_draftChanged);
     _agentUpdates = AgentRunner.updates.listen((task) {
       if (!mounted ||
           task.topicId != _topic?.id ||
@@ -289,7 +407,12 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       }
       _deferredShares.add(share.id);
       final revision = _chatLocationRevision;
-      if (_input.text.isNotEmpty || _attachments.isNotEmpty) {
+      final shareTarget = chatDraftKey();
+      final targetDraft = await _drafts.read(shareTarget);
+      if (!mounted) return;
+      if (_input.text.isNotEmpty ||
+          _attachments.isNotEmpty ||
+          !targetDraft.isEmpty) {
         final accept = await showCupertinoDialog<bool>(
           context: context,
           builder: (context) => CupertinoAlertDialog(
@@ -354,11 +477,21 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           .firstOrNull;
       final provider = previous ?? _providers.firstOrNull;
       final model = previous == null ? provider?.model : _currentModel;
-      await _discardDraftAttachments();
-      if (!mounted) {
+      if (!await _saveDraft()) {
         await AttachmentStore.instance.delete(imported);
         return;
       }
+      try {
+        await _drafts.save(shareTarget, ChatDraft(attachments: imported));
+      } catch (_) {
+        await AttachmentStore.instance.delete(imported);
+        rethrow;
+      }
+      try {
+        await AttachmentStore.instance.delete(targetDraft.attachments);
+      } catch (_) {}
+      if (!mounted) return;
+      _draftReady = false;
       _beginDraft(provider, model, null);
       _input.clear();
       setState(() {
@@ -366,6 +499,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         _topicProjectFilter = const ProjectSelection(null);
         _voiceMode = false;
       });
+      _draftReady = true;
       // Mark before ack so a transient native cleanup failure cannot duplicate a draft.
       _receivedShares.add(share.id);
       await share.acknowledge();
@@ -412,11 +546,9 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     _shareTimer?.cancel();
     if (supportsIncomingShare) IncomingShare.channel.setMethodCallHandler(null);
     _revealTimer?.cancel();
-    if (!_starting) {
-      unawaited(
-        AttachmentStore.instance.delete(_attachments).catchError((_) {}),
-      );
-    }
+    _input.removeListener(_draftChanged);
+    _draftTimer?.cancel();
+    unawaited(_saveDraft());
     if (isDesktopApp) _desktopMenu.setMethodCallHandler(null);
     _desktopRevision.dispose();
     _watchUpdates.setMethodCallHandler(null);
@@ -474,6 +606,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       unawaited(ApplePurchases.instance.refresh());
       unawaited(_syncWatchConfiguration());
     } else {
+      unawaited(_saveDraft());
       final wasHolding = _voicePointerDown;
       _voicePointerDown = false;
       _voicePointer = null;
@@ -564,7 +697,13 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
 
   Future<void> _load() async {
     final initialLoad = _loading;
+    final previousDraftKey = _draftKey;
     try {
+      final draftReset = await _drafts.refreshEpoch();
+      if (draftReset) {
+        _draftTimer?.cancel();
+        _draftReady = false;
+      }
       if (initialLoad) {
         try {
           await ChatStore.instance.removeOrphanAttachments(DateTime.now());
@@ -666,6 +805,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         _messages = messages;
         _loading = false;
       });
+      if (!_draftReady || previousDraftKey != _draftKey) await _restoreDraft();
       await _refreshFeatureHints();
       _chatScroll.scrollToLatest(force: initialLoad);
     } catch (error) {
@@ -728,6 +868,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   }
 
   Future<void> _openSettings() async {
+    if (!await _saveDraft() || !mounted) return;
     final target = await _pushRoute<Object>(
       appPageRoute(builder: (_) => SettingsScreen(canClearData: _canClearData)),
       resetToChat: true,
@@ -786,6 +927,9 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       !AgentRunner.isBusy &&
       !_checkingShare &&
       !_pickingAttachment &&
+      !_switchingDraft &&
+      !_drafts.isBusy &&
+      _draftTimer?.isActive != true &&
       !_sending &&
       !_watchProcessing &&
       !_starting &&
@@ -847,12 +991,14 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
             : _currentModel ?? provider?.model;
         // Enter the selected workspace without moving the old conversation or
         // discarding text/files composed for the next message.
-        _beginDraft(provider, model, result.id);
+        if (!await _draftToProject(provider, model, result.id)) return null;
       } else if (_topic == null && _draftProjectId != result.id) {
-        setState(() {
-          _chatLocationRevision++;
-          _draftProjectId = result.id;
-        });
+        final provider = _providers
+            .where((p) => p.id == _currentProviderId)
+            .firstOrNull;
+        if (!await _draftToProject(provider, _currentModel, result.id)) {
+          return null;
+        }
       }
       setState(() => _topicProjectFilter = result);
     }
@@ -885,7 +1031,10 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       if (_topic case final topic?) {
         await ChatStore.instance.moveTopic(topic.id, result.id);
       } else {
-        setState(() => _draftProjectId = result.id);
+        final provider = _providers
+            .where((p) => p.id == _currentProviderId)
+            .firstOrNull;
+        if (!await _draftToProject(provider, _currentModel, result.id)) return;
       }
       setState(() => _topicProjectFilter = result);
       await _load();
@@ -909,30 +1058,45 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   }
 
   Future<void> _newTopic({int? projectId, bool explicitProject = false}) async {
-    final nextProjectId = explicitProject ? projectId : _topicProjectFilter.id;
-    if (_pickingAttachment || _starting && !_sending) return;
-    (_agentRunner ?? AgentRunner.active)?.pause();
-    _showDesktopChat();
-    if (_providers.isEmpty) {
-      await _openProviders();
-      if (!mounted || _providers.isEmpty) return;
+    if (_switchingDraft || _pickingAttachment || _starting && !_sending) return;
+    setState(() => _switchingDraft = true);
+    try {
+      final nextProjectId = explicitProject
+          ? projectId
+          : _topicProjectFilter.id;
+      (_agentRunner ?? AgentRunner.active)?.pause();
+      _showDesktopChat();
+      if (_providers.isEmpty) {
+        await _openProviders();
+        if (!mounted || _providers.isEmpty) return;
+      }
+      final previous = _providers
+          .where((p) => p.id == _currentProviderId)
+          .firstOrNull;
+      final provider = previous ?? _providers.first;
+      final model = previous == null
+          ? provider.model
+          : _currentModel ?? provider.model;
+      if (!await _saveDraft() || !mounted) return;
+      _beginDraft(provider, model, nextProjectId);
+      await _restoreDraft();
+      await ChatStore.instance.saveLastChatSelection(
+        ChatSelection(provider.id, model),
+      );
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _error = T('i18n.draft_load_failed');
+          _errorAction = ChatErrorAction.none;
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _switchingDraft = false);
     }
-    final previous = _providers
-        .where((item) => item.id == _currentProviderId)
-        .firstOrNull;
-    final provider = previous ?? _providers.first;
-    final model = previous == null
-        ? provider.model
-        : _currentModel ?? provider.model;
-    await _discardDraftAttachments();
-    if (!mounted) return;
-    _beginDraft(provider, model, nextProjectId);
-    await ChatStore.instance.saveLastChatSelection(
-      ChatSelection(provider.id, model),
-    );
   }
 
   void _beginDraft(ProviderConfig? provider, String? model, int? projectId) {
+    _chatScroll.scrollToLatest(force: true);
     _scheduleMemoryUpdate(_topic, _messages);
     setState(() {
       _chatLocationRevision++;
@@ -954,6 +1118,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   }
 
   Future<void> _selectTopic(int id, {int? messageId}) async {
+    if (_switchingDraft) return;
     if (messageId != null && (_sending || _starting || _pickingAttachment)) {
       _notify(T('i18n.stop_the_current_response_before'));
       return;
@@ -971,43 +1136,56 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     if (id != (AgentRunner.active?.currentTask?.topicId ?? _sendingTopicId)) {
       (_agentRunner ?? AgentRunner.active)?.pause();
     }
-    final messages = await ChatStore.instance.messages(id);
-    final agentTasks = await AgentStore().forTopic(id);
-    if (messageId != null &&
-        messages.every((message) => message.id != messageId)) {
-      if (mounted) _notify(T('i18n.library_missing'));
-      return;
-    }
-    if (_topic != null && _topic!.id != id) {
-      _scheduleMemoryUpdate(_topic, _messages);
-    }
-    await _discardDraftAttachments();
-    if (!mounted) return;
-    setState(() {
-      _chatLocationRevision++;
-      _topic = topic;
-      _draftProjectId = null;
-      _draftProviderId = null;
-      _draftModel = null;
-      _draftMemoryOverride = null;
-      _messages = messages;
-      _agentTasks = agentTasks;
-      _error = null;
-      _errorAction = ChatErrorAction.none;
-      _reply.value = '';
-      _revealMessageId = messageId;
-    });
-    await _refreshFeatureHints();
-    if (topic.providerId case final providerId?) {
-      await ChatStore.instance.saveLastChatSelection(
-        ChatSelection(providerId, topic.model),
-      );
-    }
-    if (messageId == null) {
-      _chatScroll.scrollToLatest(force: true);
-    } else {
-      _chatScroll.stopFollowing();
-      await _revealMessage(messageId);
+    setState(() => _switchingDraft = true);
+    try {
+      if (!await _saveDraft() || !mounted) return;
+      final messages = await ChatStore.instance.messages(id);
+      final agentTasks = await AgentStore().forTopic(id);
+      if (messageId != null &&
+          messages.every((message) => message.id != messageId)) {
+        if (mounted) _notify(T('i18n.library_missing'));
+        return;
+      }
+      if (_topic != null && _topic!.id != id) {
+        _scheduleMemoryUpdate(_topic, _messages);
+      }
+      if (!mounted) return;
+      setState(() {
+        _chatLocationRevision++;
+        _topic = topic;
+        _draftProjectId = null;
+        _draftProviderId = null;
+        _draftModel = null;
+        _draftMemoryOverride = null;
+        _messages = messages;
+        _agentTasks = agentTasks;
+        _error = null;
+        _errorAction = ChatErrorAction.none;
+        _reply.value = '';
+        _revealMessageId = messageId;
+      });
+      await _restoreDraft();
+      await _refreshFeatureHints();
+      if (topic.providerId case final providerId?) {
+        await ChatStore.instance.saveLastChatSelection(
+          ChatSelection(providerId, topic.model),
+        );
+      }
+      if (messageId == null) {
+        _chatScroll.scrollToLatest(force: true);
+      } else {
+        _chatScroll.stopFollowing();
+        await _revealMessage(messageId);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _error = T('i18n.draft_load_failed');
+          _errorAction = ChatErrorAction.none;
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _switchingDraft = false);
     }
   }
 
@@ -1555,18 +1733,9 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _discardDraftAttachments() async {
-    final pending = _attachments;
-    _attachments = [];
-    try {
-      await AttachmentStore.instance.delete(pending);
-    } catch (_) {
-      // Unreferenced files are retried by startup cleanup.
-    }
-  }
-
   Future<void> _removeAttachment(ChatAttachment attachment) async {
     setState(() => _attachments.remove(attachment));
+    if (!await _saveDraft()) return;
     try {
       await AttachmentStore.instance.delete([attachment]);
     } catch (_) {
@@ -1600,6 +1769,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         _voiceMode = false;
       });
       imported.clear();
+      await _saveDraft();
     } finally {
       await AttachmentStore.instance.delete(imported);
     }
@@ -1624,6 +1794,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   }
 
   bool get _attachmentBusy =>
+      !_draftReady ||
+      _switchingDraft ||
       _pickingAttachment ||
       _sending ||
       _starting ||
@@ -1738,7 +1910,9 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
 
   Future<void> _send() async {
     final content = _input.text.trim();
-    if ((content.isEmpty && _attachments.isEmpty) ||
+    if (!_draftReady ||
+        _switchingDraft ||
+        (content.isEmpty && _attachments.isEmpty) ||
         _pickingAttachment ||
         _starting ||
         _sending ||
@@ -1832,64 +2006,82 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           previous.protocol == provider.protocol &&
           previous.model == model &&
           previous.endpoint == provider.baseUrl) {
-        _input.clear();
+        if (!await _saveDraft()) return;
+        _draftReady = false;
+        try {
+          await _drafts.save(_draftKey, const ChatDraft());
+          _input.clear();
+        } finally {
+          _draftReady = true;
+        }
         await _requestReply(topic, provider, key, systemPrompt, history);
         return;
       }
     }
+    if (!await _saveDraft()) return;
+    final sentDraftKey = _draftKey;
+    _draftReady = false;
     ChatTopic topic;
-    final attachments = List<ChatAttachment>.of(_attachments);
-    AttachmentStore.validateSelection(attachments);
-    if (_topic == null) {
-      final id = await ChatStore.instance.createTopicWithMessage(
-        provider,
-        model,
-        content,
-        attachments: attachments,
-        projectId: initialProjectId,
-      );
-      _attachments = [];
-      final topics = await ChatStore.instance.topics();
-      topic = topics.firstWhere((item) => item.id == id);
-      final draftMemory = _draftMemoryOverride;
-      if (draftMemory != null) {
-        await ChatStore.instance.setMemoryTopicOverride(id, draftMemory);
-      }
-      if (!mounted) return;
-      setState(() {
-        _topics = topics;
-        _topic = topic;
-        _draftProviderId = null;
-        _draftModel = null;
-        _draftMemoryOverride = null;
-      });
-    } else {
-      topic = _topic!;
-      final first = _messages.isEmpty;
-      await ChatStore.instance.addMessage(
-        topic.id,
-        'user',
-        content,
-        modelId: model,
-        provider: provider,
-        attachments: attachments,
-      );
-      _attachments = [];
-      if (first) {
-        await ChatStore.instance.updateTopic(
-          topic.id,
-          title: initialTopicTitle(
-            content.isEmpty
-                ? attachments.map((a) => a.name).join(', ')
-                : content,
-          ),
+    try {
+      final attachments = List<ChatAttachment>.of(_attachments);
+      AttachmentStore.validateSelection(attachments);
+      if (_topic == null) {
+        final id = await ChatStore.instance.createTopicWithMessage(
+          provider,
+          model,
+          content,
+          attachments: attachments,
+          projectId: initialProjectId,
+          draftKey: sentDraftKey,
         );
+        _attachments = [];
+        if (mounted) _input.clear();
+        final topics = await ChatStore.instance.topics();
+        topic = topics.firstWhere((item) => item.id == id);
+        final draftMemory = _draftMemoryOverride;
+        if (draftMemory != null) {
+          await ChatStore.instance.setMemoryTopicOverride(id, draftMemory);
+        }
+        if (!mounted) return;
+        setState(() {
+          _topics = topics;
+          _topic = topic;
+          _draftProviderId = null;
+          _draftModel = null;
+          _draftMemoryOverride = null;
+        });
+      } else {
+        topic = _topic!;
+        final first = _messages.isEmpty;
+        await ChatStore.instance.addMessage(
+          topic.id,
+          'user',
+          content,
+          draftKey: sentDraftKey,
+          modelId: model,
+          provider: provider,
+          attachments: attachments,
+        );
+        _attachments = [];
+        if (mounted) _input.clear();
+        if (first) {
+          await ChatStore.instance.updateTopic(
+            topic.id,
+            title: initialTopicTitle(
+              content.isEmpty
+                  ? attachments.map((a) => a.name).join(', ')
+                  : content,
+            ),
+          );
+        }
       }
+      await ChatStore.instance.saveLastChatSelection(
+        ChatSelection(provider.id, model),
+      );
+      if (mounted) _input.clear();
+    } finally {
+      _draftReady = true;
     }
-    await ChatStore.instance.saveLastChatSelection(
-      ChatSelection(provider.id, model),
-    );
-    _input.clear();
     final history = await ChatStore.instance.messages(topic.id);
     await _requestReply(topic, provider, key, systemPrompt, history);
   }
@@ -2527,14 +2719,45 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                         child: Listener(
                           behavior: HitTestBehavior.opaque,
                           onPointerDown: (_) => _inputFocus.unfocus(),
-                          child: _topic == null && !_hasDraft
-                              ? ChatWelcome(
-                                  hasProviders: _providers.isNotEmpty,
-                                  onPrimary: _providers.isEmpty
-                                      ? _openProviders
-                                      : _newTopic,
-                                )
-                              : _chatList(),
+                          child: Stack(
+                            children: [
+                              Positioned.fill(
+                                child: _topic == null && !_hasDraft
+                                    ? ChatWelcome(
+                                        hasProviders: _providers.isNotEmpty,
+                                        onPrimary: _providers.isEmpty
+                                            ? _openProviders
+                                            : _newTopic,
+                                      )
+                                    : _chatList(),
+                              ),
+                              Positioned(
+                                right: 16,
+                                bottom: 12,
+                                child: ValueListenableBuilder<bool>(
+                                  valueListenable: _chatScroll.showLatest,
+                                  builder: (_, visible, _) => !visible
+                                      ? const SizedBox.shrink()
+                                      : CupertinoButton(
+                                          key: const Key('chat-return-latest'),
+                                          minimumSize: const Size(44, 44),
+                                          padding: const EdgeInsets.all(10),
+                                          color: IosColors.surface,
+                                          onPressed: () => _chatScroll
+                                              .scrollToLatest(force: true),
+                                          child: Icon(
+                                            CupertinoIcons.arrow_down,
+                                            color: IosColors.blue,
+                                            size: 20,
+                                            semanticLabel: T(
+                                              'i18n.return_latest',
+                                            ),
+                                          ),
+                                        ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                       if (_error != null)
@@ -2565,7 +2788,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                         transcribing: _transcribing,
                         voicePointerDown: _voicePointerDown,
                         sending: _sending || _agentRunningHere,
-                        starting: _starting,
+                        inputEnabled: _draftReady && !_switchingDraft,
+                        starting: _starting || _switchingDraft || !_draftReady,
                         recording: _recording,
                         hasProviders: _providers.isNotEmpty,
                         onToggleVoiceMode: _toggleVoiceMode,

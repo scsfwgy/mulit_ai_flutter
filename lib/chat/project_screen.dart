@@ -4,7 +4,10 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart' as files;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/chat/assistant_markdown.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:mulit_ai_flutter/core/project.dart';
 import 'package:mulit_ai_flutter/core/project_store.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
@@ -294,6 +297,14 @@ class _ProjectScreenState extends State<ProjectScreen> {
             ),
             title: doc.name,
             actions: [
+              Semantics(
+                label: T('i18n.copy_message'),
+                button: true,
+                child: IosNavButton(
+                  icon: CupertinoIcons.doc_on_doc,
+                  onPressed: () => Clipboard.setData(ClipboardData(text: text)),
+                ),
+              ),
               CupertinoButton(
                 onPressed: () => Navigator.pop(context, true),
                 child: Text(T('i18n.delete')),
@@ -302,10 +313,40 @@ class _ProjectScreenState extends State<ProjectScreen> {
           ),
           body: SingleChildScrollView(
             padding: const EdgeInsets.all(16),
-            child: SelectableText(
-              text,
-              style: TextStyle(color: IosColors.label),
-            ),
+            child:
+                doc.name.toLowerCase().endsWith('.md') ||
+                    doc.name.toLowerCase().endsWith('.markdown')
+                ? AssistantMarkdown(
+                    loadImages: false,
+                    data: text,
+                    onTapLink: (url) async {
+                      final uri = Uri.tryParse(url ?? '');
+                      if (uri == null ||
+                          !{'http', 'https'}.contains(uri.scheme) ||
+                          uri.host.isEmpty) {
+                        return;
+                      }
+                      try {
+                        if (await launchUrl(
+                          uri,
+                          mode: LaunchMode.externalApplication,
+                        )) {
+                          return;
+                        }
+                      } catch (_) {}
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(T('i18n.unable_to_open_this_link')),
+                          ),
+                        );
+                      }
+                    },
+                  )
+                : SelectableText(
+                    text,
+                    style: TextStyle(color: IosColors.label),
+                  ),
           ),
         ),
       ),

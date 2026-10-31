@@ -19,7 +19,7 @@ class _KnowledgeSourcesState extends State<KnowledgeSources> {
     children: [
       CupertinoButton(
         padding: const EdgeInsets.symmetric(vertical: 5),
-        minimumSize: const Size(0, 34),
+        minimumSize: const Size(44, 44),
         onPressed: () => setState(() => _expanded = !_expanded),
         child: Text(
           F('i18n.knowledge_sources_count', [widget.sources.length]),

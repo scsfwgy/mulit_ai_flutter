@@ -96,6 +96,7 @@ kotlin {
 }
 
 dependencies {
+    implementation("androidx.core:core-splashscreen:1.2.0")
     implementation("com.google.android.gms:play-services-wearable:20.0.1")
     implementation("androidx.wear:wear-remote-interactions:1.2.0")
     implementation("io.noties.markwon:core:4.6.2")

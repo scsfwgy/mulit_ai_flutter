@@ -1,4 +1,4 @@
 {
-  "zh-CN": "首次测试：支持多模型聊天、本地话题和 Wear OS 语音问答。",
-  "en-US": "Initial test release: multi-model chat, local conversations, and Wear OS voice Q&A."
+  "zh-CN": "修复 Wear OS 启动画面：黑色背景显示与启动器一致的应用图标；统一聊天、设置、引导及录音界面的黑色背景和文字对比度。",
+  "en-US": "Fixed the Wear OS splash screen with a matching app icon on black. Updated chat, settings, onboarding, and recording screens to use black backgrounds with readable text."
 }

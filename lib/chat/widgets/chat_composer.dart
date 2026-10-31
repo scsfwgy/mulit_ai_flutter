@@ -33,6 +33,7 @@ class ChatComposer extends StatelessWidget {
     this.onAddAttachment,
     this.onRemoveAttachment,
     this.featureHints,
+    this.inputEnabled = true,
   });
 
   final TextEditingController controller;
@@ -56,6 +57,7 @@ class ChatComposer extends StatelessWidget {
   final VoidCallback? onAddAttachment;
   final ValueChanged<ChatAttachment>? onRemoveAttachment;
   final Widget? featureHints;
+  final bool inputEnabled;
 
   bool get _busy => starting || recording || transcribing || pickingAttachment;
 
@@ -118,7 +120,9 @@ class ChatComposer extends StatelessWidget {
               CupertinoButton(
                 padding: EdgeInsets.zero,
                 minimumSize: const Size(46, 44),
-                onPressed: transcribing ? null : onToggleVoiceMode,
+                onPressed: transcribing || !inputEnabled
+                    ? null
+                    : onToggleVoiceMode,
                 child: Icon(
                   voiceMode ? CupertinoIcons.keyboard : CupertinoIcons.mic,
                   color: transcribing ? IosColors.secondary : IosColors.blue,
@@ -135,13 +139,15 @@ class ChatComposer extends StatelessWidget {
                 child: voiceMode
                     ? Semantics(
                         button: true,
-                        enabled: !transcribing,
+                        enabled: inputEnabled && !transcribing,
                         label: transcribing
                             ? T('i18n.transcribing')
                             : T('i18n.hold_to_speak_release'),
                         child: Listener(
                           behavior: HitTestBehavior.opaque,
-                          onPointerDown: transcribing ? null : onVoiceDown,
+                          onPointerDown: transcribing || !inputEnabled
+                              ? null
+                              : onVoiceDown,
                           onPointerMove: transcribing ? null : onVoiceMove,
                           onPointerUp: transcribing ? null : onVoiceUp,
                           onPointerCancel: transcribing ? null : onVoiceCancel,
@@ -174,6 +180,7 @@ class ChatComposer extends StatelessWidget {
                         ),
                       )
                     : CupertinoTextField(
+                        enabled: inputEnabled && (!starting || sending),
                         controller: controller,
                         focusNode: focusNode,
                         minLines: 1,
@@ -212,7 +219,7 @@ class ChatComposer extends StatelessWidget {
                   if (!sending && !hasContent) return _attachmentButton();
                   return CupertinoButton(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
-                    minimumSize: const Size(56, 36),
+                    minimumSize: const Size(56, 44),
                     color: sending ? IosColors.destructive : IosColors.blue,
                     disabledColor: IosColors.secondary,
                     borderRadius: BorderRadius.circular(6),
@@ -220,6 +227,7 @@ class ChatComposer extends StatelessWidget {
                     child: sending
                         ? Icon(
                             CupertinoIcons.stop_fill,
+                            semanticLabel: T('i18n.stop_generation'),
                             color: IosColors.onAccent,
                             size: 21,
                           )

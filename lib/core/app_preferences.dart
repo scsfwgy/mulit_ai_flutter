@@ -72,8 +72,14 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
     for (final field in ChatInfoField.values) field: true,
   };
 
+  final Map<ChatInfoField, bool> _simpleChatInfoVisible = {
+    for (final field in ChatInfoField.values)
+      field: field == ChatInfoField.copy || field == ChatInfoField.speech,
+  };
+
   bool showChatInfo(ChatInfoField field) =>
-      !simpleMessageInfo && (_chatInfoVisible[field] ?? true);
+      (simpleMessageInfo ? _simpleChatInfoVisible : _chatInfoVisible)[field] ??
+      true;
 
   bool get dark => switch (appearance) {
     AppAppearance.light => false,
@@ -236,6 +242,12 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
     for (final field in ChatInfoField.values) {
       _chatInfoVisible[field] =
           await ChatStore.instance.setting('chat_info_${field.name}') != '0';
+      final simple = await ChatStore.instance.setting(
+        'chat_info_simple_${field.name}',
+      );
+      _simpleChatInfoVisible[field] = simple == null
+          ? field == ChatInfoField.copy || field == ChatInfoField.speech
+          : simple == '1';
     }
     _syncSystemBars();
     notifyListeners();
@@ -299,11 +311,12 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> setChatInfoVisible(ChatInfoField field, bool visible) async {
+    final simple = simpleMessageInfo;
     await ChatStore.instance.saveSetting(
-      'chat_info_${field.name}',
+      'chat_info_${simple ? 'simple_' : ''}${field.name}',
       visible ? '1' : '0',
     );
-    _chatInfoVisible[field] = visible;
+    (simple ? _simpleChatInfoVisible : _chatInfoVisible)[field] = visible;
     notifyListeners();
   }
 }

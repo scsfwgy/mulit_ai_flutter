@@ -4,9 +4,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
-    <application android:label="${appLabel}" android:icon="@mipmap/ic_launcher" android:theme="@android:style/Theme.Material.NoActionBar" android:allowBackup="false">
+    <application android:label="${appLabel}" android:icon="@mipmap/ic_launcher" android:theme="@style/Theme.AILink.Wear" android:allowBackup="false">
         <meta-data android:name="com.google.android.wearable.standalone" android:value="false" />
-        <activity android:name=".WatchActivity" android:exported="true">
+        <activity android:name=".WatchActivity" android:exported="true" android:theme="@style/Theme.AILink.Wear.Starting">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

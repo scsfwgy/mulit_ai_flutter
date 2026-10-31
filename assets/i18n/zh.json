@@ -809,5 +809,13 @@
   "i18n.agent_progress_collapse": "收起过程",
   "i18n.agent_elapsed": "已用时 {0}",
   "i18n.agent_found_sources": "找到 {0} 条资料",
-  "i18n.agent_extracted_chars": "已提取 {0} 字"
+  "i18n.agent_extracted_chars": "已提取 {0} 字",
+  "i18n.message_info_modes_detail": "精简模式默认隐藏次要统计，保留复制与朗读。下方各项都可重新开启或关闭，两种模式分别记住你的选择。",
+  "i18n.return_latest": "回到最新消息",
+  "i18n.stop_generation": "停止生成",
+  "i18n.draft_save_failed": "草稿暂时无法保存，请稍后重试后再切换对话。",
+  "i18n.draft_load_failed": "草稿暂时无法载入，请重新打开此对话。",
+  "i18n.draft_replace_title": "替换新对话草稿？",
+  "i18n.draft_replace_detail": "目标项目已有未发送的草稿。要用当前输入替换它吗？",
+  "i18n.draft_replace_action": "替换草稿"
 }

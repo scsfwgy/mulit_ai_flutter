@@ -28,7 +28,6 @@ internal enum class WatchReleaseAction {
 /** Recording feedback only; the held pointer remains on the chat below it. */
 internal class WatchRecordingOverlay(
     context: Context,
-    private val dark: () -> Boolean,
     private val text: (String) -> String,
 ) : View(context) {
     @Volatile var level = 0f
@@ -60,18 +59,15 @@ internal class WatchRecordingOverlay(
             WatchReleaseAction.REVIEW -> Color.rgb(48, 176, 89)
             WatchReleaseAction.SEND -> Color.rgb(24, 126, 240)
         }
-        val foreground = if (dark()) Color.WHITE else Color.rgb(23, 31, 42)
-        val secondary = if (dark()) Color.rgb(177, 191, 211) else Color.rgb(77, 92, 111)
-        canvas.drawColor(0xA0000000.toInt())
+        val foreground = Color.WHITE
+        val secondary = Color.rgb(177, 191, 211)
+        canvas.drawColor(Color.BLACK)
         if (simpleMode) {
             drawSimpleRecording(canvas, cx, cy, accent, elapsed)
             if (visibility == VISIBLE) postInvalidateOnAnimation()
             return
         }
         paint.style = Paint.Style.FILL
-        paint.color = if (dark()) Color.rgb(28, 28, 30) else Color.WHITE
-        canvas.drawCircle(cx, cy, 99 * density, paint)
-
         val micY = top + 78 * density
         paint.color = Color.argb(30, Color.red(accent), Color.green(accent), Color.blue(accent))
         canvas.drawCircle(cx, micY, 32 * density, paint)

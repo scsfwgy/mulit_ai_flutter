@@ -91,28 +91,41 @@ void main() {
     },
   );
 
-  testWidgets('simple mode hides the complete row and restores saved choices', (
-    tester,
-  ) async {
-    final prefs = AppPreferences.instance;
-    await prefs.setChatInfoVisible(ChatInfoField.copy, false);
-    await prefs.setAutoReadReplies(true);
-    await prefs.setSimpleMessageInfo(true);
-    await prefs.load();
-    expect(prefs.autoReadReplies, true);
-    expect(
-      ChatInfoField.values.every((field) => !prefs.showChatInfo(field)),
-      true,
-    );
-    await tester.pumpWidget(message(speak: () {}));
-    expect(find.byType(Wrap), findsNothing);
-    await prefs.setSimpleMessageInfo(false);
-    await prefs.load();
-    await tester.pumpWidget(message(speak: () {}));
-    expect(find.text('Provider'), findsOneWidget);
-    expect(find.byIcon(CupertinoIcons.doc_on_doc), findsNothing);
-    expect(find.byType(SpeechPlaybackIndicator), findsOneWidget);
-  });
+  testWidgets(
+    'simple defaults keep actions and custom choices survive mode changes',
+    (tester) async {
+      final prefs = AppPreferences.instance;
+      await prefs.setChatInfoVisible(ChatInfoField.copy, false);
+      await prefs.setAutoReadReplies(true);
+      await prefs.setSimpleMessageInfo(true);
+      await prefs.load();
+      expect(prefs.autoReadReplies, true);
+      expect(prefs.showChatInfo(ChatInfoField.copy), true);
+      expect(prefs.showChatInfo(ChatInfoField.speech), true);
+      expect(prefs.showChatInfo(ChatInfoField.modelId), false);
+      await tester.pumpWidget(message(speak: () {}));
+      expect(find.text('Provider'), findsNothing);
+      expect(find.byIcon(CupertinoIcons.doc_on_doc), findsOneWidget);
+      expect(find.byType(SpeechPlaybackIndicator), findsOneWidget);
+      await prefs.setChatInfoVisible(ChatInfoField.modelId, true);
+      await prefs.setChatInfoVisible(ChatInfoField.speech, false);
+      await tester.pumpWidget(message(speak: () {}));
+      expect(find.text('Provider'), findsOneWidget);
+      expect(find.byType(SpeechPlaybackIndicator), findsNothing);
+      await prefs.setSimpleMessageInfo(false);
+      await prefs.load();
+      await tester.pumpWidget(message(speak: () {}));
+      expect(find.text('Provider'), findsOneWidget);
+      expect(find.byIcon(CupertinoIcons.doc_on_doc), findsNothing);
+      expect(find.byType(SpeechPlaybackIndicator), findsOneWidget);
+      await prefs.setSimpleMessageInfo(true);
+      await prefs.load();
+      await tester.pumpWidget(message(speak: () {}));
+      expect(find.text('Provider'), findsOneWidget);
+      expect(find.byIcon(CupertinoIcons.doc_on_doc), findsOneWidget);
+      expect(find.byType(SpeechPlaybackIndicator), findsNothing);
+    },
+  );
 
   testWidgets(
     'missing speech callback hides icon; loading blocks taps; playback animates',

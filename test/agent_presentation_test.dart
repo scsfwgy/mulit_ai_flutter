@@ -355,33 +355,51 @@ void main() {
   );
 
   testWidgets(
-    'compact message info hides field controls and restores their saved choices',
+    'compact defaults stay editable and each mode keeps its own choices',
     (tester) async {
       installEmptyDatabaseStub();
+      tester.view.physicalSize = const Size(1000, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       final prefs = AppPreferences.instance;
       prefs.simpleMessageInfo = false;
       await prefs.setChatInfoVisible(ChatInfoField.tokens, false);
       await tester.pumpWidget(const MaterialApp(home: MessageSettingsScreen()));
       await tester.pumpAndSettle();
-      final toggle = find.descendant(
-        of: find.widgetWithText(IosRow, T('i18n.simple_mode')),
+      Finder toggleFor(String key) => find.descendant(
+        of: find.widgetWithText(IosRow, T(key)),
         matching: find.byType(CupertinoSwitch),
       );
-      await tester.ensureVisible(toggle);
-      await tester.tap(toggle);
+      final mode = toggleFor('i18n.simple_mode');
+      await tester.tap(mode);
       await tester.pumpAndSettle();
       for (final field in ChatInfoField.values) {
-        expect(find.widgetWithText(IosRow, T(field.label)), findsNothing);
+        expect(find.widgetWithText(IosRow, T(field.label)), findsOneWidget);
       }
-      expect(find.text(T('i18n.chat_features_scope')), findsOneWidget);
-      await tester.tap(toggle);
-      await tester.pumpAndSettle();
-      final tokens = find.descendant(
-        of: find.widgetWithText(IosRow, T(ChatInfoField.tokens.label)),
-        matching: find.byType(CupertinoSwitch),
+      expect(
+        tester
+            .widget<CupertinoSwitch>(toggleFor(ChatInfoField.copy.label))
+            .value,
+        true,
       );
-      await tester.scrollUntilVisible(tokens, 200);
+      expect(
+        tester
+            .widget<CupertinoSwitch>(toggleFor(ChatInfoField.speech.label))
+            .value,
+        true,
+      );
+      final tokens = toggleFor(ChatInfoField.tokens.label);
       expect(tester.widget<CupertinoSwitch>(tokens).value, false);
+      await tester.tap(tokens);
+      await tester.pumpAndSettle();
+      expect(prefs.showChatInfo(ChatInfoField.tokens), true);
+      await tester.tap(mode);
+      await tester.pumpAndSettle();
+      expect(prefs.showChatInfo(ChatInfoField.tokens), false);
+      await tester.tap(mode);
+      await tester.pumpAndSettle();
+      expect(prefs.showChatInfo(ChatInfoField.tokens), true);
+      prefs.simpleMessageInfo = false;
       await prefs.setChatInfoVisible(ChatInfoField.tokens, true);
       expect(tester.takeException(), isNull);
     },

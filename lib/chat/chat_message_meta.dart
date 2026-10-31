@@ -144,7 +144,7 @@ class ChatMessageMeta extends StatelessWidget {
           if (showCopy)
             CupertinoButton(
               padding: EdgeInsets.zero,
-              minimumSize: const Size(40, 32),
+              minimumSize: const Size(44, 44),
               onPressed: onCopy,
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -169,7 +169,7 @@ class ChatMessageMeta extends StatelessWidget {
           if (showSpeech)
             CupertinoButton(
               padding: EdgeInsets.zero,
-              minimumSize: const Size(40, 32),
+              minimumSize: const Size(44, 44),
               onPressed:
                   speechEnabled && speechState != SpeechPlaybackState.loading
                   ? onSpeak

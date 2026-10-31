@@ -1,13 +1,14 @@
 package com.maxhall.ailink.wear
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.media.AudioFormat
 import android.media.AudioRecord
@@ -30,6 +31,7 @@ import android.widget.Switch
 import android.widget.TextView
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.wear.remote.interactions.RemoteActivityHelper
 import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.Asset
@@ -65,13 +67,12 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
     private var loadingAudio = false
     private var requestStage: String? = null
     private lateinit var speechIndicator: WatchSpeechIndicator
-    private val darkMode: Boolean
-        get() = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
-    private val backgroundColor: Int get() = if (darkMode) Color.rgb(9, 12, 19) else Color.rgb(247, 248, 251)
-    private val primaryColor: Int get() = if (darkMode) Color.WHITE else Color.rgb(23, 31, 42)
-    private val secondaryColor: Int get() = if (darkMode) Color.rgb(146, 171, 198) else Color.rgb(76, 91, 109)
-    private val mutedColor: Int get() = if (darkMode) Color.rgb(177, 191, 211) else Color.rgb(77, 92, 111)
-    private val accentColor: Int get() = if (darkMode) Color.rgb(80, 165, 255) else Color.rgb(0, 100, 205)
+    // Wear OS requires a pure black background, including when system night mode is off.
+    private val backgroundColor = Color.BLACK
+    private val primaryColor = Color.WHITE
+    private val secondaryColor = Color.rgb(146, 171, 198)
+    private val mutedColor = Color.rgb(177, 191, 211)
+    private val accentColor = Color.rgb(80, 165, 255)
 
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var status: TextView
@@ -130,7 +131,10 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
+        window.setBackgroundDrawable(ColorDrawable(Color.BLACK))
+        window.decorView.setBackgroundColor(Color.BLACK)
         requestId = savedInstanceState?.getString("requestId")
             ?: getPreferences(MODE_PRIVATE).getString("requestId", null)
         lastAudioId = getPreferences(MODE_PRIVATE).getString("playedAudioId", null)
@@ -345,6 +349,8 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         super.onDestroy()
     }
 
+    // API 33+ uses the OnBackInvokedCallback registered in onCreate; keep this for older watches.
+    @SuppressLint("GestureBackNavigation")
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
         if (page == 1) showPage(0) else super.onBackPressed()
@@ -1050,7 +1056,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             button.setTextColor(if (selected) Color.WHITE else secondaryColor)
             button.background = GradientDrawable().apply {
                 cornerRadius = 10 * resources.displayMetrics.density
-                setColor(if (selected) accentColor else if (darkMode) Color.rgb(36, 40, 46) else Color.rgb(229, 233, 238))
+                setColor(if (selected) accentColor else Color.rgb(36, 40, 46))
             }
         }
         val config = configStore.load()
@@ -1118,7 +1124,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
     }
 
     private fun buildScreen() {
-        pages = FrameLayout(this)
+        pages = FrameLayout(this).apply { setBackgroundColor(backgroundColor) }
         chatGestures = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(event: MotionEvent): Boolean = true
 
@@ -1167,6 +1173,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.TOP
+            setBackgroundColor(backgroundColor)
             val density = resources.displayMetrics.density
             val round = resources.configuration.isScreenRound
             val horizontal = (if (round) 26 else 12) * density
@@ -1216,6 +1223,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         val settingsPage = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
+            setBackgroundColor(backgroundColor)
             setPadding(38, 30, 38, 48)
         }
         settingsPage.addView(uiLabel("设置", 18f, primaryColor, true))
@@ -1318,6 +1326,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
         guide.addView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
+            setBackgroundColor(backgroundColor)
             val density = resources.displayMetrics.density
             setPadding((26 * density).toInt(), (20 * density).toInt(), (26 * density).toInt(), (24 * density).toInt())
             addView(uiLabel("开始聊天", 18f, primaryColor, true))
@@ -1340,7 +1349,7 @@ class WatchActivity : Activity(), DataClient.OnDataChangedListener,
             (28 * resources.displayMetrics.density).toInt(), Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
             topMargin = ((if (resources.configuration.isScreenRound) 16 else 4) * resources.displayMetrics.density).toInt()
         })
-        recordingOverlay = WatchRecordingOverlay(this, { darkMode }, ::watchText).apply {
+        recordingOverlay = WatchRecordingOverlay(this, ::watchText).apply {
             visibility = View.GONE
         }
         pages.addView(recordingOverlay, FrameLayout.LayoutParams(-1, -1))
