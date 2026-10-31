@@ -315,8 +315,9 @@ void main() {
         );
         if (tasks.isNotEmpty &&
             tasks.first.status == 'paused' &&
-            !AgentRunner.isBusy)
+            !AgentRunner.isBusy) {
           break;
+        }
       }
       await tester.pumpAndSettle();
       final paused = (await repository.tasks()).firstWhere(
@@ -338,8 +339,9 @@ void main() {
         );
         if (tasks.isNotEmpty &&
             tasks.first.status == 'completed' &&
-            !AgentRunner.isBusy)
+            !AgentRunner.isBusy) {
           break;
+        }
       }
       await tester.pumpAndSettle();
       final task = (await repository.tasks()).firstWhere(

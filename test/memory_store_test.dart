@@ -81,6 +81,28 @@ void main() {
       await store.setMemoryTopicOverride(7, false);
       expect(await store.chatSystemPrompt(1, 'demo', topicId: 7), isEmpty);
       await store.setMemoryInGlobalPrompt(false);
+      expect(await store.chatSystemPrompt(1, 'demo'), isEmpty);
+      await store.deleteSetting(memoryTopicSetting(7));
+      expect(await store.chatSystemPrompt(1, 'demo', topicId: 7), isEmpty);
+      expect(await store.chatUsesMemory(7), isFalse);
+      expect(
+        await store.advanceMemoryCursor(
+          revision: 1,
+          topicId: 7,
+          cursorMessageId: 4,
+        ),
+        isFalse,
+      );
+      expect(
+        await store.saveMergedMemory(
+          revision: 1,
+          profile: 'blocked',
+          topicId: 7,
+          cursorMessageId: 4,
+        ),
+        isFalse,
+      );
+      expect(await store.memoryProfile(), saved);
       await store.setMemoryTopicOverride(7, true);
       expect(
         await store.chatSystemPrompt(1, 'demo', topicId: 7),
@@ -116,9 +138,7 @@ void main() {
       expect(await store.memoryProfile(), '喜欢喝茶');
       expect(await store.memoryCursor(7), 4);
 
-      // Results already in flight must respect the master switch and a chat
-      // that explicitly turned memory off. The default-for-chats switch does
-      // not hide memory once the master switch is on.
+      // In-flight results must still respect the master and per-chat switches.
       for (final scope in ['master', 'topic']) {
         await store.setMemoryEnabled(scope != 'master');
         await store.setMemoryInGlobalPrompt(false);

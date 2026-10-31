@@ -78,6 +78,116 @@ void main() {
     expect(AgentRunner.isBusy, false);
   });
 
+  test(
+    'unknown protocols do not hide valid tasks or unrelated chats',
+    () async {
+      final task = newTask();
+      await repository.save(task);
+      final key = 'agent_task:damaged';
+      await repository.store.saveSetting(
+        key,
+        jsonEncode(task.toJson()..['protocol'] = 'unknown'),
+      );
+      try {
+        expect((await repository.tasks()).any((t) => t.id == task.id), true);
+        expect(await repository.forTopic(-1), isEmpty);
+        expect(await repository.store.setting(key), isNotNull);
+      } finally {
+        await repository.store.deleteSetting(key);
+      }
+    },
+  );
+
+  for (final protocol in ApiProtocol.values) {
+    test(
+      '${protocol.name} pairs skipped calls before a budget summary',
+      () async {
+        final task = AgentTask(
+          providerId: 1,
+          model: 'test',
+          protocol: protocol,
+          goal: 'Research',
+          systemPrompt: '',
+        );
+        final calls = [
+          for (var i = 0; i < 26; i++)
+            ModelToolCall('c$i', 'read_webpage', {
+              'url': 'https://example.com/$i',
+            }),
+        ];
+        var requests = 0;
+        final runner = AgentRunner(
+          repository: repository,
+          allowed: () async => true,
+          execute: (_, _, _) async => {'text': 'Evidence'},
+          turn: (t, _) async {
+            if (requests++ > 0) {
+              expect(t.finishNotice, 'budget');
+              expect(t.pending, isEmpty);
+              final results = protocol == ApiProtocol.openAi
+                  ? t.messages.where((m) => m['role'] == 'tool').toList()
+                  : (t.messages.last['content'] as List).cast<Map>();
+              expect(results.length, 26);
+              expect(
+                results.map(
+                  (r) =>
+                      r[protocol == ApiProtocol.openAi
+                          ? 'tool_call_id'
+                          : 'tool_use_id'],
+                ),
+                calls.map((c) => c.id),
+              );
+              expect(
+                jsonDecode(results.last['content'] as String)['code'],
+                'run_budget',
+              );
+              return finalTurn('Partial answer');
+            }
+            return ModelToolTurn(
+              {
+                'role': 'assistant',
+                if (protocol == ApiProtocol.openAi) ...{
+                  'content': null,
+                  'tool_calls': [
+                    for (final c in calls)
+                      {
+                        'id': c.id,
+                        'type': 'function',
+                        'function': {
+                          'name': c.name,
+                          'arguments': jsonEncode(c.arguments),
+                        },
+                      },
+                  ],
+                } else
+                  'content': [
+                    for (final c in calls)
+                      {
+                        'type': 'tool_use',
+                        'id': c.id,
+                        'name': c.name,
+                        'input': c.arguments,
+                      },
+                  ],
+              },
+              '',
+              calls,
+              10,
+              5,
+            );
+          },
+        );
+        await runner.run(task);
+        runner.dispose();
+        expect(task.status, 'completed');
+        expect(task.calls, 24);
+        expect(task.steps.where((s) => s['status'] == 'skipped').length, 2);
+        expect(task.requests.last['tools_enabled'], false);
+        expect(requests, 2);
+      },
+    );
+  }
+
   test('Agent is off when absent, and enable/disable persists without deleting tasks', () async {
     final prefs = AppPreferences.instance;
     expect(prefs.agentEnabled, false);
@@ -601,9 +711,28 @@ void main() {
       final runner = AgentRunner(
         repository: repository,
         allowed: () async => true,
-        turn: (_, _) async => finalTurn('Completed in chat'),
+        turn: (_, _) async {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+          return finalTurn('Completed in chat');
+        },
       );
+      task.sources.add({
+        'documentId': 123,
+        'label': 'D123@8000',
+        'title': 'Project evidence',
+        'excerpt': 'Exact supplied snapshot',
+      });
+      final updates = <String>[];
+      final subscription = AgentRunner.updates.listen((changed) {
+        if (changed.id == task.id) {
+          updates.add('${changed.status}:${AgentRunner.isBusy}');
+        }
+      });
       await runner.run(task);
+      await Future<void>.delayed(Duration.zero);
+      await subscription.cancel();
+      expect(updates, contains('running:true'));
+      expect(updates.last, 'completed:false');
       expect(task.status, 'completed');
       expect(task.artifacts, isEmpty);
       final restored = (await repository.forTopic(topicId))[userId]!;
@@ -613,6 +742,14 @@ void main() {
       expect(messages.map((m) => m.role), ['user', 'assistant']);
       expect(messages.last.content, 'Completed in chat');
       expect(messages.last.providerName, 'Snapshot');
+      expect(messages.last.totalMs, greaterThanOrEqualTo(10));
+      expect(messages.last.firstTokenMs, isNull);
+      expect(messages.last.knowledgeSources.single.label, 'D123@8000');
+      expect(
+        messages.last.knowledgeSources.single.text,
+        'Exact supplied snapshot',
+      );
+      expect(restored.totalMs, messages.last.totalMs);
       expect(restored.answerMessageId, messages.last.id);
       runner.dispose();
       final files = AgentStore();

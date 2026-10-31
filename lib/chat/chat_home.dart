@@ -160,6 +160,10 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   bool? _draftMemoryOverride;
   ModelApiClient? _activeClient;
   AgentRunner? _agentRunner;
+  StreamSubscription<AgentTask>? _agentUpdates;
+  bool get _agentRunningHere =>
+      AgentRunner.active?.currentTask?.topicId == _topic?.id &&
+      AgentRunner.active?.currentTask?.status == 'running';
   Map<int, AgentTask> _agentTasks = {};
   bool _globalMemoryActive = false;
   final _titleClients = <ModelApiClient>{};
@@ -190,6 +194,16 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    _agentUpdates = AgentRunner.updates.listen((task) {
+      if (!mounted ||
+          task.topicId != _topic?.id ||
+          task.userMessageId == null ||
+          _agentRunner?.currentTask?.id == task.id) {
+        return;
+      }
+      setState(() => _agentTasks[task.userMessageId!] = task);
+      if (AgentRunner.active == null) unawaited(_load());
+    });
     if (supportsIncomingShare) {
       IncomingShare.channel.setMethodCallHandler((call) async {
         if (call.method == 'failed' && mounted) {
@@ -393,6 +407,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    unawaited(_agentUpdates?.cancel());
     _shareTimer?.cancel();
     if (supportsIncomingShare) IncomingShare.channel.setMethodCallHandler(null);
     _revealTimer?.cancel();
@@ -433,7 +448,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     }
     _inputFocus.dispose();
     _activeClient?.cancel();
-    _agentRunner?.pause();
+    (_agentRunner ?? AgentRunner.active)?.pause();
     _replyTimer?.cancel();
     _replyElapsedMs.dispose();
     _reply.dispose();
@@ -449,7 +464,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.detached) {
-      _agentRunner?.pause();
+      (_agentRunner ?? AgentRunner.active)?.pause();
     }
     if (state == AppLifecycleState.resumed) {
       _deferredShares.clear();
@@ -868,7 +883,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   Future<void> _newTopic({int? projectId, bool explicitProject = false}) async {
     final nextProjectId = explicitProject ? projectId : _topicProjectFilter.id;
     if (_pickingAttachment || _starting && !_sending) return;
-    _agentRunner?.pause();
+    (_agentRunner ?? AgentRunner.active)?.pause();
     _showDesktopChat();
     if (_providers.isEmpty) {
       await _openProviders();
@@ -925,7 +940,9 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       if (messageId != null && mounted) _notify(T('i18n.library_missing'));
       return;
     }
-    if (id != _sendingTopicId) _agentRunner?.pause();
+    if (id != (AgentRunner.active?.currentTask?.topicId ?? _sendingTopicId)) {
+      (_agentRunner ?? AgentRunner.active)?.pause();
+    }
     final messages = await ChatStore.instance.messages(id);
     final agentTasks = await AgentStore().forTopic(id);
     if (messageId != null &&
@@ -1103,7 +1120,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   void _stopReply() {
     _cancelRequested = true;
     _activeClient?.cancel();
-    _agentRunner?.pause();
+    (_agentRunner ?? AgentRunner.active)?.pause();
   }
 
   Future<VoiceProviderConfig?> _selectedVoiceService(
@@ -1701,6 +1718,10 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         _transcribing) {
       return;
     }
+    if (AgentRunner.isBusy) {
+      _notify(T('i18n.agent_busy'));
+      return;
+    }
     setState(() => _starting = true);
     try {
       await _sendMessage(content);
@@ -1767,17 +1788,23 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         _attachments.isEmpty &&
         AgentPolicy.isContinue(content) &&
         _topic != null) {
-      final history = await ChatStore.instance.messages(_topic!.id);
+      final topic = _topic!;
+      final history = await ChatStore.instance.messages(topic.id);
       final previous = (await AgentStore().forTopic(
-        _topic!.id,
+        topic.id,
       ))[history.lastOrNull?.id];
+      if (!mounted ||
+          initialLocation != _chatLocationRevision ||
+          _topic?.id != topic.id) {
+        return;
+      }
       if (previous != null &&
           previous.canResume &&
           previous.providerId == provider.id &&
           previous.model == model &&
           previous.endpoint == provider.baseUrl) {
         _input.clear();
-        await _requestReply(_topic!, provider, key, systemPrompt, history);
+        await _requestReply(topic, provider, key, systemPrompt, history);
         return;
       }
     }
@@ -2242,7 +2269,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         : await store.memoryTopicOverride(_topic!.id);
     return topicUsesMemory(
       enabled: enabled,
-      inGlobalPrompt: enabled,
+      inGlobalPrompt: await store.memoryInGlobalPrompt(),
       topicOverride: override,
     );
   }
@@ -2519,7 +2546,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                         voiceMode: _voiceMode,
                         transcribing: _transcribing,
                         voicePointerDown: _voicePointerDown,
-                        sending: _sending,
+                        sending: _sending || _agentRunningHere,
                         starting: _starting,
                         recording: _recording,
                         hasProviders: _providers.isNotEmpty,
@@ -2650,13 +2677,13 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                   ChatAgentCard(
                     task: task,
                     running:
-                        _sending &&
-                        _sendingTopicId == task.topicId &&
+                        AgentRunner.active?.currentTask?.id == task.id &&
                         task.status == 'running',
                     onDetails: () => _openAgentDetails(task),
                     onPause: _stopReply,
                     onResume:
                         !_sending &&
+                            !AgentRunner.isBusy &&
                             _messages.lastOrNull?.id == task.userMessageId
                         ? () => _resumeAgent(task)
                         : null,

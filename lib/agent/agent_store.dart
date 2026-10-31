@@ -8,6 +8,7 @@ import 'package:mulit_ai_flutter/search/search_service.dart';
 
 import 'package:mulit_ai_flutter/core/attachment_store.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/core/project.dart';
 
 class AgentTask {
   AgentTask({
@@ -39,6 +40,7 @@ class AgentTask {
   final String? providerName;
   final String? providerPresetId;
   int? answerMessageId;
+  int? totalMs = 0;
   int contextTokens = 0;
   int contextWindowTokens = 0;
   bool contextCompacted = false;
@@ -76,6 +78,7 @@ class AgentTask {
       providerName = json['providerName'] as String?,
       providerPresetId = json['providerPresetId'] as String? {
     answerMessageId = json['answerMessageId'] as int?;
+    totalMs = json['totalMs'] as int?;
     outputTokenLimit = json['outputTokenLimit'] as int? ?? 0;
     finishNotice = json['finishNotice'] as String?;
     contextTokens = json['contextTokens'] as int? ?? 0;
@@ -125,6 +128,7 @@ class AgentTask {
     'topicId': topicId,
     'userMessageId': userMessageId,
     'answerMessageId': answerMessageId,
+    'totalMs': totalMs,
     'outputTokenLimit': outputTokenLimit,
     'finishNotice': finishNotice,
     'requests': requests,
@@ -225,11 +229,23 @@ class AgentStore {
               'provider_name': task.providerName,
               'provider_preset_id': task.providerPresetId,
               'model_id': task.model,
+              'total_ms': task.totalMs,
               'input_tokens': task.usageComplete ? task.inputTokens : null,
               'output_tokens': task.usageComplete ? task.outputTokens : null,
               'search_sources': sources.isEmpty
                   ? null
                   : jsonEncode(sources.map((s) => s.toJson()).toList()),
+              'knowledge_sources': KnowledgeSource.encode([
+                for (final source in task.sources)
+                  if (source['documentId'] is int)
+                    KnowledgeSource(
+                      documentId: source['documentId'] as int,
+                      name: source['title'] as String,
+                      chunk: source['chunk'] as int? ?? 0,
+                      text: source['excerpt'] as String,
+                      sourceLabel: source['label'] as String?,
+                    ),
+              ]),
             });
             await txn.update(
               'topics',
@@ -279,6 +295,8 @@ class AgentStore {
         // Leave damaged records untouched so other tasks remain accessible.
       } on TypeError {
         // An incomplete record must not hide the rest of the task history.
+      } on ArgumentError {
+        // Unknown enum names must not block unrelated chats or task records.
       }
     }
     return result..sort((a, b) => b.createdAt.compareTo(a.createdAt));

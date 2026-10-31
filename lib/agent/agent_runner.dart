@@ -108,6 +108,8 @@ class AgentRunner extends ChangeNotifier {
     this.allowed,
   });
   static AgentRunner? active;
+  static final _updates = StreamController<AgentTask>.broadcast();
+  static Stream<AgentTask> get updates => _updates.stream;
   static bool get isBusy => active != null;
   final AgentStore repository;
   final Future<ModelToolTurn> Function(AgentTask, List<Map<String, dynamic>>)?
@@ -122,6 +124,8 @@ class AgentRunner extends ChangeNotifier {
   bool _paused = false;
   bool _disposed = false;
   bool _expired = false;
+  final _elapsed = Stopwatch();
+  int _savedElapsedMs = 0;
 
   void pause() {
     _paused = true;
@@ -132,6 +136,7 @@ class AgentRunner extends ChangeNotifier {
 
   void _changed() {
     if (!_disposed) notifyListeners();
+    if (currentTask case final task?) _updates.add(task);
   }
 
   void _preferenceChanged() {
@@ -153,6 +158,9 @@ class AgentRunner extends ChangeNotifier {
     if (active != null) throw ApiException(T('i18n.agent_busy'));
     active = this;
     currentTask = task;
+    _elapsed.reset();
+    _elapsed.start();
+    _savedElapsedMs = 0;
     _paused = false;
     _expired = false;
     final startRounds = task.rounds;
@@ -266,7 +274,7 @@ class AgentRunner extends ChangeNotifier {
                 },
               );
       }
-      await repository.save(task);
+      await _save(task);
       _changed();
       while (true) {
         _check();
@@ -276,7 +284,26 @@ class AgentRunner extends ChangeNotifier {
         }
         if (task.pending.isNotEmpty) {
           if (task.calls - startCalls >= AgentPolicy.maxCalls) {
-            throw StateError('i18n.agent_run_budget');
+            for (final pending in task.pending) {
+              final call = ModelToolCall.fromJson(pending);
+              task.steps[pending['step'] as int]
+                ..['status'] = 'skipped'
+                ..['result'] = {
+                  'code': 'run_budget',
+                  'error':
+                      'Not executed: this run reached its tool-call limit.',
+                };
+              appendModelToolResult(
+                task.messages,
+                task.protocol,
+                call,
+                jsonEncode(task.steps[pending['step'] as int]['result']),
+              );
+            }
+            task.pending.clear();
+            await _save(task);
+            _changed();
+            continue;
           }
           final pending = task.pending.first;
           final call = ModelToolCall.fromJson(pending);
@@ -287,7 +314,7 @@ class AgentRunner extends ChangeNotifier {
           try {
             task.calls++;
             step['status'] = 'running';
-            await repository.save(task);
+            await _save(task);
             _changed();
             if (call.argumentError) {
               throw const FormatException('Invalid tool arguments JSON');
@@ -335,7 +362,7 @@ class AgentRunner extends ChangeNotifier {
             jsonEncode(result),
           );
           task.pending.removeAt(0);
-          await repository.save(task);
+          await _save(task);
           _changed();
           continue;
         }
@@ -381,7 +408,7 @@ class AgentRunner extends ChangeNotifier {
           'status': 'running',
         };
         task.requests.add(request);
-        await repository.save(task);
+        await _save(task);
         _changed();
         void usage(int? input, int? output) {
           task.inputTokens += input ?? 0;
@@ -441,7 +468,7 @@ class AgentRunner extends ChangeNotifier {
             retries++;
             request['status'] = 'retrying';
             _logTurn(task, request);
-            await repository.save(task);
+            await _save(task);
             _changed();
             await _backoff(retries);
             continue;
@@ -463,7 +490,7 @@ class AgentRunner extends ChangeNotifier {
             retries++;
             request['status'] = 'retrying';
             _logTurn(task, request);
-            await repository.save(task);
+            await _save(task);
             _changed();
             await _backoff(retries);
             continue;
@@ -487,11 +514,11 @@ class AgentRunner extends ChangeNotifier {
             task.answer = '${T('i18n.agent_partial_result')}\n\n${task.answer}';
           }
           task.finalReady = true;
-          await repository.save(task);
+          await _save(task);
           await _complete(task);
           break;
         }
-        await repository.save(task);
+        await _save(task);
         _changed();
       }
     } catch (error) {
@@ -547,7 +574,7 @@ class AgentRunner extends ChangeNotifier {
           : error is StateError && error.message.startsWith('i18n.')
           ? T(error.message)
           : T('i18n.agent_failed');
-      await repository.save(task);
+      await _save(task);
       _changed();
     } finally {
       _agentDebug('end', {
@@ -559,6 +586,7 @@ class AgentRunner extends ChangeNotifier {
         'context_blocked': task.contextBlocked,
       });
       timer.cancel();
+      _elapsed.stop();
       if (holdBackground) await AgentBackground.release();
       AppPreferences.instance.removeListener(_preferenceChanged);
       _client?.cancel();
@@ -570,6 +598,15 @@ class AgentRunner extends ChangeNotifier {
       active = null;
       _changed();
     }
+  }
+
+  Future<void> _save(AgentTask task) async {
+    final elapsed = _elapsed.elapsedMilliseconds;
+    if (task.totalMs != null) {
+      task.totalMs = task.totalMs! + elapsed - _savedElapsedMs;
+    }
+    _savedElapsedMs = elapsed;
+    await repository.save(task);
   }
 
   void _logTurn(AgentTask task, Map<String, dynamic> request) {
@@ -613,7 +650,7 @@ class AgentRunner extends ChangeNotifier {
     }
     _check();
     task.status = 'completed';
-    await repository.save(task);
+    await _save(task);
     _changed();
   }
 
@@ -725,6 +762,8 @@ class AgentRunner extends ChangeNotifier {
         _check();
         for (final source in sources) {
           _addSource(task, {
+            'documentId': source.documentId,
+            'chunk': source.chunk,
             'label': source.label,
             'title': source.name,
             'excerpt': source.text,
@@ -763,6 +802,7 @@ class AgentRunner extends ChangeNotifier {
         final label = 'D$id@$offset';
         _check();
         _addSource(task, {
+          'documentId': id,
           'label': label,
           'title': rows.single['name'],
           'excerpt': text,

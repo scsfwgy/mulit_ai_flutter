@@ -368,17 +368,14 @@ String memoryCursorSetting(int topicId) => 'memory_cursor_$topicId';
 
 String memoryTopicSetting(int topicId) => 'memory_topic_$topicId';
 
-/// Master off blocks every chat. A single chat can still turn memory off.
-/// Chats without their own choice follow the master switch, so turning
-/// global memory on is enough for the chat hint and the prompt.
+/// Master off blocks every chat; a topic override wins over the chat default.
 bool topicUsesMemory({
   required bool enabled,
   required bool inGlobalPrompt,
   bool? topicOverride,
 }) {
   if (!enabled) return false;
-  if (topicOverride != null) return topicOverride;
-  return inGlobalPrompt || enabled;
+  return topicOverride ?? inGlobalPrompt;
 }
 
 /// An explicit 0 or 1 is kept. A missing value follows the master switch, so
@@ -1415,7 +1412,10 @@ class ChatStore {
       final memoryOn = await _settingValue(txn, memoryEnabledSetting) == '1';
       if (!topicUsesMemory(
         enabled: memoryOn,
-        inGlobalPrompt: memoryOn,
+        inGlobalPrompt: memoryDefaultForChats(
+          enabled: memoryOn,
+          stored: await _settingValue(txn, memoryInGlobalPromptSetting),
+        ),
         topicOverride: switch (await _settingValue(
           txn,
           memoryTopicSetting(topicId),
@@ -1518,7 +1518,7 @@ class ChatStore {
         : await memoryTopicOverride(topicId);
     final include = topicUsesMemory(
       enabled: enabled,
-      inGlobalPrompt: enabled,
+      inGlobalPrompt: await memoryInGlobalPrompt(),
       topicOverride: override,
     );
     final base = composeSystemPrompt(

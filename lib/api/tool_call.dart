@@ -141,10 +141,14 @@ class ModelToolTurn {
       outputTokens: outputTokens,
     );
     try {
-      final choice = anthropic ? json : (json['choices'] as List).first as Map;
+      final choice = anthropic
+          ? json
+          : (json['choices'] as List).firstOrNull as Map?;
+      if (choice == null) reject('invalid_response');
       reason = choice[anthropic ? 'stop_reason' : 'finish_reason'] as String?;
-      if (reason != null && !RegExp(r'^[a-z_]{1,64}$').hasMatch(reason!))
+      if (reason != null && !RegExp(r'^[a-z_]{1,64}$').hasMatch(reason)) {
         reason = 'unknown';
+      }
       if ([
         'length',
         'max_tokens',
@@ -156,7 +160,9 @@ class ModelToolTurn {
         reject('provider_interrupted');
       }
       if (['content_filter', 'refusal'].contains(reason)) reject('refused');
-      if (!(anthropic ? ['end_turn', 'tool_use'] : ['stop', 'tool_calls'])
+      if (!(anthropic
+              ? ['end_turn', 'stop_sequence', 'tool_use']
+              : ['stop', 'tool_calls'])
           .contains(reason)) {
         reject('invalid_response');
       }

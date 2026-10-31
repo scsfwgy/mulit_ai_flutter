@@ -45,6 +45,30 @@ Map<String, dynamic> toolResponse(
       };
 
 void main() {
+  test('empty choices is a diagnosable invalid response', () {
+    expect(
+      () => ModelToolTurn.parse({'choices': []}, ApiProtocol.openAi),
+      throwsA(
+        isA<ModelTurnException>().having(
+          (e) => e.code,
+          'code',
+          'invalid_response',
+        ),
+      ),
+    );
+  });
+
+  test('Claude accepts a complete stop_sequence text answer', () {
+    final turn = ModelToolTurn.parse({
+      'stop_reason': 'stop_sequence',
+      'content': [
+        {'type': 'text', 'text': 'Answer'},
+      ],
+    }, ApiProtocol.anthropic);
+    expect(turn.text, 'Answer');
+    expect(turn.calls, isEmpty);
+  });
+
   test(
     'DeepSeek restores available reasoning and quotes old plain-chat replies',
     () async {

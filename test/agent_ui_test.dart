@@ -1,7 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mulit_ai_flutter/agent/agent_screen.dart';
+import 'package:mulit_ai_flutter/agent/agent_runner.dart';
+import 'package:mulit_ai_flutter/agent/agent_store.dart';
+import 'package:mulit_ai_flutter/core/data.dart';
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 
@@ -12,6 +18,59 @@ import 'sqflite_stub.dart';
 
 void main() {
   setUpAll(useSqflitePluginFactory);
+  testWidgets(
+    'returning from a resumed task keeps it running until manual pause',
+    (tester) async {
+      installEmptyDatabaseStub(settings: {'agent_enabled': '1'});
+      AppPreferences.instance.agentEnabled = true;
+      final gate = Completer<void>();
+      const channel = MethodChannel('between_models/agent_background');
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        if (call.method == 'begin') await gate.future;
+        return null;
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+      final task = AgentTask(
+        providerId: 1,
+        model: 'test',
+        protocol: ApiProtocol.openAi,
+        goal: 'Resume',
+        systemPrompt: '',
+      )..finalReady = true;
+      final navigator = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        MaterialApp(navigatorKey: navigator, home: const SizedBox()),
+      );
+      unawaited(
+        navigator.currentState!.push(
+          MaterialPageRoute<void>(builder: (_) => AgentTaskScreen(task: task)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(T('i18n.agent_resume')));
+      await tester.pump();
+      final runner = AgentRunner.active!;
+      navigator.currentState!.pop();
+      await tester.pumpAndSettle();
+      expect(AgentRunner.active, same(runner));
+      void listener() {}
+      expect(() => runner.addListener(listener), returnsNormally);
+      runner.removeListener(listener);
+      // Stop explicitly after checking navigation preserved the live runner.
+      runner.pause();
+      gate.complete();
+      for (var i = 0; i < 30 && AgentRunner.isBusy; i++) {
+        await tester.pump(const Duration(milliseconds: 10));
+      }
+      expect(AgentRunner.isBusy, false);
+      expect(task.status, 'paused');
+      expect(() => runner.addListener(() {}), throwsFlutterError);
+      AppPreferences.instance.agentEnabled = false;
+      expect(tester.takeException(), isNull);
+    },
+  );
   testWidgets('settings switch defaults off and persists a user toggle', (
     tester,
   ) async {

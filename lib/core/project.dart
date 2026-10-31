@@ -41,17 +41,20 @@ class KnowledgeSource {
     required this.name,
     required this.chunk,
     required this.text,
+    this.sourceLabel,
   });
   final int documentId;
   final String name;
   final int chunk;
   final String text;
-  String get label => 'K$documentId-${chunk + 1}';
+  final String? sourceLabel;
+  String get label => sourceLabel ?? 'K$documentId-${chunk + 1}';
   Map<String, Object> toJson() => {
     'documentId': documentId,
     'name': name,
     'chunk': chunk,
     'text': text,
+    'label': ?sourceLabel,
   };
   static String? encode(List<KnowledgeSource> sources) => sources.isEmpty
       ? null
@@ -65,6 +68,7 @@ class KnowledgeSource {
                 name: s['name'] as String,
                 chunk: s['chunk'] as int,
                 text: s['text'] as String,
+                sourceLabel: s['label'] as String?,
               ),
             )
             .toList();

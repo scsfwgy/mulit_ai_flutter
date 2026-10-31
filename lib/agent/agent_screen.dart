@@ -316,7 +316,11 @@ class _AgentTaskScreenState extends State<AgentTaskScreen>
     } catch (_) {
       if (mounted) setState(() => _error = T('i18n.agent_save_failed'));
     } finally {
-      if (mounted) setState(() => _running = false);
+      if (mounted) {
+        setState(() => _running = false);
+      } else {
+        _runner.dispose();
+      }
     }
   }
 
@@ -344,7 +348,8 @@ class _AgentTaskScreenState extends State<AgentTaskScreen>
     WidgetsBinding.instance.removeObserver(this);
     _observed?.removeListener(_changed);
     _runner.removeListener(_changed);
-    _runner.dispose();
+    // An in-flight run owns its cleanup until it finishes, even after navigation.
+    if (!_running) _runner.dispose();
     super.dispose();
   }
 
@@ -512,6 +517,7 @@ class _AgentTaskScreenState extends State<AgentTaskScreen>
                               '${agentToolLabel(step['name'] as String)} · ${T(switch (step['status']) {
                                 'completed' => 'i18n.agent_completed',
                                 'failed' => 'i18n.agent_failed_status',
+                                'skipped' => 'i18n.agent_skipped',
                                 'running' => _busy ? 'i18n.agent_running' : 'i18n.agent_interrupted',
                                 _ => 'i18n.agent_pending',
                               })}',
