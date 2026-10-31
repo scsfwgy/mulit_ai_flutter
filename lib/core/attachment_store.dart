@@ -32,6 +32,9 @@ class AttachmentStore {
     p.join((await getApplicationSupportDirectory()).path, 'chat_attachments'),
   );
 
+  Future<Directory> get agentDirectory async =>
+      Directory(p.join((await directory).path, 'agent_artifacts'));
+
   Future<File> file(ChatAttachment attachment) async {
     if (!RegExp(r'^[a-f0-9-]{36}\.(jpg|png|gif|webp|pdf|txt|bin)$')
         .hasMatch(attachment.fileName)) {

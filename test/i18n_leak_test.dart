@@ -1,3 +1,4 @@
+import 'package:mulit_ai_flutter/agent/agent_screen.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -76,6 +77,8 @@ void main() {
   );
 
   final screens = <String, Widget Function()>{
+    'Agent 设置': AgentSettingsScreen.new,
+    'Agent 任务': AgentScreen.new,
     '搜索服务编辑器（新建）': SearchServiceEditor.new,
     '搜索服务编辑器（已保存）': () => const SearchServiceEditor(service: savedSearch),
     '通用设置': GeneralSettingsScreen.new,

@@ -50,6 +50,7 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
   static const _companion = MethodChannel('between_models/companion_install');
 
   bool autoReadReplies = false;
+  bool agentEnabled = false;
   bool simpleMessageInfo = false;
   int contextWindowTokens = ChatContext.defaultWindowTokens;
 
@@ -208,6 +209,7 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> load() async {
     await loadLocalization();
     await initializeSystemVoiceDefaults(ChatStore.instance);
+    agentEnabled = await ChatStore.instance.setting('agent_enabled') == '1';
     contextWindowTokens = ChatContext.parseWindow(
       await ChatStore.instance.setting(ChatContext.settingKey),
     );
@@ -237,6 +239,12 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> setSimpleMessageInfo(bool value) async {
     await ChatStore.instance.saveSetting('chat_info_simple', value ? '1' : '0');
     simpleMessageInfo = value;
+    notifyListeners();
+  }
+
+  Future<void> setAgentEnabled(bool value) async {
+    await ChatStore.instance.saveSetting('agent_enabled', value ? '1' : '0');
+    agentEnabled = value;
     notifyListeners();
   }
 

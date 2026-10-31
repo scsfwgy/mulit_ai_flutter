@@ -1,3 +1,5 @@
+import 'package:mulit_ai_flutter/agent/agent_screen.dart';
+import 'package:mulit_ai_flutter/agent/agent_runner.dart';
 // AI Link 聊天主页：ChatHome 及其状态机。
 // 由 lib/main.dart 拆分而来；入口与应用外壳仍在 lib/main.dart。
 
@@ -658,6 +660,19 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     await _load();
   }
 
+  Future<void> _openAgent() async {
+    if (!AppPreferences.instance.agentEnabled || _attachmentBusy) return;
+    await _pushRoute<void>(
+      appPageRoute(
+        builder: (_) => AgentScreen(
+          providerId: _currentProviderId,
+          model: _currentModel,
+          projectId: _currentProjectId,
+        ),
+      ),
+    );
+  }
+
   Future<void> _openSettings() async {
     final file = await _pushRoute<StoredChatFile>(
       appPageRoute(builder: (_) => SettingsScreen(canClearData: _canClearData)),
@@ -708,6 +723,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   void _openTopics() => _scaffoldKey.currentState?.openDrawer();
 
   bool _canClearData() =>
+      !AgentRunner.isBusy &&
       !_checkingShare &&
       !_pickingAttachment &&
       !_sending &&
@@ -2333,6 +2349,22 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                           onNewTopic: _newTopic,
                           onChangeModel: _changeModel,
                         ),
+                      AnimatedBuilder(
+                        animation: AppPreferences.instance,
+                        builder: (context, _) =>
+                            AppPreferences.instance.agentEnabled
+                            ? Align(
+                                alignment: Alignment.centerLeft,
+                                child: CupertinoButton(
+                                  key: const Key('agent-entry'),
+                                  onPressed: _attachmentBusy
+                                      ? null
+                                      : _openAgent,
+                                  child: Text(T('i18n.agent_tasks')),
+                                ),
+                              )
+                            : const SizedBox.shrink(),
+                      ),
                       ChatComposer(
                         attachments: _attachments,
                         pickingAttachment: _pickingAttachment,

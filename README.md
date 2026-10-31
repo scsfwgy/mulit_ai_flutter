@@ -23,6 +23,10 @@
 - 手表界面语言同步手机 App 的简体中文或英文设置（“跟随系统”取手机语言），离线保留上次语言，重连补同步；外观跟随手表日夜模式。录音时显示实时波形、计时和取消／转文字状态浮层；手表参与过的话题在手机侧栏带手表图标。
 - 手机与手表录音不足 0.6 秒会视为误触，静默忽略，不发送到语音服务。
 
+## Agent（默认关闭）
+
+在「设置 → Agent」开启后，可从聊天页进入「执行任务」，使用当前模型多轮检索网页与所选项目资料，生成带来源的 Markdown 报告或 CSV 文件。支持执行记录、文件预览与分享/保存、暂停和手动继续。需要模型支持工具调用；联网搜索使用已配置的默认搜索服务，相关请求由服务商计费。离开任务页或应用进入后台会暂停，不承诺后台常驻。[范围与验证](doc/AGENT.md)。
+
 ## Firebase 使用统计
 
 Android 与 iOS 正式手机版接入同一 Firebase 项目 `tools24-d1201` 下各自的 `com.maxhall.ailink` 应用，记录 SDK 自动应用事件。Android 使用 Google Services 插件 4.5.0 和 Firebase BoM 34.19.0；`android/app/google-services.json` 由插件生成匹配正式包名的资源，并由 `FirebaseInitProvider` 自动初始化。Debug/Profile 及 `./release.sh --test` 的统计关闭，不要求 `com.maxhall.ailink.debug` 的 Firebase 配置。
@@ -73,29 +77,30 @@ iPhone 新安装默认使用苹果系统识别与系统朗读，手机与手表�
 运行 `./install-dev.sh`，脚本会按序号列出已连接的 Android 手机、Wear OS 手表、真实 iPhone/iPad、Apple Watch，以及本机 Mac。只有一台设备时自动选中；多台设备时输入 `1`、`1,3` 或 `all`，支持跨平台一次选择多个设备。Android 模拟器也可选择；Apple 模拟器不在此脚本的安装范围内。
 
 ```bash
-./install-dev.sh                                  # 列出设备并按序号选择
+./install-dev.sh                                  # 所有平台默认 Release，按序号选设备
+./install-dev.sh --mode debug                     # 所有选中平台统一使用 Debug
 ./install-dev.sh --list                           # 只查看当前设备和序号
 ./install-dev.sh --select 1,3                      # 构建并安装到指定序号
 ./install-dev.sh --platform android --all          # 所有已连接 Android 设备
 ./install-dev.sh --platform ios --all              # 所有已连接 iPhone 与 Apple Watch
-./install-dev.sh --platform macos                  # 构建 Mac Debug，安装到 ~/Applications
+./install-dev.sh --platform macos                  # 构建 Mac Release，安装到 ~/Applications
 ./install-dev.sh --platform macos --launch         # 安装后打开 Mac 客户端
-./install-dev.sh --device macos --macos-mode release # 安装 Mac Release
+./install-dev.sh --device macos --mode debug       # 安装 Mac Debug
 ./install-dev.sh --target desktop --macos-dir /自选目录
 ./install-dev.sh --target watch                   # 只列出手表并选择
 ./install-dev.sh --platform ios --target phone                 # 默认安装正式包
-./install-dev.sh --platform ios --ios-mode profile             # 安装可并存的测试包
-./install-dev.sh --platform ios --target phone --ios-mode debug
+./install-dev.sh --platform android --mode debug              # Android 测试包
+./install-dev.sh --platform ios --target phone --mode debug    # iPhone 测试包
 ./install-dev.sh --device <序列号或UDID>           # 可重复传 --device 选择多台
 ```
 
 序号以本次筛选后的列表为准；设备重连或筛选条件变化后应重新查看。无人值守安装建议使用 `--device` 指定稳定的设备 ID。原用法 `./install-dev.sh <Android手机序列号> <WearOS手表序列号>` 仍可使用。
 
-脚本需要 Python 3、Flutter 和所选平台的工具链。Android 使用 `adb` 与 Gradle 构建 Debug APK。Apple 使用完整 Xcode、已配对且开启开发者模式的真机；默认读取 Xcode Debug 目标中的开发团队，也可传 `--team <TeamID>` 或设置 `IOS_DEVELOPMENT_TEAM`。iPhone 和 Apple Watch 通过同一次 Flutter iOS 构建生成配套安装包，再用 `devicectl` 分别安装；仅选手表时也需要准备配套 iPhone 构建。
+脚本需要 Python 3、Flutter 和所选平台的工具链。`--mode release|debug` 统一控制 Android、iOS、手表和 Mac，默认 `release`。Android 使用 `adb` 与 Gradle 构建 APK；Release 强制使用正式签名配置，Debug 使用测试包名和测试签名。Apple 使用完整 Xcode、已配对且开启开发者模式的真机；默认读取 Xcode Debug 目标中的开发团队，也可传 `--team <TeamID>` 或设置 `IOS_DEVELOPMENT_TEAM`。iPhone 和 Apple Watch 通过同一次 Flutter iOS 构建生成配套安装包，再用 `devicectl` 分别安装；仅选手表时也需要准备配套 iPhone 构建。
 
-Mac 使用完整 Xcode 构建，默认 Debug，可选 `--macos-mode profile` / `release`；安装到 `~/Applications/AI Link.app`，`--macos-dir` 可改目录。复制后验证签名，再替换应用包；替换失败会恢复旧包，不清空 SQLite 或钥匙串。Mac 的 Debug/Profile/Release 共用 `com.maxhall.ailink.macos` 和本机数据；签名读取忽略的 `Signing.local.xcconfig`，详见 [Mac 说明](doc/macos/README.md)。默认仅安装，`--launch` 打开 Mac 应用。
+Mac 使用完整 Xcode 构建，模式与其它选中设备相同；安装到 `~/Applications/AI Link.app`，`--macos-dir` 可改目录。复制后验证签名，再替换应用包；替换失败会恢复旧包，不清空 SQLite 或钥匙串。Mac 的 Debug/Profile/Release 共用 `com.maxhall.ailink.macos` 和本机数据；签名读取忽略的 `Signing.local.xcconfig`，详见 [Mac 说明](doc/macos/README.md)。默认仅安装，`--launch` 打开 Mac 应用。
 
-Android 开发安装叫「AI Link Debug」，使用 `com.maxhall.ailink.debug`。iOS 默认安装正式包「AI Link」（`com.maxhall.ailink` 与 `com.maxhall.ailink.watchkitapp`），可从桌面启动。需要与正式包并存的测试包时传 `--ios-mode profile`；`--ios-mode debug` 用于 Flutter 断点和热重载，手机需要通过 `flutter run` 或 Xcode 启动。Profile 与 Debug 共用测试标识和名称「AI Link Debug」，可互相覆盖并保留测试数据。脚本先完成所需构建，再覆盖安装所选设备，不执行卸载或数据清空；安装失败会停止并保留已成功安装的设备。安装成功不代表语音、配对和后台流程验证通过。
+Android/iOS 默认安装正式包「AI Link」，手机包名为 `com.maxhall.ailink`。传 `--mode debug` 统一安装测试构建，手机包名为 `com.maxhall.ailink.debug`、名称「AI Link Debug」，可与正式包并存；正式包与测试包数据独立，不自动迁移。Apple Watch 使用对应手机包名加 `.watchkitapp`，两端模式保持一致。iPhone Debug 用于 Flutter 断点和热重载，需要通过 `flutter run` 或 Xcode 启动。脚本先完成所需构建，再覆盖安装所选设备，不执行卸载或数据清空；安装失败会停止并保留已成功安装的设备。安装成功不代表语音、配对和后台流程验证通过。
 
 ### Wear OS 手表
 
@@ -173,7 +178,7 @@ adb -s emulator-5554 shell cmd connectivity set-chain3-enabled false
 
 服务图标来自 [Lobe Icons](https://github.com/lobehub/lobe-icons)，随应用本地打包；许可见 [assets/provider_icons/LICENSE](assets/provider_icons/LICENSE)。预设地址和模型随第三方服务变化，实际可用性以服务商及账户为准；没有真实 API Key 的平台不视为已实测。
 
-当前聊天请求仍发送文字消息；语音输入先经所选语音模型转写为文字。模型回复可以显示 Markdown，但尚不支持公式、HTML、图片上传或文件上传。工具调用、历史导入导出及跨账户同步尚未实现；Token 用量仅在服务端报告时展示。Apple 平台 Debug 构建与配对模拟器界面、配置同步已验证；真机语音链路待验证。Android 正式和测试签名已在本机配置，公开隐私政策已上线；发布 Apple 版前须更新线上隐私政策的 Apple Watch 数据说明，详见 [Apple 平台说明](doc/ios/README.md)。密钥离线备份、真实截图和 Play Console 审核详见 [Android 上架清单](doc/google_play/README.md)。
+当前聊天请求仍发送文字消息；语音输入先经所选语音模型转写为文字。模型回复可以显示 Markdown，但尚不支持公式、HTML、图片上传或文件上传。手机/桌面已提供默认关闭的 Agent 工具调用任务；MCP、历史导入导出及跨账户同步尚未实现；Token 用量仅在服务端报告时展示。Apple 平台 Debug 构建与配对模拟器界面、配置同步已验证；真机语音链路待验证。Android 正式和测试签名已在本机配置，公开隐私政策已上线；发布 Apple 版前须更新线上隐私政策的 Apple Watch 数据说明，详见 [Apple 平台说明](doc/ios/README.md)。密钥离线备份、真实截图和 Play Console 审核详见 [Android 上架清单](doc/google_play/README.md)。
 
 正式版「AI Link」使用 `com.maxhall.ailink`；普通 Debug 与 `./release.sh --test` 均为「AI Link Debug」，使用 `com.maxhall.ailink.debug`，可与正式版同时安装。两者的服务、密钥与聊天记录各自独立，不自动迁移。旧测试包 `com.example.mulit_ai_flutter` 和此前占用正式包名的测试包也不会自动迁移；不要为了测试新包而卸载或清空旧包。iOS Debug 同样使用 `com.maxhall.ailink.debug` 与「AI Link Debug」，配套 watchOS Debug 使用 `com.maxhall.ailink.debug.watchkitapp`；Apple 平台仍待发布签名及配对真机端到端验证。
 

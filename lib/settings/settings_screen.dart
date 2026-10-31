@@ -22,6 +22,7 @@ import 'package:mulit_ai_flutter/voice/voice_settings_screen.dart';
 import 'package:mulit_ai_flutter/search/search_settings_screen.dart';
 import 'package:mulit_ai_flutter/watch/watch_settings_screen.dart';
 import 'package:mulit_ai_flutter/chat/chat_context_screen.dart';
+import 'package:mulit_ai_flutter/agent/agent_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key, this.canClearData});
@@ -99,6 +100,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onTap: () => Navigator.push<void>(
                   context,
                   appPageRoute(builder: (_) => const ModelSettingsScreen()),
+                ),
+              ),
+              IosRow(
+                title: T('i18n.agent_title'),
+                leading: Icon(CupertinoIcons.sparkles, color: IosColors.blue),
+                onTap: () => Navigator.push<void>(
+                  context,
+                  appPageRoute(builder: (_) => const AgentSettingsScreen()),
                 ),
               ),
               IosRow(

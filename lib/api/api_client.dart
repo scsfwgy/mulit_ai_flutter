@@ -9,6 +9,7 @@ import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
 import 'package:mulit_ai_flutter/chat/chat_context.dart';
 import 'package:mulit_ai_flutter/chat/memory_profile.dart';
+import 'package:mulit_ai_flutter/api/tool_call.dart';
 
 enum ApiErrorKind { other, network, auth, model, context }
 
@@ -433,6 +434,110 @@ class ModelApiClient {
       _searchClient?.cancel();
       _client.close(force: true);
       _detachStorefront();
+    }
+  }
+
+  /// Agent rounds are complete messages so truncated arguments never execute.
+  Future<ModelToolTurn> toolTurn({
+    required String model,
+    required String systemPrompt,
+    required List<Map<String, dynamic>> messages,
+    required List<Map<String, dynamic>> tools,
+    int contextWindowTokens = ChatContext.defaultWindowTokens,
+  }) async {
+    _requestedModel = model;
+    try {
+      await _requireService(model: model);
+      if (_cancelled) throw ApiException(T('i18n.reply_stopped'));
+      final anthropic = provider.protocol == ApiProtocol.anthropic;
+      final body = {
+        'model': model,
+        'stream': false,
+        'max_tokens': 4096,
+        'messages': [
+          if (!anthropic) {'role': 'system', 'content': systemPrompt},
+          ...messages,
+        ],
+        if (anthropic) 'system': systemPrompt,
+        'tools': tools
+            .map(
+              (tool) => anthropic
+                  ? {
+                      'name': tool['name'],
+                      'description': tool['description'],
+                      'input_schema': tool['parameters'],
+                    }
+                  : {'type': 'function', 'function': tool},
+            )
+            .toList(),
+      };
+      if (ChatContext.estimateTokens(jsonEncode(body)) + 4096 >
+          contextWindowTokens) {
+        throw ApiException(
+          T(ChatContext.limitMessageKey),
+          kind: ApiErrorKind.context,
+        );
+      }
+      Future<HttpClientResponse> send() async {
+        if (_cancelled) throw ApiException(T('i18n.reply_stopped'));
+        final request = await _client
+            .postUrl(_chatUri)
+            .timeout(const Duration(seconds: 25));
+        if (_cancelled) {
+          request.abort();
+          throw ApiException(T('i18n.reply_stopped'));
+        }
+        request.followRedirects = false;
+        _headers.forEach(request.headers.set);
+        request.headers.set('accept', 'application/json');
+        final bytes = utf8.encode(jsonEncode(body));
+        request.contentLength = bytes.length;
+        request.add(bytes);
+        return request.close().timeout(const Duration(seconds: 90));
+      }
+
+      var response = await send();
+      String? rejection;
+      if (!anthropic &&
+          (response.statusCode == 400 || response.statusCode == 422)) {
+        rejection = await _readErrorBody(response);
+        if (rejection.contains('max_tokens') &&
+            rejection.contains('max_completion_tokens')) {
+          body.remove('max_tokens');
+          body['max_completion_tokens'] = 4096;
+          response = await send();
+          rejection = null;
+        }
+      }
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        final raw = rejection ?? await _readErrorBody(response);
+        if (response.statusCode == 400 || response.statusCode == 422) {
+          if (ChatContext.isServerLimit(raw)) {
+            throw _responseError(response.statusCode, raw);
+          }
+          throw ApiException(
+            T('i18n.agent_model_error'),
+            kind: ApiErrorKind.model,
+          );
+        }
+        throw _responseError(response.statusCode, raw);
+      }
+      final data = <int>[];
+      await for (final chunk in _readBody(response)) {
+        if (data.length + chunk.length > 1024 * 1024) {
+          throw const FormatException('Response too large');
+        }
+        data.addAll(chunk);
+      }
+      if (_cancelled) throw ApiException(T('i18n.reply_stopped'));
+      return ModelToolTurn.parse(
+        jsonDecode(utf8.decode(data)) as Map<String, dynamic>,
+        provider.protocol,
+      );
+    } on ApiException {
+      rethrow;
+    } catch (_) {
+      throw ApiException(T('i18n.agent_model_error'));
     }
   }
 

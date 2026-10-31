@@ -1,3 +1,4 @@
+import 'package:mulit_ai_flutter/agent/agent_runner.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -24,7 +25,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
 
   Future<void> _clear() async {
     if (_clearing) return;
-    if (widget.canClearData?.call() == false) {
+    if (AgentRunner.isBusy || widget.canClearData?.call() == false) {
       setState(() => _error = T('i18n.stop_the_reply_or_wait'));
       return;
     }
@@ -53,7 +54,7 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    if (widget.canClearData?.call() == false) {
+    if (AgentRunner.isBusy || widget.canClearData?.call() == false) {
       setState(() => _error = T('i18n.stop_the_reply_or_wait'));
       return;
     }
@@ -104,6 +105,10 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
               _PrivacyRow(
                 title: T('i18n.project_space'),
                 detail: T('i18n.project_privacy'),
+              ),
+              _PrivacyRow(
+                title: T('i18n.agent_title'),
+                detail: T('i18n.agent_privacy'),
               ),
               _PrivacyRow(
                 title: T('i18n.memory'),

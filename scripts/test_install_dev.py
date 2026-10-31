@@ -37,11 +37,11 @@ class InstallDevTest(unittest.TestCase):
         mac = installer.Device("macos", "desktop", "macos", "Mac")
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            app = root / "build/macos/Build/Products/Profile/AI Link.app"
+            app = root / "build/macos/Build/Products/Debug/AI Link.app"
             self.make_mac_app(app)
             with patch.object(installer, "ROOT", root), patch.object(installer, "run") as command:
-                self.assertEqual(installer.build([mac, mac], "profile", None, "profile"), {("macos", "desktop"): app})
-                self.assertEqual(command.call_args_list[0].args[0], ["flutter", "build", "macos", "--profile"])
+                self.assertEqual(installer.build([mac, mac], "debug", None), {("macos", "desktop"): app})
+                self.assertEqual(command.call_args_list[0].args[0], ["flutter", "build", "macos", "--debug"])
                 self.assertEqual(command.call_args_list[1].args[0], ["codesign", "--verify", "--deep", "--strict", app])
 
     def test_mac_install_replaces_bundle_and_keeps_other_files(self):
@@ -106,7 +106,7 @@ class InstallDevTest(unittest.TestCase):
                  patch.object(installer, "install_macos", return_value=Path("/tmp/mac-apps/AI Link.app")) as install, \
                  patch.object(installer, "run") as command, contextlib.redirect_stdout(io.StringIO()):
                 installer.main()
-            build.assert_called_once_with([mac], "release", None, "debug")
+            build.assert_called_once_with([mac], "release", None)
             install.assert_called_once_with(Path("built.app"), "/tmp/mac-apps")
             if launch:
                 command.assert_called_once_with(["open", "-a", Path("/tmp/mac-apps/AI Link.app")])
@@ -161,13 +161,67 @@ class InstallDevTest(unittest.TestCase):
     def test_wear_only_build_does_not_build_phone(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            apk = root / "build/wear/outputs/apk/debug/wear-debug.apk"
+            apk = root / "build/wear/outputs/apk/release/wear-release.apk"
             apk.parent.mkdir(parents=True)
             apk.touch()
             with patch.object(installer, "ROOT", root), patch.object(installer, "run") as run:
-                artifacts = installer.build([self.devices[1]] * 2, "profile", None)
+                artifacts = installer.build([self.devices[1]] * 2, "release", None)
             self.assertEqual(artifacts, {("android", "watch"): apk})
-            run.assert_called_once_with([root / "android/gradlew", "-p", root / "android", ":wear:assembleDebug"])
+            self.assertEqual(run.call_count, 1)
+            self.assertEqual(run.call_args.args[0], [root / "android/gradlew", "-p", root / "android", ":wear:assembleRelease"])
+            self.assertEqual(run.call_args.kwargs["env"]["AI_LINK_SIGNING_PROFILE"], "release")
+
+    def test_android_phone_and_watch_use_the_same_explicit_mode_and_signing_profile(self):
+        for mode, profile in (("release", "release"), ("debug", "test")):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                phone = root / f"build/app/outputs/flutter-apk/app-{mode}.apk"
+                watch = root / f"build/wear/outputs/apk/{mode}/wear-{mode}.apk"
+                for artifact in (phone, watch):
+                    artifact.parent.mkdir(parents=True)
+                    artifact.touch()
+                with patch.object(installer, "ROOT", root), \
+                     patch.dict(installer.os.environ, {"AI_LINK_SIGNING_PROFILE": "test"}), \
+                     patch.object(installer, "run") as command:
+                    artifacts = installer.build(self.devices[:2] * 2, mode, None)
+                self.assertEqual(artifacts, {("android", "phone"): phone, ("android", "watch"): watch})
+                self.assertEqual(command.call_count, 2)
+                self.assertEqual(command.call_args_list[0].args[0], ["flutter", "build", "apk", f"--{mode}"])
+                self.assertEqual(command.call_args_list[1].args[0], [root / "android/gradlew", "-p", root / "android", f":wear:assemble{mode.capitalize()}"])
+                for call in command.call_args_list:
+                    self.assertEqual(call.kwargs["env"]["AI_LINK_SIGNING_PROFILE"], profile)
+
+    def test_android_cli_defaults_to_release_and_debug_is_opt_in(self):
+        for flags, mode in (([], "release"), (["--mode", "debug"], "debug")):
+            with self.subTest(mode=mode), \
+                 patch("sys.argv", ["install-dev.sh", "--device", "phone-a"] + flags), \
+                 patch.object(installer, "discover", return_value=self.devices), \
+                 patch.object(installer.shutil, "which", return_value="tool"), \
+                 patch.object(installer, "build", return_value={("android", "phone"): Path("phone.apk")}) as build, \
+                 patch.object(installer, "run") as command, contextlib.redirect_stdout(io.StringIO()):
+                installer.main()
+            build.assert_called_once_with([self.devices[0]], mode, None)
+            command.assert_called_once_with(["adb", "-s", "phone-a", "install", "-r", Path("phone.apk")])
+
+    def test_one_mode_builds_all_selected_platforms_consistently(self):
+        mac = installer.Device("macos", "desktop", "macos", "Mac")
+        for mode in ("release", "debug"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                phone = root / f"build/app/outputs/flutter-apk/app-{mode}.apk"
+                watch = root / f"build/wear/outputs/apk/{mode}/wear-{mode}.apk"
+                for artifact in (phone, watch):
+                    artifact.parent.mkdir(parents=True)
+                    artifact.touch()
+                self.make_mac_app(root / "build/macos/Build/Products" / mode.capitalize() / "AI Link.app")
+                self.make_apple_artifacts(root, phone_id=installer.apple_bundle_ids(mode)[0])
+                with patch.object(installer, "ROOT", root), patch.object(installer, "run") as command:
+                    artifacts = installer.build(self.devices + [mac], mode, "ABCDE12345")
+                self.assertEqual(len(artifacts), 5)
+                builds = [call.args[0] for call in command.call_args_list
+                          if call.args[0][:2] == ["flutter", "build"]]
+                self.assertEqual(builds, [["flutter", "build", platform, f"--{mode}"]
+                                          for platform in ("apk", "ios", "macos")])
 
     def make_apple_artifacts(self, root, companion=None, phone_id=installer.PHONE_ID):
         phone = root / "build/ios/iphoneos/Runner.app"
@@ -191,14 +245,14 @@ class InstallDevTest(unittest.TestCase):
             root = Path(temp)
             def command(argv, **kwargs):
                 if argv[0] == "flutter":
-                    self.assertEqual(argv, ["flutter", "build", "ios", "--profile"])
+                    self.assertEqual(argv, ["flutter", "build", "ios", "--debug"])
                     config = Path(kwargs["env"]["XCODE_XCCONFIG_FILE"])
                     self.assertIn("DEVELOPMENT_TEAM = ABCDE12345", config.read_text())
                     self.assertNotIn("CODE_SIGN_STYLE", config.read_text())
                     configs.append(config)
                     self.make_apple_artifacts(root)
             with patch.object(installer, "ROOT", root), patch.object(installer, "run", side_effect=command) as run:
-                artifacts = installer.build(self.devices[2:] * 2, "profile", "ABCDE12345")
+                artifacts = installer.build(self.devices[2:] * 2, "debug", "ABCDE12345")
             self.assertEqual(run.call_count, 2)  # One Flutter build and one signature verification.
             self.assertEqual(set(artifacts), {("ios", "phone"), ("ios", "watch")})
         self.assertFalse(configs[0].exists())
@@ -208,7 +262,7 @@ class InstallDevTest(unittest.TestCase):
             root = Path(temp)
             self.make_apple_artifacts(root, companion="wrong.phone")
             with patch.object(installer, "ROOT", root), patch.object(installer, "run"), self.assertRaisesRegex(ValueError, "配套手机标识"):
-                installer.build(self.devices[2:], "profile", "ABCDE12345")
+                installer.build(self.devices[2:], "debug", "ABCDE12345")
 
     def test_release_build_requires_the_official_bundle(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -241,7 +295,7 @@ class InstallDevTest(unittest.TestCase):
             plist = root / "build/ios/iphoneos/Runner.app/Watch/AILinkWatch.app/PlugIns/AILinkWatchWidgets.appex/Info.plist"
             plist.write_bytes(plistlib.dumps({"CFBundleIdentifier": "com.maxhall.ailink.watchkitapp.widgets"}))
             with patch.object(installer, "ROOT", root), patch.object(installer, "run"), self.assertRaisesRegex(ValueError, "开发版"):
-                installer.build(self.devices[2:], "profile", "ABCDE12345")
+                installer.build(self.devices[2:], "debug", "ABCDE12345")
 
     def test_release_share_extension_in_debug_bundle_stops_before_install(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -250,11 +304,11 @@ class InstallDevTest(unittest.TestCase):
             plist = root / "build/ios/iphoneos/Runner.app/PlugIns/AILinkShare.appex/Info.plist"
             plist.write_bytes(plistlib.dumps({"CFBundleIdentifier": "com.maxhall.ailink.share"}))
             with patch.object(installer, "ROOT", root), patch.object(installer, "run"), self.assertRaisesRegex(ValueError, "开发版"):
-                installer.build(self.devices[2:], "profile", "ABCDE12345")
+                installer.build(self.devices[2:], "debug", "ABCDE12345")
 
     def test_cli_installs_only_selected_devices_after_build(self):
         events = []
-        def build(selected, mode, team, macos_mode="debug"):
+        def build(selected, mode, team):
             events.append("built")
             self.assertEqual(selected, [self.devices[3], self.devices[0]])
             return {("android", "phone"): Path("phone.apk"), ("ios", "watch"): Path("watch.app")}
@@ -283,7 +337,7 @@ class InstallDevTest(unittest.TestCase):
     def test_install_failure_stops_and_reports_successful_devices(self):
         artifacts = {("android", "phone"): Path("phone.apk"), ("android", "watch"): Path("watch.apk")}
         output = io.StringIO()
-        with patch("sys.argv", ["install-dev.sh", "--select", "1,2"]), \
+        with patch("sys.argv", ["install-dev.sh", "--select", "1,2", "--mode", "debug"]), \
              patch.object(installer, "discover", return_value=self.devices), \
              patch.object(installer.shutil, "which", return_value="tool"), \
              patch.object(installer, "build", return_value=artifacts), \
@@ -294,6 +348,7 @@ class InstallDevTest(unittest.TestCase):
         self.assertEqual(run.call_count, 2)
         self.assertIn("此前已安装成功：Phone A", output.getvalue())
         self.assertIn("--device watch-a", output.getvalue())
+        self.assertIn("--mode debug", output.getvalue())
 
 
 if __name__ == "__main__":

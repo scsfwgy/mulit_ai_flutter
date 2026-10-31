@@ -1,6 +1,6 @@
 # AI Link Privacy Policy (pre-publication draft)
 
-Updated: October 5, 2026
+Updated: October 31, 2026
 
 **Before publication: add the legal developer/publisher name and public URL, then review against the final build and configured services.** Contact: mateolim93@gmail.com.
 
@@ -19,12 +19,14 @@ When you fetch a model list, send a message, transcribe speech or synthesize aud
 
 When phone web search is enabled, the current question and search API key go directly to the selected search provider. Retrieved webpage content is then sent as temporary context to the current text model. Source links, titles and excerpts are saved with assistant replies in the unencrypted local SQLite database. The search toggle, selected service configuration and key sync automatically over the paired connection. Search keys remain in secure phone storage, Keystore-encrypted storage on Wear OS, or Keychain on Apple Watch. Watch requests use the same search-before-answer flow through the phone or the watch network; source links in answers sync back to the phone with chats. Deleting a search service deletes its key but keeps sources in existing chats; clearing all phone data removes both. Search is off by default. Testing search sends the fixed query “Flutter”, may incur charges and does not save the configuration.
 
+Agent is off by default. After you enable it and start a task, its goal, selected project context, and required tool results are sent to your selected model. Model-generated queries go to your default search provider; public webpage requests connect directly to their websites. Goals, execution logs, evidence snapshots, and generated files are stored locally in plaintext. Tasks do not automatically update long-term memory. Deleting a task or clearing local data removes its records and files, but not copies you exported.
+
 ## Permissions
 
 Microphone permission is used for voice recording you start by holding the button. Camera permission is used for scanning configuration and API key QR codes. Network access is used to contact configured providers and to synchronize data between phone and watch. Denying microphone or camera access does not prevent text chat.
 
 ## Deletion and contact
 
-You can delete individual conversations or providers, or clear all phone data under Settings → Model settings → Data and privacy. Uninstall the watch app to remove data stored on the watch. Deleting local data does not delete content previously sent to a third-party service; contact that provider to request deletion there.
+You can delete individual conversations or providers, or clear all phone data under Settings → General → Data and privacy. Uninstall the watch app to remove data stored on the watch. Deleting local data does not delete content previously sent to a third-party service; contact that provider to request deletion there.
 
 For privacy questions, contact mateolim93@gmail.com.

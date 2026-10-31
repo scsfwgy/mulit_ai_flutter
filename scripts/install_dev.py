@@ -17,14 +17,14 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE_PHONE_ID = "com.maxhall.ailink"
 DEBUG_PHONE_ID = "com.maxhall.ailink.debug"
-# Profile and debug installs keep the older names used by the bundle checks.
+# Debug installs keep the names used by the bundle checks.
 PHONE_ID = DEBUG_PHONE_ID
 WATCH_ID = PHONE_ID + ".watchkitapp"
 MACOS_ID = "com.maxhall.ailink.macos"
 
 
-def apple_bundle_ids(ios_mode):
-    phone = RELEASE_PHONE_ID if ios_mode == "release" else DEBUG_PHONE_ID
+def apple_bundle_ids(mode):
+    phone = RELEASE_PHONE_ID if mode == "release" else DEBUG_PHONE_ID
     return phone, phone + ".watchkitapp"
 
 
@@ -219,15 +219,16 @@ def development_team(explicit):
     return team
 
 
-def build(selected, ios_mode, team, macos_mode="debug"):
+def build(selected, mode, team):
     artifacts = {}
     kinds = {(device.platform, device.kind) for device in selected}
+    android_env = {**os.environ, "AI_LINK_SIGNING_PROFILE": "release" if mode == "release" else "test"}
     if ("android", "phone") in kinds:
-        run(["flutter", "build", "apk", "--debug"])
-        artifacts["android", "phone"] = ROOT / "build/app/outputs/flutter-apk/app-debug.apk"
+        run(["flutter", "build", "apk", f"--{mode}"], env=android_env)
+        artifacts["android", "phone"] = ROOT / f"build/app/outputs/flutter-apk/app-{mode}.apk"
     if ("android", "watch") in kinds:
-        run([ROOT / "android/gradlew", "-p", ROOT / "android", ":wear:assembleDebug"])
-        artifacts["android", "watch"] = ROOT / "build/wear/outputs/apk/debug/wear-debug.apk"
+        run([ROOT / "android/gradlew", "-p", ROOT / "android", f":wear:assemble{mode.capitalize()}"], env=android_env)
+        artifacts["android", "watch"] = ROOT / f"build/wear/outputs/apk/{mode}/wear-{mode}.apk"
     if any(platform == "ios" for platform, _ in kinds):
         # Runner prepares Flutter dependencies and embeds the signed watch app.
         # A temporary signing override avoids rewriting the user's Xcode project.
@@ -241,15 +242,15 @@ def build(selected, ios_mode, team, macos_mode="debug"):
                     raise ValueError("XCODE_XCCONFIG_FILE 路径包含不支持的字符。")
                 contents = f'#include "{inherited}"\n'
             config.write_text(contents + f"DEVELOPMENT_TEAM = {team}\n")
-            run(["flutter", "build", "ios", f"--{ios_mode}"], env={
+            run(["flutter", "build", "ios", f"--{mode}"], env={
                 **os.environ, "XCODE_XCCONFIG_FILE": str(config),
             })
         phone = ROOT / "build/ios/iphoneos/Runner.app"
         watch = phone / "Watch/AILinkWatch.app"
         widget = watch / "PlugIns/AILinkWatchWidgets.appex"
         share = phone / "PlugIns/AILinkShare.appex"
-        phone_id, watch_id = apple_bundle_ids(ios_mode)
-        edition = "正式版" if ios_mode == "release" else "开发版"
+        phone_id, watch_id = apple_bundle_ids(mode)
+        edition = "正式版" if mode == "release" else "开发版"
         for path, expected in ((phone, phone_id), (watch, watch_id), (widget, watch_id + ".widgets"), (share, phone_id + ".share")):
             with (path / "Info.plist").open("rb") as stream:
                 info = plistlib.load(stream)
@@ -261,8 +262,8 @@ def build(selected, ios_mode, team, macos_mode="debug"):
         artifacts["ios", "phone"] = phone
         artifacts["ios", "watch"] = watch
     if ("macos", "desktop") in kinds:
-        run(["flutter", "build", "macos", f"--{macos_mode}"])
-        mac = ROOT / "build/macos/Build/Products" / macos_mode.capitalize() / "AI Link.app"
+        run(["flutter", "build", "macos", f"--{mode}"])
+        mac = ROOT / "build/macos/Build/Products" / mode.capitalize() / "AI Link.app"
         with (mac / "Contents/Info.plist").open("rb") as stream:
             info = plistlib.load(stream)
         if info.get("CFBundleIdentifier") != MACOS_ID:
@@ -303,7 +304,7 @@ def install_macos(source, directory):
 
 
 def main():
-    parser = argparse.ArgumentParser(prog="./install-dev.sh", description="构建并覆盖安装 AI Link 开发版；保留现有应用数据。")
+    parser = argparse.ArgumentParser(prog="./install-dev.sh", description="构建并覆盖安装 AI Link；所有平台默认 Release，保留现有应用数据。")
     parser.add_argument("--platform", choices=("all", "android", "ios", "macos"), default="all", help="筛选平台，默认 all；macos 为本机 Mac")
     parser.add_argument("--target", choices=("all", "phone", "watch", "desktop"), default="all", help="筛选手机/手表/电脑，默认 all")
     choice = parser.add_mutually_exclusive_group()
@@ -311,13 +312,7 @@ def main():
     choice.add_argument("--device", action="append", metavar="设备ID", help="指定序列号/UDID，可重复传入")
     choice.add_argument("--all", action="store_true", help="安装到筛选后的全部设备")
     parser.add_argument("--list", action="store_true", help="只列设备，不构建或安装")
-    parser.add_argument(
-        "--ios-mode",
-        choices=("release", "profile", "debug"),
-        default="release",
-        help="默认 release，安装正式包；profile 或 debug 安装可并存的测试包",
-    )
-    parser.add_argument("--macos-mode", choices=("debug", "profile", "release"), default="debug", help="Mac 构建模式，默认 debug")
+    parser.add_argument("--mode", choices=("release", "debug"), default="release", help="所有平台统一构建模式，默认 release；debug 使用测试包")
     parser.add_argument("--macos-dir", default=str(Path.home() / "Applications"), metavar="目录", help="Mac 安装目录，默认 ~/Applications")
     parser.add_argument("--launch", action="store_true", help="安装后打开 Mac 客户端；手机/手表行为不变")
     parser.add_argument("--team", metavar="AppleTeamID", help="iPhone/Watch 签名团队；Mac 读取 Signing.local.xcconfig")
@@ -336,9 +331,10 @@ def main():
         raise ValueError("缺少 flutter，请将 Flutter SDK 加入 PATH。")
     team = development_team(args.team) if any(d.platform == "ios" for d in selected) else None
     print("\n本次安装：" + "；".join(f"{d.label} {d.name}" for d in selected), flush=True)
+    print(f"构建模式：{args.mode}", flush=True)
     if team:
-        print(f"Apple 构建模式：{args.ios_mode}；签名团队：{team}", flush=True)
-    artifacts = build(selected, args.ios_mode, team, args.macos_mode)
+        print(f"Apple 签名团队：{team}", flush=True)
+    artifacts = build(selected, args.mode, team)
     # Build all required artifacts before updating the first selected device.
     installed = []
     for device in sorted(selected, key=lambda d: d.kind == "watch"):
@@ -362,15 +358,15 @@ def main():
                 print("请保持设备解锁，检查 Device Hub 连接、开发者模式和开发者证书信任。", file=sys.stderr)
             if device.platform == "macos":
                 print("请检查安装目录权限和完整 Xcode；原有本机数据与钥匙串不会清空。", file=sys.stderr)
-                print(f"可单独重试：./install-dev.sh --platform macos --macos-mode {args.macos_mode}", file=sys.stderr)
+                print(f"可单独重试：./install-dev.sh --platform macos --mode {args.mode}", file=sys.stderr)
             else:
-                print(f"恢复连接后可单独重试：./install-dev.sh --device {device.identifier} --ios-mode {args.ios_mode}", file=sys.stderr)
+                print(f"恢复连接后可单独重试：./install-dev.sh --device {device.identifier} --mode {args.mode}", file=sys.stderr)
             raise
         installed.append(device.name)
         print(f"安装完成：{device.name}", flush=True)
     print("\n所选设备已全部覆盖安装；未卸载或清空应用数据。")
-    if any(d.platform == "ios" and d.kind == "phone" for d in selected) and args.ios_mode == "debug":
-        print("iPhone Debug 版需通过 flutter run / Xcode 启动；桌面启动请使用默认 Release，或 --ios-mode profile 重新安装。")
+    if any(d.platform == "ios" and d.kind == "phone" for d in selected) and args.mode == "debug":
+        print("iPhone Debug 版需通过 flutter run / Xcode 启动；从桌面启动请使用 --mode release 重新安装。")
 
 
 if __name__ == "__main__":

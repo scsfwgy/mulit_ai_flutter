@@ -7,7 +7,7 @@
 - Android 与 iOS 手机端共用 Flutter 的 iOS 风格页面，不按运行平台切换两套页面；Wear OS 与 Apple Watch 使用各自的原生界面。macOS、Windows 与 Linux 共用桌面分栏。Apple 平台代码待完整 Xcode 构建及配对设备验证；Windows 尚未在 Windows 机器上运行过。
 - 已实现文本聊天、流式回复、Markdown 回复、多话题、模型服务预设、自定义 API、表单、JSON 与扫码导入配置，以及全局和单模型提示词。
 - 当前协议是 OpenAI 兼容 Chat Completions 和 Claude Messages。新增平台时先判断能否复用协议适配器，再增加专用实现。
-- 已实现手机/桌面的图片、拍照入口（手机）和文件发送：图片/PDF 按协议直发，UTF-8 文本本地读取，其它格式不限后缀并原样发送，是否支持由模型或接口决定。不在本地解析 Office 文档。工具调用、跨设备云同步和历史导入导出尚未实现。附件流程与验证边界见 `doc/CHAT_ATTACHMENTS.md`。正式上传签名已在本机配置，但尚未在 Play Console 注册或上架；不要把 Android 构建成功写成 iOS 或商店发布成功。
+- 已实现手机/桌面的图片、拍照入口（手机）和文件发送：图片/PDF 按协议直发，UTF-8 文本本地读取，其它格式不限后缀并原样发送，是否支持由模型或接口决定。不在本地解析 Office 文档。手机/桌面已提供默认关闭的 Agent 任务工具调用；MCP、跨设备云同步和历史导入导出尚未实现。附件流程与验证边界见 `doc/CHAT_ATTACHMENTS.md`。正式上传签名已在本机配置，但尚未在 Play Console 注册或上架；不要把 Android 构建成功写成 iOS 或商店发布成功。
 - 产品功能路线与 RikkaHub 对照来源见 `TODO.md`；实施前重新核对现状与参考项目的最新说明。
 
 ## 代码地图
@@ -47,6 +47,13 @@
 - `lib/chat/model_picker.dart`：聊天与服务配置共用的可搜索模型列表；大列表按 `平台/模型` 或 `家族-型号` 前缀折叠分组。
 - `lib/chat/assistant_markdown.dart`：模型回复的 Markdown 展示。
 - `lib/chat/desktop_chat.dart`：桌面分栏布局与键盘快捷键外壳。macOS 用 Command，Windows 与 Linux 用 Control。侧栏和聊天顶栏共用 `desktopToolbarHeight`；桌面聊天及会话行的更多操作通过 `ui/desktop_popup_menu.dart` 显示锚定按钮的小菜单，手机仍用操作表。Windows 原生 File 菜单只在点击时调用 `between_models/desktop_menu`，菜单文字里写着 Ctrl+N 与 Ctrl+,，但不注册 Win32 加速键，避免和 Flutter 快捷键各触发一次。格式化复制在 Windows 写入 CF_UNICODETEXT 与 `HTML Format`；通道失败时退回纯文本。窗口标题为 AI Link，默认 1100×760，最小 600×500。
+
+### Agent（agent/）
+
+- `lib/agent/agent_screen.dart`：设置开关默认关闭；独立任务页与记录、步骤、来源、成果预览和导出。开启后聊天页显示任务入口，普通聊天/手表不自动变为 Agent。
+- `lib/agent/agent_runner.dart`：单 Agent 工具循环，最多 12 轮/24 次工具尝试，每次执行最多 5 分钟；离开任务页、进入后台或关闭开关时暂停，返回手动继续。购买及服务地区规则仍适用。
+- `lib/agent/agent_store.dart`：任务以 `agent_task:<UUID>` JSON 保存到既有 settings 表；成果在私有附件目录的 agent_artifacts 子目录，不进入普通附件孤儿清理；删除任务或清空数据同步删除文件。
+- `lib/api/tool_call.dart` 与 `ModelApiClient.toolTurn()`：两类协议的完整非流式工具回合与关联结果；截断/无效调用不执行，保留协议续传字段。`lib/agent/web_reader.dart` 限制公开 HTTPS，检查并固定 DNS 地址以避免访问私网。范围和验证见 `doc/AGENT.md`。
 
 ### 核心数据（core/）
 
@@ -200,6 +207,8 @@ Windows 安装包：`scripts/package_windows.ps1` 调用 Inno Setup 编译 `wind
 最终分发包须集中复制到每次归档目录根目录，命名统一为 `AI-Link-<phone|wear|macos|windows|ios>-<版本号>-<提交哈希>+<构建号>.<格式>`；macOS/Windows/iOS 子目录原始包继续保留。`archive_final_package` 负责复制及加入根目录产物清单，`SHA256SUMS` 与结束汇总引用该清单，App Store 上传引用根目录 IPA。Windows 根目录 `.exe` 是安装包，子目录仍使用 `AI-Link-Setup-<版本号>+<构建号>.exe` 原名。
 
 发布汇总须打印从脚本启动开始的总耗时（时分秒及总秒数），包括远程构建等待和上传；`print_summary` 同时将 `elapsedSeconds` 写入 `release-info.txt`，保持一次性打印/写入。Android 官网与 Google Play 发布参数统一为 `--push-android`，`--push-mobile` 等价于 `--push-android --push-ios`。`--push-all` 在此基础上同时发布 macOS 与 Windows 的官网下载地址。
+
+`./install-dev.sh` 通过 `--mode release|debug` 统一控制所选 Android 手机/Wear OS、iOS/Apple Watch 和 Mac，默认 Release；不提供分平台模式参数。Android Release 强制使用正式签名配置，Debug 使用测试包名及测试签名；失败重试命令保留同一模式。只覆盖安装，不卸载或清空数据。
 
 提交代码前先检查 `git status`、变更范围和 `git diff --check`。只提交本次工作涉及的文件；`build/`、`.dart_tool/` 等构建产物由 `.gitignore` 排除。
 
