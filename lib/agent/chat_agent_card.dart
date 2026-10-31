@@ -1,6 +1,8 @@
 import 'package:flutter/cupertino.dart';
 import 'package:mulit_ai_flutter/agent/agent_store.dart';
 import 'package:mulit_ai_flutter/agent/agent_screen.dart';
+import 'package:mulit_ai_flutter/agent/agent_presentation.dart';
+import 'package:mulit_ai_flutter/agent/agent_task_actions.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 
@@ -108,6 +110,10 @@ class ChatAgentCard extends StatelessWidget {
               key: ValueKey(task.id),
               task: task,
               onResume: onResume,
+              onOpenSettings: () => Navigator.push<AgentChatRequest>(
+                context,
+                appPageRoute(builder: (_) => const AgentSettingsScreen()),
+              ),
               onOpenChat: onOpenChat,
               retryWithCurrentModel: retryWithCurrentModel,
             ),

@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 import 'package:mulit_ai_flutter/agent/agent_runner.dart';
+import 'package:mulit_ai_flutter/agent/agent_tools.dart';
 import 'package:mulit_ai_flutter/agent/agent_context.dart';
 import 'package:mulit_ai_flutter/chat/chat_context.dart';
 import 'package:mulit_ai_flutter/agent/agent_store.dart';
@@ -804,9 +805,9 @@ void main() {
         'bytes': 12,
       });
       final task = newTask(projectId: first);
-      final runner = AgentRunner(repository: repository);
+      final executor = AgentToolExecutor(repository: repository, check: () {});
       expect(
-        () => runner.executeTool(
+        () => executor.execute(
           task,
           ModelToolCall('d', 'read_project_document', {'document_id': doc}),
           0,
@@ -818,20 +819,20 @@ void main() {
         throwsFormatException,
       );
       expect(
-        () => runner.executeTool(
+        () => executor.execute(
           task,
           const ModelToolCall('u', 'shell', {'command': 'pwd'}),
           0,
         ),
         throwsFormatException,
       );
-      final result = await runner.executeTool(
+      final result = await executor.execute(
         newTask(projectId: second),
         ModelToolCall('d', 'read_project_document', {'document_id': doc}),
         0,
       );
       expect(result['text'], 'Private data');
-      runner.dispose();
+      executor.cancel();
     },
   );
 }

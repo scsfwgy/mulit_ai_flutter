@@ -4,6 +4,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mulit_ai_flutter/agent/agent_screen.dart';
+import 'package:mulit_ai_flutter/agent/agent_presentation.dart';
+import 'package:mulit_ai_flutter/agent/agent_task_actions.dart';
 import 'package:mulit_ai_flutter/agent/agent_store.dart';
 import 'package:mulit_ai_flutter/agent/chat_agent_card.dart';
 import 'package:mulit_ai_flutter/chat/chat_context_screen.dart';
@@ -28,6 +30,39 @@ AgentTask task() => AgentTask(
 
 void main() {
   setUpAll(useSqflitePluginFactory);
+
+  testWidgets(
+    'a disabled Agent card opens settings and still requires an explicit resume',
+    (tester) async {
+      installEmptyDatabaseStub(settings: {'agent_enabled': '0'});
+      AppPreferences.instance.agentEnabled = false;
+      var resumed = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ChatAgentCard(
+              task: task(),
+              running: false,
+              onDetails: () {},
+              onResume: () => resumed++,
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text(T('i18n.agent_enable')));
+      await tester.pumpAndSettle();
+      expect(find.byType(AgentSettingsScreen), findsOneWidget);
+      await tester.tap(find.byKey(const Key('agent-enable')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(CupertinoIcons.back));
+      await tester.pumpAndSettle();
+      expect(resumed, 0);
+      await tester.tap(find.text(T('i18n.agent_resume')));
+      await tester.pump();
+      expect(resumed, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   for (final fromMessageSettings in [false, true]) {
     testWidgets(

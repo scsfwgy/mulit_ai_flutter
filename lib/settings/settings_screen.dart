@@ -23,6 +23,7 @@ import 'package:mulit_ai_flutter/search/search_settings_screen.dart';
 import 'package:mulit_ai_flutter/watch/watch_settings_screen.dart';
 import 'package:mulit_ai_flutter/chat/chat_context_screen.dart';
 import 'package:mulit_ai_flutter/agent/agent_screen.dart';
+import 'package:mulit_ai_flutter/agent/agent_presentation.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key, this.canClearData});
