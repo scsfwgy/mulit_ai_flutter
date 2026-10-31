@@ -58,7 +58,8 @@
 - `lib/agent/agent_capability.dart` 与 `agent_capability_row.dart`：管理页手动测试当前聊天模型的无害两回合工具探针；不读取聊天/项目/文件，提示少量请求费用，不自动开启 Agent；购买与地区限制沿用原规则。
 - `lib/agent/agent_artifact_format.dart` 与 `agent_csv.dart`：从 Markdown/CSV 本地生成真实 MD/PDF/DOCX/CSV/XLSX；PDF 使用 `assets/fonts/` 离线中文字体。模型不提供二进制，编码在 isolate 完成；电子表格文本不执行公式。
 - `lib/agent/agent_result_actions.dart`：回答与文件内容预览共用导出、分享及可编辑的项目笔记确认页。手机分享使用保留原文件名的实体副本；桌面成果按钮打开所在文件夹，定位同名副本；桌面导出仍为另存为。文件管理器调用与资源库共用 `core/file_actions.dart`。知识库报告名称统一为 `.md`，CSV 表格来源为 `.csv`，不沿用 PDF/Word/Excel 的交付后缀；重复保存旧条目时只纠正名称后缀，保留原正文。笔记复用项目知识的事务、容量和索引，同一成果在同一项目不重复保存；删除任务保留已确认的笔记。
-- `lib/agent/agent_policy.dart`：本次额度、输出预留、重复调用检测和继续指令；`chat_feature_hints.dart` 在输入框上方只显示当前开启的功能小字。未完成任务发送“继续”复用原任务，不重复保存用户消息。源码参考与适配见 `doc/AGENT_ENGINE_REVIEW.md`。
+- `lib/agent/agent_progress.dart`：聊天卡片展示真实工具步骤、搜索词/网页域名/文件名及返回的资料条数，执行与暂停时默认最近三步，可展开全部，完成后默认收起；当前调用不被后面排队的调用挤掉。模型等待阶段只显示等待状态、轮次与已有计时，不生成模拟思考文字。计时独立订阅，Agent 执行中不重复显示普通加载气泡。
+- `lib/agent/agent_policy.dart`：本次额度、输出预留、重复调用检测和继续指令；`chat_feature_hints.dart` 在输入框下方只显示当前开启的功能小字；通过 `ChatComposer.featureHints` 放在同一输入区域与底部安全区内，键盘弹出时保留。未完成任务发送“继续”复用原任务，不重复保存用户消息。源码参考与适配见 `doc/AGENT_ENGINE_REVIEW.md`。
 - `lib/agent/agent_store.dart`：任务以 `agent_task:<UUID>` JSON 保存到既有 settings 表；成果在私有附件目录的 agent_artifacts 子目录，不进入普通附件孤儿清理；删除任务、关联对话或清空数据同步删除文件；关联对话的最终回复和任务状态在同一事务内保存，避免重复回复。文件记录保留不可变来源快照，旧版 MD/CSV 仍可读；导出副本也在任务目录清理。
 - `lib/agent/agent_context.dart`：Agent 独立预算键 `agent_context_window_tokens`，默认 32K、最高 1M；仅在请求副本中缩短工具正文摘录、移除较早完整对话轮次，保留工具 ID/参数/签名及完整落库记录；补充要求不作为新任务边界裁掉原目标。预算仍不足时暂停，可调预算后继续，不消耗本地失败轮次。聊天历史和附件按原协议临时组装，不把附件 Base64 写入任务记录。
 - `lib/api/tool_call.dart` 与 `ModelApiClient.toolTurn()`：两类协议的完整非流式工具回合与关联结果；截断/无效调用不执行，保留协议续传字段。`lib/agent/web_reader.dart` 限制公开 HTTPS，检查并固定 DNS 地址以避免访问私网。范围和验证见 `doc/AGENT.md`。

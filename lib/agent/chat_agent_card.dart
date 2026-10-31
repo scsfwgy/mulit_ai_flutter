@@ -1,4 +1,6 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
+import 'package:mulit_ai_flutter/agent/agent_progress.dart';
 import 'package:mulit_ai_flutter/agent/agent_store.dart';
 import 'package:mulit_ai_flutter/core/attachment_store.dart';
 import 'package:mulit_ai_flutter/agent/agent_result_actions.dart';
@@ -18,6 +20,7 @@ class ChatAgentCard extends StatelessWidget {
     this.onPause,
     this.onOpenChat,
     this.retryWithCurrentModel = false,
+    this.elapsedMilliseconds,
   });
   final AgentTask task;
   final bool running;
@@ -26,6 +29,7 @@ class ChatAgentCard extends StatelessWidget {
   final VoidCallback? onPause;
   final ValueChanged<AgentChatRequest>? onOpenChat;
   final bool retryWithCurrentModel;
+  final ValueListenable<int>? elapsedMilliseconds;
 
   Future<void> _file(
     BuildContext context,
@@ -73,14 +77,11 @@ class ChatAgentCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              if (running)
-                const CupertinoActivityIndicator()
-              else
-                Icon(CupertinoIcons.sparkles, color: IosColors.blue, size: 18),
+              Icon(CupertinoIcons.sparkles, color: IosColors.blue, size: 18),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '${T('i18n.agent_title')} · ${running ? agentActivity(task) : agentStatus(task)}',
+                  '${T('i18n.agent_title')} · ${running ? T('i18n.agent_running') : agentStatus(task)}',
                   style: TextStyle(
                     color: IosColors.label,
                     fontWeight: FontWeight.w600,
@@ -97,6 +98,12 @@ class ChatAgentCard extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+          AgentProgress(
+            key: ValueKey('progress-${task.id}'),
+            task: task,
+            running: running,
+            elapsedMilliseconds: elapsedMilliseconds,
           ),
           if (task.instructions.isNotEmpty)
             Padding(

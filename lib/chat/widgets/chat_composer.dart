@@ -32,6 +32,7 @@ class ChatComposer extends StatelessWidget {
     this.pickingAttachment = false,
     this.onAddAttachment,
     this.onRemoveAttachment,
+    this.featureHints,
   });
 
   final TextEditingController controller;
@@ -54,6 +55,7 @@ class ChatComposer extends StatelessWidget {
   final bool pickingAttachment;
   final VoidCallback? onAddAttachment;
   final ValueChanged<ChatAttachment>? onRemoveAttachment;
+  final Widget? featureHints;
 
   bool get _busy => starting || recording || transcribing || pickingAttachment;
 
@@ -234,6 +236,7 @@ class ChatComposer extends StatelessWidget {
               ),
             ],
           ),
+          ?featureHints,
         ],
       ),
     ),

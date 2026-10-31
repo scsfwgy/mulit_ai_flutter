@@ -40,6 +40,54 @@ String agentActivity(AgentTask task) {
   );
 }
 
+String agentStepStatus(Map<String, dynamic> step, {required bool running}) =>
+    T(switch (step['status']) {
+      'completed' => 'i18n.agent_completed',
+      'failed' => 'i18n.agent_failed_status',
+      'skipped' =>
+        step['result'] is Map && step['result']['code'] == 'task_updated'
+            ? 'i18n.agent_step_updated'
+            : 'i18n.agent_skipped',
+      'running' => running ? 'i18n.agent_running' : 'i18n.agent_interrupted',
+      _ => 'i18n.agent_pending',
+    });
+
+String? agentStepDetail(Map<String, dynamic> step) {
+  final args = step['arguments'] is Map ? step['arguments'] as Map : const {};
+  final result = step['result'] is Map ? step['result'] as Map : const {};
+  final subject = switch (step['name']) {
+    'search_web' || 'search_project' => args['query'],
+    'read_webpage' =>
+      args['url'] is String ? Uri.tryParse(args['url'] as String)?.host : null,
+    'read_project_document' => result['name'],
+    'save_artifact' => args['name'],
+    _ => null,
+  };
+  final lines = <String>[];
+  if (subject is String && subject.trim().isNotEmpty) {
+    final text = subject.replaceAll(RegExp(r'\s+'), ' ').trim();
+    lines.add(
+      text.runes.length > 140
+          ? '${String.fromCharCodes(text.runes.take(140))}…'
+          : text,
+    );
+  }
+  if (step['status'] == 'completed') {
+    if (result['sources'] is List) {
+      lines.add(
+        F('i18n.agent_found_sources', [(result['sources'] as List).length]),
+      );
+    } else if (result['text'] is String) {
+      lines.add(
+        F('i18n.agent_extracted_chars', [
+          (result['text'] as String).runes.length,
+        ]),
+      );
+    }
+  }
+  return lines.isEmpty ? null : lines.join(' · ');
+}
+
 class AgentChatRequest {
   const AgentChatRequest(this.task, {this.changeModel = false});
   final AgentTask task;

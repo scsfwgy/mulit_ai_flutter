@@ -530,13 +530,7 @@ class _AgentTaskScreenState extends State<AgentTaskScreen>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '${agentToolLabel(step['name'] as String)} · ${T(switch (step['status']) {
-                                'completed' => 'i18n.agent_completed',
-                                'failed' => 'i18n.agent_failed_status',
-                                'skipped' => step['result'] is Map && step['result']['code'] == 'task_updated' ? 'i18n.agent_step_updated' : 'i18n.agent_skipped',
-                                'running' => _busy ? 'i18n.agent_running' : 'i18n.agent_interrupted',
-                                _ => 'i18n.agent_pending',
-                              })}',
+                              '${agentToolLabel(step['name'] as String)} · ${agentStepStatus(step, running: _busy)}',
                               style: TextStyle(color: IosColors.label),
                             ),
                             const SizedBox(height: 6),

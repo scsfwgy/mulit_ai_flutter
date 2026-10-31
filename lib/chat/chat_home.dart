@@ -2554,18 +2554,6 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                           onNewTopic: _newTopic,
                           onChangeModel: _changeModel,
                         ),
-                      AnimatedBuilder(
-                        animation: AppPreferences.instance,
-                        builder: (context, _) => ChatFeatureHints(
-                          search: _searchEnabled,
-                          readAloud:
-                              AppPreferences.instance.autoReadReplies &&
-                              _canSpeak,
-                          agent: AppPreferences.instance.agentEnabled,
-                          memory:
-                              _globalMemoryActive && _currentProjectId == null,
-                        ),
-                      ),
                       ChatComposer(
                         attachments: _attachments,
                         pickingAttachment: _pickingAttachment,
@@ -2587,6 +2575,19 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                         onVoiceCancel: _voiceCancel,
                         onSend: _send,
                         onStop: _stopReply,
+                        featureHints: AnimatedBuilder(
+                          animation: AppPreferences.instance,
+                          builder: (context, _) => ChatFeatureHints(
+                            search: _searchEnabled,
+                            readAloud:
+                                AppPreferences.instance.autoReadReplies &&
+                                _canSpeak,
+                            agent: AppPreferences.instance.agentEnabled,
+                            memory:
+                                _globalMemoryActive &&
+                                _currentProjectId == null,
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -2637,20 +2638,23 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
           if (index == _messages.length) {
             return ChatStreamingReply(
               reply: _reply,
-              builder: (context, text) => MessageBubble(
-                role: 'assistant',
-                content: text,
-                loading: true,
-                searchSources: _replySources,
-                knowledgeSources: _replyKnowledge,
-                replyElapsedMs: _replyElapsedMs,
-                searching: _searching,
-                contextTrimmed: _contextTrimmed,
-                speechState: SpeechPlaybackState.idle,
-                speechEnabled: false,
-                onCopy: () => _copyBubble(text, renderMarkdown: true),
-                onOpenLink: _openMarkdownLink,
-              ),
+              builder: (context, text) => _agentRunningHere && text.isEmpty
+                  ? const SizedBox.shrink()
+                  : MessageBubble(
+                      role: 'assistant',
+                      content: text,
+                      loading: true,
+                      showLoadingStatus: !_agentRunningHere,
+                      searchSources: _replySources,
+                      knowledgeSources: _replyKnowledge,
+                      replyElapsedMs: _replyElapsedMs,
+                      searching: _searching,
+                      contextTrimmed: _contextTrimmed,
+                      speechState: SpeechPlaybackState.idle,
+                      speechEnabled: false,
+                      onCopy: () => _copyBubble(text, renderMarkdown: true),
+                      onOpenLink: _openMarkdownLink,
+                    ),
             );
           }
           final message = _messages[index];
@@ -2706,6 +2710,10 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                 ))
                   ChatAgentCard(
                     task: task,
+                    elapsedMilliseconds:
+                        _sending && _sendingTopicId == task.topicId
+                        ? _replyElapsedMs
+                        : null,
                     running:
                         AgentRunner.active?.currentTask?.id == task.id &&
                         task.status == 'running',

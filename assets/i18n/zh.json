@@ -802,5 +802,12 @@
   "i18n.agent_note_saved": "已保存到项目笔记。",
   "i18n.agent_note_exists": "这份结果已保存到该项目，未重复创建或覆盖已有笔记。",
   "i18n.agent_content_preview": "内容预览。PDF、Word 和 Excel 的实际排版请导出后查看。",
-  "i18n.agent_open_folder": "打开所在文件夹"
+  "i18n.agent_open_folder": "打开所在文件夹",
+  "i18n.agent_round_activity": "第 {0} 轮 · {1}",
+  "i18n.agent_waiting_steps": "模型返回后，这里会显示搜索、读取资料、生成文件等实际步骤。",
+  "i18n.agent_progress_expand": "查看处理过程（{0} 步）",
+  "i18n.agent_progress_collapse": "收起过程",
+  "i18n.agent_elapsed": "已用时 {0}",
+  "i18n.agent_found_sources": "找到 {0} 条资料",
+  "i18n.agent_extracted_chars": "已提取 {0} 字"
 }

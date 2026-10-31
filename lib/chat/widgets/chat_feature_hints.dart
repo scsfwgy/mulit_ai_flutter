@@ -29,7 +29,7 @@ class ChatFeatureHints extends StatelessWidget {
     final color = IosColors.secondary;
     return Padding(
       key: const Key('chat-feature-hints'),
-      padding: const EdgeInsets.fromLTRB(18, 2, 18, 2),
+      padding: const EdgeInsets.fromLTRB(50, 6, 44, 0),
       child: Align(
         alignment: Alignment.centerLeft,
         child: Wrap(

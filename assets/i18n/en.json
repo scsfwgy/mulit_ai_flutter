@@ -802,5 +802,12 @@
   "i18n.agent_note_saved": "Saved to project notes.",
   "i18n.agent_note_exists": "This result is already saved in the project. No duplicate was created and the existing note was not overwritten.",
   "i18n.agent_content_preview": "Content preview. Export PDF, Word or Excel to view the actual file layout.",
-  "i18n.agent_open_folder": "Open containing folder"
+  "i18n.agent_open_folder": "Open containing folder",
+  "i18n.agent_round_activity": "Round {0} · {1}",
+  "i18n.agent_waiting_steps": "Actual steps such as search, reading and file creation appear after the model responds.",
+  "i18n.agent_progress_expand": "View process ({0} steps)",
+  "i18n.agent_progress_collapse": "Collapse process",
+  "i18n.agent_elapsed": "Elapsed {0}",
+  "i18n.agent_found_sources": "Found {0} sources",
+  "i18n.agent_extracted_chars": "Extracted {0} characters"
 }

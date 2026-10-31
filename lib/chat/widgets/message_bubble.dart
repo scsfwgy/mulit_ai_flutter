@@ -31,6 +31,7 @@ class MessageBubble extends StatelessWidget {
     required this.onCopy,
     required this.onOpenLink,
     this.loading = false,
+    this.showLoadingStatus = true,
     this.messageId,
     this.providerName,
     this.providerPresetId,
@@ -48,6 +49,7 @@ class MessageBubble extends StatelessWidget {
   final String role;
   final String content;
   final bool loading;
+  final bool showLoadingStatus;
   final int? messageId;
   final String? providerName;
   final String? providerPresetId;
@@ -124,7 +126,7 @@ class MessageBubble extends StatelessWidget {
                             data: content,
                             onTapLink: onOpenLink,
                           ),
-                        if (loading)
+                        if (loading && showLoadingStatus)
                           Padding(
                             padding: EdgeInsets.only(
                               top: content.isEmpty ? 2 : 8,
