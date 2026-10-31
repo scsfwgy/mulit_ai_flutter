@@ -1,30 +1,24 @@
-import 'package:mulit_ai_flutter/agent/agent_screen.dart';
-import 'package:mulit_ai_flutter/agent/agent_runner.dart';
 // AI Link 聊天主页：ChatHome 及其状态机。
 // 由 lib/main.dart 拆分而来；入口与应用外壳仍在 lib/main.dart。
-
 import 'dart:async';
 import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
-import 'package:file_selector/file_selector.dart' as files;
 import 'package:desktop_drop/desktop_drop.dart';
-import 'package:image_picker/image_picker.dart';
-
+import 'package:file_selector/file_selector.dart' as files;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:record/record.dart';
-import 'package:url_launcher/url_launcher.dart';
-
-import 'package:mulit_ai_flutter/core/storefront_policy.dart';
-import 'package:mulit_ai_flutter/chat/attachment_picker.dart';
-import 'package:mulit_ai_flutter/chat/incoming_share.dart';
-import 'package:mulit_ai_flutter/chat/widgets/desktop_attachment_drop.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:mulit_ai_flutter/agent/agent_runner.dart';
+import 'package:mulit_ai_flutter/agent/agent_screen.dart';
+import 'package:mulit_ai_flutter/agent/agent_store.dart';
+import 'package:mulit_ai_flutter/agent/agent_policy.dart';
+import 'package:mulit_ai_flutter/chat/widgets/chat_feature_hints.dart';
+import 'package:mulit_ai_flutter/agent/chat_agent_card.dart';
 import 'package:mulit_ai_flutter/api/api_client.dart';
+import 'package:mulit_ai_flutter/chat/attachment_picker.dart';
 import 'package:mulit_ai_flutter/chat/chat_context_screen.dart';
-import 'package:mulit_ai_flutter/chat/memory_coordinator.dart';
 import 'package:mulit_ai_flutter/chat/chat_message_meta.dart';
 import 'package:mulit_ai_flutter/chat/chat_model_selector.dart';
 import 'package:mulit_ai_flutter/chat/chat_model_title.dart';
@@ -32,21 +26,25 @@ import 'package:mulit_ai_flutter/chat/chat_more_menu.dart';
 import 'package:mulit_ai_flutter/chat/chat_scroll.dart';
 import 'package:mulit_ai_flutter/chat/chat_streaming_reply.dart';
 import 'package:mulit_ai_flutter/chat/desktop_chat.dart';
+import 'package:mulit_ai_flutter/chat/incoming_share.dart';
+import 'package:mulit_ai_flutter/chat/memory_coordinator.dart';
 import 'package:mulit_ai_flutter/chat/message_copy.dart';
+import 'package:mulit_ai_flutter/chat/project_screen.dart';
 import 'package:mulit_ai_flutter/chat/topic_screen.dart';
 import 'package:mulit_ai_flutter/chat/widgets/chat_composer.dart';
 import 'package:mulit_ai_flutter/chat/widgets/chat_error_card.dart';
 import 'package:mulit_ai_flutter/chat/widgets/chat_welcome.dart';
+import 'package:mulit_ai_flutter/chat/widgets/desktop_attachment_drop.dart';
 import 'package:mulit_ai_flutter/chat/widgets/message_bubble.dart';
 import 'package:mulit_ai_flutter/core/app_platform.dart';
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/core/apple_purchases.dart';
+import 'package:mulit_ai_flutter/core/attachment_store.dart';
+import 'package:mulit_ai_flutter/core/chat_attachment.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
 import 'package:mulit_ai_flutter/core/project.dart';
 import 'package:mulit_ai_flutter/core/project_store.dart';
-import 'package:mulit_ai_flutter/chat/project_screen.dart';
-import 'package:mulit_ai_flutter/core/chat_attachment.dart';
-import 'package:mulit_ai_flutter/core/attachment_store.dart';
+import 'package:mulit_ai_flutter/core/storefront_policy.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/provider/provider_screen.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
@@ -54,13 +52,16 @@ import 'package:mulit_ai_flutter/search/search_settings_screen.dart';
 import 'package:mulit_ai_flutter/settings/purchase_screen.dart';
 import 'package:mulit_ai_flutter/settings/settings_screen.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
-import 'package:mulit_ai_flutter/voice/voice_client.dart';
-import 'package:mulit_ai_flutter/voice/voice_selection.dart';
 import 'package:mulit_ai_flutter/voice/system_voice.dart';
+import 'package:mulit_ai_flutter/voice/voice_client.dart';
 import 'package:mulit_ai_flutter/voice/voice_recording.dart';
 import 'package:mulit_ai_flutter/voice/voice_recording_overlay.dart';
+import 'package:mulit_ai_flutter/voice/voice_selection.dart';
 import 'package:mulit_ai_flutter/voice/voice_settings_screen.dart';
 import 'package:mulit_ai_flutter/watch/watch_chat.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 enum _AttachmentSource { camera, image, file }
 
@@ -158,6 +159,9 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   String? _draftModel;
   bool? _draftMemoryOverride;
   ModelApiClient? _activeClient;
+  AgentRunner? _agentRunner;
+  Map<int, AgentTask> _agentTasks = {};
+  bool _globalMemoryActive = false;
   final _titleClients = <ModelApiClient>{};
   final _memory = MemoryCoordinator();
   final _reply = ValueNotifier<String>('');
@@ -429,6 +433,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     }
     _inputFocus.dispose();
     _activeClient?.cancel();
+    _agentRunner?.pause();
     _replyTimer?.cancel();
     _replyElapsedMs.dispose();
     _reply.dispose();
@@ -443,6 +448,9 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.detached) {
+      _agentRunner?.pause();
+    }
     if (state == AppLifecycleState.resumed) {
       _deferredShares.clear();
       _sharePending = true;
@@ -595,6 +603,9 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       final messages = selected == null
           ? <ChatMessage>[]
           : await ChatStore.instance.messages(selected.id);
+      final agentTasks = selected == null
+          ? <int, AgentTask>{}
+          : await AgentStore().forTopic(selected.id);
       if (!mounted) return;
       setState(() {
         _providers = providers;
@@ -610,6 +621,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
             .toSet();
         _searchEnabled = searchEnabled;
         _canSpeak = canSpeak;
+        _agentTasks = agentTasks;
         _watchProcessing = watchProcessing;
         _topics = topics;
         _projects = projects;
@@ -638,6 +650,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         _messages = messages;
         _loading = false;
       });
+      await _refreshFeatureHints();
       _chatScroll.scrollToLatest(force: initialLoad);
     } catch (error) {
       if (mounted) {
@@ -660,17 +673,21 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     await _load();
   }
 
-  Future<void> _openAgent() async {
-    if (!AppPreferences.instance.agentEnabled || _attachmentBusy) return;
+  Future<void> _openAgentDetails(AgentTask task) async {
     await _pushRoute<void>(
-      appPageRoute(
-        builder: (_) => AgentScreen(
-          providerId: _currentProviderId,
-          model: _currentModel,
-          projectId: _currentProjectId,
-        ),
-      ),
+      appPageRoute(builder: (_) => AgentTaskScreen(task: task)),
     );
+    await _load();
+  }
+
+  Future<void> _resumeAgent(AgentTask task) async {
+    if (_sending ||
+        _starting ||
+        !AppPreferences.instance.agentEnabled ||
+        _topic?.id != task.topicId) {
+      return;
+    }
+    await _retryReply();
   }
 
   Future<void> _openSettings() async {
@@ -851,6 +868,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   Future<void> _newTopic({int? projectId, bool explicitProject = false}) async {
     final nextProjectId = explicitProject ? projectId : _topicProjectFilter.id;
     if (_pickingAttachment || _starting && !_sending) return;
+    _agentRunner?.pause();
     _showDesktopChat();
     if (_providers.isEmpty) {
       await _openProviders();
@@ -880,13 +898,16 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       _draftProviderId = provider?.id;
       _draftModel = model;
       _messages = [];
+      _agentTasks = {};
       _reply.value = '';
       _replySources = const [];
       _searching = false;
       _error = null;
       _errorAction = ChatErrorAction.none;
       _draftMemoryOverride = null;
+      _globalMemoryActive = false;
     });
+    unawaited(_refreshFeatureHints());
   }
 
   Future<void> _selectTopic(int id, {int? messageId}) async {
@@ -904,7 +925,9 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       if (messageId != null && mounted) _notify(T('i18n.library_missing'));
       return;
     }
+    if (id != _sendingTopicId) _agentRunner?.pause();
     final messages = await ChatStore.instance.messages(id);
+    final agentTasks = await AgentStore().forTopic(id);
     if (messageId != null &&
         messages.every((message) => message.id != messageId)) {
       if (mounted) _notify(T('i18n.library_missing'));
@@ -923,11 +946,13 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       _draftModel = null;
       _draftMemoryOverride = null;
       _messages = messages;
+      _agentTasks = agentTasks;
       _error = null;
       _errorAction = ChatErrorAction.none;
       _reply.value = '';
       _revealMessageId = messageId;
     });
+    await _refreshFeatureHints();
     if (topic.providerId case final providerId?) {
       await ChatStore.instance.saveLastChatSelection(
         ChatSelection(providerId, topic.model),
@@ -1078,6 +1103,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   void _stopReply() {
     _cancelRequested = true;
     _activeClient?.cancel();
+    _agentRunner?.pause();
   }
 
   Future<VoiceProviderConfig?> _selectedVoiceService(
@@ -1737,6 +1763,24 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         (_currentModel != null && _currentModel != model)) {
       return;
     }
+    if (AppPreferences.instance.agentEnabled &&
+        _attachments.isEmpty &&
+        AgentPolicy.isContinue(content) &&
+        _topic != null) {
+      final history = await ChatStore.instance.messages(_topic!.id);
+      final previous = (await AgentStore().forTopic(
+        _topic!.id,
+      ))[history.lastOrNull?.id];
+      if (previous != null &&
+          previous.canResume &&
+          previous.providerId == provider.id &&
+          previous.model == model &&
+          previous.endpoint == provider.baseUrl) {
+        _input.clear();
+        await _requestReply(_topic!, provider, key, systemPrompt, history);
+        return;
+      }
+    }
     ChatTopic topic;
     final attachments = List<ChatAttachment>.of(_attachments);
     AttachmentStore.validateSelection(attachments);
@@ -1852,6 +1896,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     List<ChatMessage> history,
   ) async {
     if (!mounted) return;
+    final isAgent = AppPreferences.instance.agentEnabled;
+    AgentTask? agentTask;
     setState(() {
       _messages = history;
       _sending = true;
@@ -1859,7 +1905,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       _reply.value = '';
       _replySources = const [];
       _replyKnowledge = [];
-      _searching = _searchEnabled && history.last.content.trim().isNotEmpty;
+      _searching =
+          !isAgent && _searchEnabled && history.last.content.trim().isNotEmpty;
       _contextTrimmed = false;
       _replyElapsedMs.value = 0;
       _error = null;
@@ -1886,69 +1933,140 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         _searchEnabled && history.last.content.trim().isNotEmpty;
     try {
       await _refreshTopics();
-      final currentProject = await ChatStore.instance.project(topic.projectId);
-      if (currentProject != null) {
-        final questions = history.where((m) => m.role == 'user').toList();
-        final query = questions.reversed
-            .take(2)
-            .map((m) => m.content)
-            .join('\n');
-        final room = AppPreferences.instance.contextWindowTokens ~/ 5;
-        knowledge = await ChatStore.instance.retrieveKnowledge(
-          currentProject.id,
-          query,
-          tokenBudget: room.clamp(512, 2400),
-        );
-        if (mounted && _topic?.id == topic.id) {
-          setState(() => _replyKnowledge = knowledge);
-        }
-      }
-      ({SearchProviderConfig config, String apiKey})? webSearch;
-      if (searchEnabled) {
-        final config = await ChatStore.instance.selectedSearchProvider();
-        final searchKey = config == null
-            ? null
-            : await ChatStore.instance.searchApiKey(config);
-        if (config == null || searchKey == null || searchKey.isEmpty) {
-          throw SearchException(T('i18n.configure_a_search_service'));
-        }
-        webSearch = (config: config, apiKey: searchKey);
-      }
-      await for (final chunk in client.streamReply(
-        history,
-        topic.model,
-        systemPrompt: systemPrompt,
-        referenceContext: knowledgeContext(knowledge),
-        contextWindowTokens: AppPreferences.instance.contextWindowTokens,
-        onContextTrimmed: (omitted) {
-          if (mounted &&
-              _topic?.id == topic.id &&
-              _contextTrimmed != (omitted > 0)) {
-            setState(() => _contextTrimmed = omitted > 0);
+      if (isAgent) {
+        final repository = AgentStore();
+        final previous = (await repository.forTopic(topic.id))[history.last.id];
+        agentTask =
+            previous != null &&
+                previous.providerId == provider.id &&
+                previous.model == topic.model &&
+                previous.endpoint == provider.baseUrl
+            ? previous
+            : AgentTask(
+                providerId: provider.id,
+                model: topic.model,
+                protocol: provider.protocol,
+                endpoint: provider.baseUrl,
+                projectId: topic.projectId,
+                topicId: topic.id,
+                userMessageId: history.last.id,
+                goal: history.last.titleContent,
+                systemPrompt: systemPrompt,
+                providerName: provider.name,
+                providerPresetId: presetForProvider(provider)?.id,
+              );
+        final task = agentTask;
+        final runner = AgentRunner(repository: repository);
+        _agentRunner = runner;
+        void progress() {
+          if (!mounted || _topic?.id != topic.id) return;
+          setState(() {
+            _agentTasks[history.last.id] = task;
+          });
+          _reply.value = task.answer;
+          if (task.answer.isNotEmpty) {
+            firstTokenMs ??= watch.elapsedMilliseconds;
           }
-        },
-        webSearch: webSearch,
-        onSearchResults: (results) {
-          sources = results;
-          if (mounted) {
-            setState(() {
-              _replySources = results;
-              _searching = false;
-            });
-          }
-        },
-        onUsage: (reported) {
-          usage = (usage ?? const ReplyUsage()).merge(reported);
-        },
-      )) {
-        answer += chunk;
-        firstTokenMs ??= watch.elapsedMilliseconds;
-        if (mounted && _topic?.id == topic.id) {
-          _reply.value = answer;
           _chatScroll.scrollToLatest();
         }
+
+        runner.addListener(progress);
+        try {
+          await runner.run(task);
+        } finally {
+          runner.removeListener(progress);
+          runner.dispose();
+          _agentRunner = null;
+        }
+        completed = task.status == 'completed';
+        answer = completed ? task.answer : '';
+        usage = task.usageComplete
+            ? ReplyUsage(
+                inputTokens: task.inputTokens,
+                outputTokens: task.outputTokens,
+              )
+            : null;
+        sources = task.sources
+            .where(
+              (s) =>
+                  s['url'] is String &&
+                  safeSearchUrl(s['url'] as String) != null,
+            )
+            .map(
+              (s) => SearchSource(
+                title: s['title'] as String? ?? '',
+                url: s['url'] as String,
+                excerpt: s['excerpt'] as String? ?? '',
+              ),
+            )
+            .toList();
+      } else {
+        final currentProject = await ChatStore.instance.project(
+          topic.projectId,
+        );
+        if (currentProject != null) {
+          final questions = history.where((m) => m.role == 'user').toList();
+          final query = questions.reversed
+              .take(2)
+              .map((m) => m.content)
+              .join('\n');
+          final room = AppPreferences.instance.contextWindowTokens ~/ 5;
+          knowledge = await ChatStore.instance.retrieveKnowledge(
+            currentProject.id,
+            query,
+            tokenBudget: room.clamp(512, 2400),
+          );
+          if (mounted && _topic?.id == topic.id) {
+            setState(() => _replyKnowledge = knowledge);
+          }
+        }
+        ({SearchProviderConfig config, String apiKey})? webSearch;
+        if (searchEnabled) {
+          final config = await ChatStore.instance.selectedSearchProvider();
+          final searchKey = config == null
+              ? null
+              : await ChatStore.instance.searchApiKey(config);
+          if (config == null || searchKey == null || searchKey.isEmpty) {
+            throw SearchException(T('i18n.configure_a_search_service'));
+          }
+          webSearch = (config: config, apiKey: searchKey);
+        }
+        await for (final chunk in client.streamReply(
+          history,
+          topic.model,
+          systemPrompt: systemPrompt,
+          referenceContext: knowledgeContext(knowledge),
+          contextWindowTokens: AppPreferences.instance.contextWindowTokens,
+          onContextTrimmed: (omitted) {
+            if (mounted &&
+                _topic?.id == topic.id &&
+                _contextTrimmed != (omitted > 0)) {
+              setState(() => _contextTrimmed = omitted > 0);
+            }
+          },
+          webSearch: webSearch,
+          onSearchResults: (results) {
+            sources = results;
+            if (mounted) {
+              setState(() {
+                _replySources = results;
+                _searching = false;
+              });
+            }
+          },
+          onUsage: (reported) {
+            usage = (usage ?? const ReplyUsage()).merge(reported);
+          },
+        )) {
+          answer += chunk;
+          firstTokenMs ??= watch.elapsedMilliseconds;
+          if (mounted && _topic?.id == topic.id) {
+            _reply.value = answer;
+            _chatScroll.scrollToLatest();
+          }
+        }
+        completed = !_cancelRequested;
       }
-      completed = !_cancelRequested;
     } catch (error) {
       if (!_cancelRequested && mounted && _topic?.id == topic.id) {
         setState(() {
@@ -1973,8 +2091,8 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       _replyTimer = null;
       client.cancel();
       _activeClient = null;
-      int? answerMessageId;
-      if (answer.isNotEmpty) {
+      int? answerMessageId = agentTask?.answerMessageId;
+      if (!isAgent && answer.isNotEmpty) {
         answerMessageId = await ChatStore.instance.addMessage(
           topic.id,
           'assistant',
@@ -2005,7 +2123,13 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         });
         if (_topic?.id == topic.id) {
           final messages = await ChatStore.instance.messages(topic.id);
-          if (mounted) setState(() => _messages = messages);
+          final tasks = await AgentStore().forTopic(topic.id);
+          if (mounted && _topic?.id == topic.id) {
+            setState(() {
+              _messages = messages;
+              _agentTasks = tasks;
+            });
+          }
           _chatScroll.scrollToLatest();
         }
         await _refreshTopics();
@@ -2040,7 +2164,18 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         _watchProcessing) {
       return;
     }
-    unawaited(_memory.schedule(topic, messages));
+    final taskMessages = <int>{
+      for (final task in _agentTasks.values) ...[
+        if (task.userMessageId != null) task.userMessageId!,
+        if (task.answerMessageId != null) task.answerMessageId!,
+      ],
+    };
+    unawaited(
+      _memory.schedule(
+        topic,
+        messages.where((m) => !taskMessages.contains(m.id)).toList(),
+      ),
+    );
   }
 
   Future<void> _generateTitle(
@@ -2090,17 +2225,24 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     });
   }
 
+  Future<void> _refreshFeatureHints() async {
+    final revision = _chatLocationRevision;
+    final active = await _chatUsesMemory();
+    if (mounted && revision == _chatLocationRevision) {
+      setState(() => _globalMemoryActive = active);
+    }
+  }
+
   Future<bool> _chatUsesMemory() async {
     if (_currentProjectId != null) return false;
     final store = ChatStore.instance;
     final enabled = await store.memoryEnabled();
-    final inGlobal = await store.memoryInGlobalPrompt();
     final override = _topic == null
         ? _draftMemoryOverride
         : await store.memoryTopicOverride(_topic!.id);
     return topicUsesMemory(
       enabled: enabled,
-      inGlobalPrompt: inGlobal,
+      inGlobalPrompt: enabled,
       topicOverride: override,
     );
   }
@@ -2118,10 +2260,16 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
     final next = !(await _chatUsesMemory());
     final topic = _topic;
     if (topic == null) {
-      if (mounted) setState(() => _draftMemoryOverride = next);
+      if (mounted) {
+        setState(() {
+          _draftMemoryOverride = next;
+          _globalMemoryActive = next;
+        });
+      }
       return;
     }
     await store.setMemoryTopicOverride(topic.id, next);
+    await _refreshFeatureHints();
   }
 
   void _notify(String message) => ScaffoldMessenger.of(context).showSnackBar(
@@ -2351,19 +2499,15 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                         ),
                       AnimatedBuilder(
                         animation: AppPreferences.instance,
-                        builder: (context, _) =>
-                            AppPreferences.instance.agentEnabled
-                            ? Align(
-                                alignment: Alignment.centerLeft,
-                                child: CupertinoButton(
-                                  key: const Key('agent-entry'),
-                                  onPressed: _attachmentBusy
-                                      ? null
-                                      : _openAgent,
-                                  child: Text(T('i18n.agent_tasks')),
-                                ),
-                              )
-                            : const SizedBox.shrink(),
+                        builder: (context, _) => ChatFeatureHints(
+                          search: _searchEnabled,
+                          readAloud:
+                              AppPreferences.instance.autoReadReplies &&
+                              _canSpeak,
+                          agent: AppPreferences.instance.agentEnabled,
+                          memory:
+                              _globalMemoryActive && _currentProjectId == null,
+                        ),
                       ),
                       ChatComposer(
                         attachments: _attachments,
@@ -2460,38 +2604,64 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
             color: highlighted
                 ? IosColors.blue.withValues(alpha: .12)
                 : const Color(0x00000000),
-            child: MessageBubble(
-              role: message.role,
-              content: message.content,
-              attachments: message.attachments,
-              messageId: messageId,
-              searchSources: message.searchSources,
-              knowledgeSources: message.knowledgeSources,
-              providerName: message.providerName,
-              providerPresetId: message.providerPresetId,
-              modelId: message.modelId,
-              firstTokenMs: message.firstTokenMs,
-              totalMs: message.totalMs,
-              inputTokens: message.inputTokens,
-              outputTokens: message.outputTokens,
-              replyElapsedMs: _replyElapsedMs,
-              searching: _searching,
-              contextTrimmed: _contextTrimmed,
-              speechState: messageId == _speechMessageId
-                  ? _speechState
-                  : SpeechPlaybackState.idle,
-              speechEnabled:
-                  !_playing ||
-                  (messageId == _speechMessageId &&
-                      _speechState == SpeechPlaybackState.playing),
-              onSpeak: message.role == 'user' || !_canSpeak
-                  ? null
-                  : () => _playSpeech(message.content, messageId: messageId),
-              onCopy: () => _copyBubble(
-                message.content,
-                renderMarkdown: message.role != 'user',
-              ),
-              onOpenLink: _openMarkdownLink,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                MessageBubble(
+                  role: message.role,
+                  content: message.content,
+                  attachments: message.attachments,
+                  messageId: messageId,
+                  searchSources: message.searchSources,
+                  knowledgeSources: message.knowledgeSources,
+                  providerName: message.providerName,
+                  providerPresetId: message.providerPresetId,
+                  modelId: message.modelId,
+                  firstTokenMs: message.firstTokenMs,
+                  totalMs: message.totalMs,
+                  inputTokens: message.inputTokens,
+                  outputTokens: message.outputTokens,
+                  replyElapsedMs: _replyElapsedMs,
+                  searching: _searching,
+                  contextTrimmed: _contextTrimmed,
+                  speechState: messageId == _speechMessageId
+                      ? _speechState
+                      : SpeechPlaybackState.idle,
+                  speechEnabled:
+                      !_playing ||
+                      (messageId == _speechMessageId &&
+                          _speechState == SpeechPlaybackState.playing),
+                  onSpeak: message.role == 'user' || !_canSpeak
+                      ? null
+                      : () =>
+                            _playSpeech(message.content, messageId: messageId),
+                  onCopy: () => _copyBubble(
+                    message.content,
+                    renderMarkdown: message.role != 'user',
+                  ),
+                  onOpenLink: _openMarkdownLink,
+                ),
+                for (final task in _agentTasks.values.where(
+                  (t) =>
+                      t.answerMessageId == message.id ||
+                      t.userMessageId == message.id &&
+                          t.answerMessageId == null,
+                ))
+                  ChatAgentCard(
+                    task: task,
+                    running:
+                        _sending &&
+                        _sendingTopicId == task.topicId &&
+                        task.status == 'running',
+                    onDetails: () => _openAgentDetails(task),
+                    onPause: _stopReply,
+                    onResume:
+                        !_sending &&
+                            _messages.lastOrNull?.id == task.userMessageId
+                        ? () => _resumeAgent(task)
+                        : null,
+                  ),
+              ],
             ),
           );
         },

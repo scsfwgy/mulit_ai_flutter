@@ -1,3 +1,5 @@
+import 'package:mulit_ai_flutter/agent/agent_context.dart';
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -53,6 +55,7 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
   bool agentEnabled = false;
   bool simpleMessageInfo = false;
   int contextWindowTokens = ChatContext.defaultWindowTokens;
+  int agentContextWindowTokens = ChatContext.defaultWindowTokens;
 
   AppLanguage _language = AppLanguage.zh;
 
@@ -213,6 +216,9 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
     contextWindowTokens = ChatContext.parseWindow(
       await ChatStore.instance.setting(ChatContext.settingKey),
     );
+    agentContextWindowTokens = ChatContext.parseWindow(
+      await ChatStore.instance.setting(AgentContext.settingKey),
+    );
     simpleMessageInfo =
         await ChatStore.instance.setting('chat_info_simple') == '1';
     autoReadReplies =
@@ -254,6 +260,15 @@ class AppPreferences extends ChangeNotifier with WidgetsBindingObserver {
     }
     await ChatStore.instance.saveSetting(ChatContext.settingKey, '$value');
     contextWindowTokens = value;
+    notifyListeners();
+  }
+
+  Future<void> setAgentContextWindowTokens(int value) async {
+    if (!ChatContext.windowOptions.contains(value)) {
+      throw ArgumentError.value(value, 'value');
+    }
+    await ChatStore.instance.saveSetting(AgentContext.settingKey, '$value');
+    agentContextWindowTokens = value;
     notifyListeners();
   }
 

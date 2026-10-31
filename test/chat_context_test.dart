@@ -7,6 +7,12 @@ Map<String, String> message(String role, String content) => {
 };
 
 void main() {
+  test('context choices and labels support 512K and 1M', () {
+    expect(ChatContext.parseWindow('524288'), 524288);
+    expect(ChatContext.parseWindow('1048576'), 1048576);
+    expect(ChatContext.windowLabel(1048576), '1M Token');
+    expect(ChatContext.windowLabel(524288), '512K Token');
+  });
   test(
     'budget keeps recent complete turns without altering stored history',
     () {

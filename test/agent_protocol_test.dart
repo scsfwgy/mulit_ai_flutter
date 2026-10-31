@@ -46,6 +46,127 @@ Map<String, dynamic> toolResponse(
 
 void main() {
   test(
+    'DeepSeek restores available reasoning and quotes old plain-chat replies',
+    () async {
+      final client = ModelApiClient(
+        ProviderConfig(
+          id: 1,
+          name: 'Test',
+          baseUrl: 'https://api.deepseek.com',
+          model: 'deepseek-flash',
+          protocol: ApiProtocol.openAi,
+        ),
+        'unused',
+      );
+      final history = [
+        const ChatMessage(
+          id: 1,
+          topicId: 1,
+          role: 'user',
+          content: 'Earlier question',
+          createdAt: 1,
+        ),
+        const ChatMessage(
+          id: 2,
+          topicId: 1,
+          role: 'assistant',
+          content: 'Earlier answer',
+          createdAt: 2,
+        ),
+        const ChatMessage(
+          id: 3,
+          topicId: 1,
+          role: 'user',
+          content: 'Next question',
+          createdAt: 3,
+        ),
+      ];
+      try {
+        final quoted = await client.toolHistory(
+          history,
+          'deepseek-flash',
+          '',
+          32768,
+        );
+        expect(quoted.length, 2);
+        expect(quoted.first['role'], 'user');
+        expect('${quoted.first['content']}', contains('Earlier answer'));
+        expect(history[1].role, 'assistant');
+        final native = await client.toolHistory(
+          history,
+          'deepseek-flash',
+          '',
+          32768,
+          assistantReplay: {
+            2: {'reasoning_content': 'Native state'},
+          },
+        );
+        expect(native.length, 3);
+        expect(native[1]['reasoning_content'], 'Native state');
+      } finally {
+        client.cancel();
+      }
+    },
+  );
+
+  test(
+    'Claude preserves signed thinking when replaying a prior task reply',
+    () async {
+      final client = ModelApiClient(
+        ProviderConfig(
+          id: 1,
+          name: 'Test',
+          baseUrl: 'https://example.com',
+          model: 'claude',
+          protocol: ApiProtocol.anthropic,
+        ),
+        'unused',
+      );
+      try {
+        final wire = await client.toolHistory(
+          [
+            const ChatMessage(
+              id: 1,
+              topicId: 1,
+              role: 'user',
+              content: 'Question',
+              createdAt: 1,
+            ),
+            const ChatMessage(
+              id: 2,
+              topicId: 1,
+              role: 'assistant',
+              content: 'Answer',
+              createdAt: 2,
+            ),
+            const ChatMessage(
+              id: 3,
+              topicId: 1,
+              role: 'user',
+              content: 'Continue',
+              createdAt: 3,
+            ),
+          ],
+          'claude',
+          '',
+          32768,
+          assistantReplay: {
+            2: {
+              'content': [
+                {'type': 'thinking', 'thinking': 'plan', 'signature': 'signed'},
+              ],
+            },
+          },
+        );
+        expect(wire[1]['content'][0]['signature'], 'signed');
+        expect(wire[1]['content'][1]['text'], 'Answer');
+      } finally {
+        client.cancel();
+      }
+    },
+  );
+
+  test(
     'OpenAI adapts only an explicit completion-token parameter rejection',
     () async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -202,13 +323,15 @@ void main() {
     );
   }
 
-  test('malformed arguments and duplicate calls are rejected', () {
+  test('malformed arguments become a paired tool error, duplicate IDs are rejected', () {
+    final invalid = ModelToolTurn.parse(
+      toolResponse(ApiProtocol.openAi, arguments: '{'),
+      ApiProtocol.openAi,
+    );
+    expect(invalid.calls.single.argumentError, true);
     expect(
-      () => ModelToolTurn.parse(
-        toolResponse(ApiProtocol.openAi, arguments: '{'),
-        ApiProtocol.openAi,
-      ),
-      throwsFormatException,
+      ModelToolCall.fromJson(invalid.calls.single.toJson()).argumentError,
+      true,
     );
     final json = toolResponse(ApiProtocol.openAi);
     final calls = json['choices'][0]['message']['tool_calls'] as List;
@@ -218,6 +341,75 @@ void main() {
       throwsFormatException,
     );
   });
+
+  test(
+    'truncation keeps stop reason and reported usage without accepting calls',
+    () {
+      expect(
+        () => ModelToolTurn.parse(
+          toolResponse(ApiProtocol.openAi, reason: 'length'),
+          ApiProtocol.openAi,
+        ),
+        throwsA(
+          isA<ModelTurnException>()
+              .having((e) => e.code, 'code', 'output_limit')
+              .having((e) => e.finishReason, 'reason', 'length')
+              .having((e) => e.outputTokens, 'usage', 10),
+        ),
+      );
+    },
+  );
+
+  test('complete stop turns with tool calls and text content arrays are compatible', () {
+    final json = toolResponse(ApiProtocol.openAi, reason: 'stop');
+    json['choices'][0]['message']['content'] = [
+      {'type': 'text', 'text': 'Checking'},
+    ];
+    final turn = ModelToolTurn.parse(json, ApiProtocol.openAi);
+    expect(turn.calls.length, 1);
+    expect(turn.text, 'Checking');
+  });
+
+  test(
+    'larger parallel batches do not hit an arbitrary six-call parser limit',
+    () {
+      final json = toolResponse(ApiProtocol.openAi);
+      final original =
+          (json['choices'][0]['message']['tool_calls'] as List).single as Map;
+      json['choices'][0]['message']['tool_calls'] = [
+        for (var i = 0; i < 8; i++) {...original, 'id': 'call$i'},
+      ];
+      expect(ModelToolTurn.parse(json, ApiProtocol.openAi).calls.length, 8);
+    },
+  );
+
+  test(
+    'both protocols disable tools for wrap-up while retaining native schemas',
+    () {
+      for (final protocol in ApiProtocol.values) {
+        final body = modelToolBody(
+          protocol,
+          'model',
+          'prompt',
+          [],
+          [
+            {
+              'name': 'search_web',
+              'parameters': {'type': 'object'},
+            },
+          ],
+          outputTokens: 16384,
+          allowTools: false,
+        );
+        expect(body['max_tokens'], 16384);
+        expect(
+          body['tool_choice'],
+          protocol == ApiProtocol.openAi ? 'none' : {'type': 'none'},
+        );
+        expect(body['tools'], isNotEmpty);
+      }
+    },
+  );
 
   test(
     'provider reasoning fields and cache usage survive tool continuation',

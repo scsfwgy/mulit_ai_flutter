@@ -126,6 +126,37 @@ void main() {
   );
 
   testWidgets(
+    'message settings toggles this chat and opens global memory',
+    (tester) async {
+      installEmptyDatabaseStub(settings: {memoryEnabledSetting: '1'});
+      var used = true;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: MessageSettingsScreen(
+            chatUsesMemory: () async => used,
+            onToggleChatMemory: () async {
+              used = !used;
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final toggle = find.descendant(
+        of: find.widgetWithText(IosRow, T('i18n.memory_chat_toggle')),
+        matching: find.byType(CupertinoSwitch),
+      );
+      expect(tester.widget<CupertinoSwitch>(toggle).value, isTrue);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(used, isFalse);
+      await tester.tap(find.byKey(const Key('message-memory-settings')));
+      await tester.pumpAndSettle();
+      expect(find.byType(MemorySettingsScreen), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'master off preserves the saved chat default but disables its control',
     (tester) async {
       installEmptyDatabaseStub(settings: {memoryInGlobalPromptSetting: '1'});

@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:mulit_ai_flutter/agent/agent_runner.dart';
-import 'package:mulit_ai_flutter/agent/agent_screen.dart';
 import 'package:mulit_ai_flutter/agent/agent_store.dart';
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
@@ -14,6 +13,10 @@ import 'package:mulit_ai_flutter/core/project_store.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/main.dart' as app;
 import 'package:mulit_ai_flutter/provider/provider_screen.dart';
+import 'package:mulit_ai_flutter/settings/settings_screen.dart';
+import 'package:mulit_ai_flutter/chat/widgets/chat_composer.dart';
+import 'package:mulit_ai_flutter/chat/widgets/chat_feature_hints.dart';
+import 'package:mulit_ai_flutter/chat/chat_context_screen.dart';
 
 /// A local protocol fixture exercises actual model HTTP, SQLite, files and UI.
 /// It restores settings and deletes only the provider/project/task it created.
@@ -29,6 +32,7 @@ void main() {
     final saved = <String, String?>{};
     for (final key in [
       'agent_enabled',
+      'agent_context_window_tokens',
       'app_language',
       'global_prompt',
       'last_chat_selection',
@@ -42,9 +46,38 @@ void main() {
       final body = jsonDecode(
         await utf8.decoder.bind(request).join(),
       ) as Map<String, dynamic>;
+      if (body['stream'] == true) {
+        request.response.headers.contentType = ContentType(
+          'text',
+          'event-stream',
+        );
+        request.response.write(
+          'data: {"choices":[{"delta":{"content":"Agent QA"}}]}\n\ndata: [DONE]\n\n',
+        );
+        await request.response.close();
+        return;
+      }
       requests++;
       request.response.headers.contentType = ContentType.json;
       if (requests == 1) {
+        expectSync(body['max_tokens'], 16384);
+        request.response.write(
+          jsonEncode({
+            'choices': [
+              {
+                'finish_reason': 'length',
+                'message': {
+                  'role': 'assistant',
+                  'content': null,
+                  'reasoning_content': 'Unfinished',
+                },
+              },
+            ],
+            'usage': {'prompt_tokens': 10, 'completion_tokens': 16384},
+          }),
+        );
+      } else if (requests == 2) {
+        expectSync(body['max_tokens'], 32768);
         expectSync(body['tools'], isNotEmpty);
         request.response.write(
           jsonEncode({
@@ -70,12 +103,46 @@ void main() {
             'usage': {'prompt_tokens': 20, 'completion_tokens': 5},
           }),
         );
-      } else {
+      } else if (requests == 3) {
         expectSync(body['messages'].last['role'], 'tool');
         expectSync(
           body['messages'].last['content'],
           contains('Project fixture'),
         );
+        request.response.write(
+          jsonEncode({
+            'choices': [
+              {
+                'finish_reason': 'tool_calls',
+                'message': {
+                  'role': 'assistant',
+                  'content': null,
+                  'tool_calls': [
+                    {
+                      'id': 'save-report',
+                      'type': 'function',
+                      'function': {
+                        'name': 'save_artifact',
+                        'arguments': jsonEncode({
+                          'name': 'report.md',
+                          'content': '# Agent 研究报告\n\n项目资料已读取，报告文件已准备。',
+                        }),
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+            'usage': {'prompt_tokens': 30, 'completion_tokens': 10},
+          }),
+        );
+      } else if (requests == 4) {
+        request.response.statusCode = 400;
+        request.response.write(
+          '{"error":{"code":"invalid_request","message":"Fixture failure after saved tools"}}',
+        );
+      } else {
+        expectSync(body['messages'].last['tool_call_id'], 'save-report');
         request.response.write(
           jsonEncode({
             'choices': [
@@ -87,7 +154,7 @@ void main() {
                 },
               },
             ],
-            'usage': {'prompt_tokens': 30, 'completion_tokens': 10},
+            'usage': {'prompt_tokens': 40, 'completion_tokens': 10},
           }),
         );
       }
@@ -134,7 +201,16 @@ void main() {
         'Project fixture',
         'Agent research uses local project documents.',
       );
-      app.main();
+      await store.moveTopic(topicId, projectId);
+      await app.main();
+      for (
+        var i = 0;
+        i < 100 &&
+            find.byIcon(CupertinoIcons.line_horizontal_3).evaluate().isEmpty;
+        i++
+      ) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
       await tester.pumpAndSettle();
       expect(find.byKey(const Key('agent-entry')), findsNothing);
       await binding.convertFlutterSurfaceToImage();
@@ -160,7 +236,12 @@ void main() {
       await tester.pumpAndSettle();
       final context = tester.element(find.byType(Scaffold).first);
       Navigator.of(context)
-          .push(appPageRouteForTest(const AgentSettingsScreen()));
+          .push(appPageRouteForTest(const MessageSettingsScreen()));
+      await tester.pumpAndSettle();
+      final agentRow = find.byKey(const Key('message-agent-settings'));
+      await tester.ensureVisible(agentRow);
+      await binding.takeScreenshot('agent-message-settings-off');
+      await tester.tap(agentRow);
       await tester.pumpAndSettle();
       expect(
         tester
@@ -175,52 +256,108 @@ void main() {
       await binding.takeScreenshot('agent-settings-on');
       await tester.tap(find.byIcon(CupertinoIcons.back));
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('agent-entry')), findsOneWidget);
-      Navigator.of(tester.element(find.byType(Scaffold).first)).push(
-        appPageRouteForTest(
-          AgentScreen(
-            providerId: providerId,
-            model: 'local-agent',
-            projectId: projectId,
-          ),
-        ),
-      );
+      expect(find.text(T('i18n.agent_on')), findsOneWidget);
+      await binding.takeScreenshot('agent-message-settings-on');
+      await tester.tap(find.byKey(const Key('message-agent-settings')));
       await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const Key('agent-goal')),
-        '结合项目资料生成 Agent 研究报告',
-      );
+      await tester.tap(find.byKey(const Key('agent-context-settings')));
       await tester.pumpAndSettle();
-      expect(
-        tester
-            .widget<CupertinoTextField>(find.byKey(const Key('agent-goal')))
-            .controller!
-            .text,
-        '结合项目资料生成 Agent 研究报告',
+      expect(find.byType(ChatContextScreen), findsOneWidget);
+      await tester.ensureVisible(find.text('1M Token'));
+      await tester.tap(find.text('1M Token'));
+      await tester.pumpAndSettle();
+      expect(await store.setting('agent_context_window_tokens'), '1048576');
+      await binding.takeScreenshot('agent-context-settings');
+      await tester.tap(find.byIcon(CupertinoIcons.back));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(CupertinoIcons.back));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(CupertinoIcons.back));
+      await tester.pumpAndSettle();
+      final input = find.descendant(
+        of: find.byType(ChatComposer),
+        matching: find.byType(CupertinoTextField),
       );
+      await tester.enterText(input, '结合项目资料生成 Agent 研究报告并保存 report.md');
+      await tester.pump();
+      expect(find.byType(ChatFeatureHints), findsOneWidget);
+      expect(find.byKey(const Key('agent-entry')), findsNothing);
       expect(
-        tester
-            .widget<CupertinoButton>(
-              find.widgetWithText(CupertinoButton, T('i18n.agent_start')),
-            )
-            .onPressed,
-        isNotNull,
+        tester.getSize(find.byKey(const Key('chat-feature-hints'))).height,
+        lessThan(32),
       );
-      await binding.takeScreenshot('agent-new-task');
-      await tester.tap(find.text(T('i18n.agent_start')));
+      await binding.takeScreenshot('agent-chat-task-draft');
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pump();
+      binding.testTextInput.unregister();
+      await tester.tap(input);
+      for (var i = 0; i < 50 && tester.view.viewInsets.bottom == 0; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      await tester.pumpAndSettle();
+      expect(tester.view.viewInsets.bottom, greaterThan(0));
+      final keyboardTop =
+          (tester.view.physicalSize.height - tester.view.viewInsets.bottom) /
+          tester.view.devicePixelRatio;
+      expect(
+        tester.getRect(find.byType(ChatComposer)).bottom,
+        lessThanOrEqualTo(keyboardTop + 1),
+      );
+      await binding.takeScreenshot('agent-chat-keyboard');
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
+      binding.testTextInput.register();
+      await tester.tap(find.text(T('i18n.send')));
+      for (var i = 0; i < 200; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+        final tasks = (await repository.tasks()).where(
+          (t) => !taskIds.contains(t.id),
+        );
+        if (tasks.isNotEmpty &&
+            tasks.first.status == 'paused' &&
+            !AgentRunner.isBusy)
+          break;
+      }
+      await tester.pumpAndSettle();
+      final paused = (await repository.tasks()).firstWhere(
+        (t) => !taskIds.contains(t.id),
+      );
+      expect(paused.status, 'paused');
+      expect(requests, 4);
+      expect(paused.requests.first['finish_reason'], 'length');
+      expect(paused.requests.last['http_status'], 400);
+      expect(paused.artifacts.length, 1);
+      await binding.takeScreenshot('agent-paused-with-diagnostics');
+      await tester.enterText(input, '继续');
+      await tester.pump();
+      await tester.tap(find.text(T('i18n.send')));
       for (var i = 0; i < 160; i++) {
         await tester.pump(const Duration(milliseconds: 100));
         final tasks = (await repository.tasks()).where(
           (t) => !taskIds.contains(t.id),
         );
-        if (tasks.isNotEmpty && tasks.first.status == 'completed') break;
+        if (tasks.isNotEmpty &&
+            tasks.first.status == 'completed' &&
+            !AgentRunner.isBusy)
+          break;
       }
       await tester.pumpAndSettle();
       final task = (await repository.tasks()).firstWhere(
         (t) => !taskIds.contains(t.id),
       );
+      expect(task.id, paused.id);
       expect(task.status, 'completed');
-      expect(requests, 2);
+      expect(task.calls, 2);
+      expect(requests, 5);
+      expect(
+        (await repository.tasks()).where((t) => !taskIds.contains(t.id)).length,
+        1,
+      );
+      expect(task.topicId, topicId);
+      final history = await store.messages(topicId);
+      expect(history.length, 4);
+      expect(history.last.id, task.answerMessageId);
+      expect(history.last.content, contains('项目资料已读取'));
       expect(task.sources, isNotEmpty);
       expect(
         await (await repository.artifactFile(

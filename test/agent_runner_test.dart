@@ -2,12 +2,17 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 import 'package:mulit_ai_flutter/agent/agent_runner.dart';
+import 'package:mulit_ai_flutter/agent/agent_context.dart';
+import 'package:mulit_ai_flutter/chat/chat_context.dart';
 import 'package:mulit_ai_flutter/agent/agent_store.dart';
 import 'package:mulit_ai_flutter/api/tool_call.dart';
+import 'package:mulit_ai_flutter/api/api_client.dart';
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
 import 'package:mulit_ai_flutter/core/project_store.dart';
@@ -55,6 +60,11 @@ void main() {
   setUpAll(() async {
     temporary = await Directory.systemTemp.createTemp('ai-link-agent-test-');
     databaseFactory = await createDesktopDatabaseFactory(temporary);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (_) async => temporary.path,
+        );
     db = await ChatStore.instance.db;
     repository = AgentStore(
       directoryOverride: Directory(p.join(temporary.path, 'artifacts')),
@@ -90,6 +100,40 @@ void main() {
     expect(requested, false);
     expect(task.status, 'failed');
     runner.dispose();
+  });
+
+  test('debug logs record the run without task text or secrets', () async {
+    final lines = <String>[];
+    final previous = debugPrint;
+    debugPrint = (String? message, {int? wrapWidth}) {
+      if (message != null) lines.add(message);
+    };
+    addTearDown(() => debugPrint = previous);
+    final task = newTask();
+    final runner = AgentRunner(
+      repository: repository,
+      allowed: () async => true,
+      turn: (_, tools) async {
+        expect(
+          tools.map((tool) => tool['name']),
+          isNot(contains('search_web')),
+        );
+        return finalTurn('private answer text');
+      },
+    );
+    await runner.run(task);
+    runner.dispose();
+    final trace = lines
+        .where((line) => line.startsWith('[AI Link Agent]'))
+        .join('\n');
+    expect(trace, contains('"event":"start"'));
+    expect(trace, contains('"event":"turn"'));
+    expect(trace, contains('"status":"completed"'));
+    expect(trace, contains('"event":"end"'));
+    expect(trace, contains('"stop":"completed"'));
+    expect(trace, isNot(contains('Research')));
+    expect(trace, isNot(contains('private answer text')));
+    expect(trace, isNot(contains('Bearer')));
   });
 
   test(
@@ -252,6 +296,35 @@ void main() {
     },
   );
 
+  test(
+    'a competing task reports busy while the active request winds down',
+    () async {
+      final response = Completer<ModelToolTurn>();
+      final started = Completer<void>();
+      final first = AgentRunner(
+        repository: repository,
+        allowed: () async => true,
+        turn: (_, _) {
+          started.complete();
+          return response.future;
+        },
+      );
+      final second = AgentRunner(
+        repository: repository,
+        allowed: () async => true,
+        turn: (_, _) async => finalTurn('Unexpected'),
+      );
+      final run = first.run(newTask());
+      await started.future;
+      await expectLater(() => second.run(newTask()), throwsException);
+      first.pause();
+      response.complete(finalTurn('Late'));
+      await run;
+      first.dispose();
+      second.dispose();
+    },
+  );
+
   test('disabling Agent pauses an active task before another action', () async {
     await AppPreferences.instance.setAgentEnabled(true);
     final task = newTask();
@@ -274,21 +347,311 @@ void main() {
     runner.dispose();
   });
 
-  test('model round budget stops loops and preserves progress', () async {
-    final task = newTask();
+  test(
+    'last budgeted request returns an interim answer with tools disabled',
+    () async {
+      final task = newTask();
+      final runner = AgentRunner(
+        repository: repository,
+        allowed: () async => true,
+        turn: (t, _) async => t.finishNotice != null
+            ? finalTurn('Established facts and remaining questions')
+            : callTurn('c${t.rounds}', 'unknown', {'query': '${t.rounds}'}),
+        execute: (_, _, _) async => {'ok': true},
+      );
+      await runner.run(task);
+      expect(task.rounds, 12);
+      expect(task.calls, 11);
+      expect(task.status, 'completed');
+      expect(task.finishNotice, 'budget');
+      expect(task.requests.last['tools_enabled'], false);
+      expect(task.answer, contains('remaining questions'));
+      runner.dispose();
+    },
+  );
+
+  test(
+    'repeated identical tools stop early and summarize existing evidence',
+    () async {
+      final task = newTask();
+      final runner = AgentRunner(
+        repository: repository,
+        allowed: () async => true,
+        turn: (t, _) async => t.finishNotice != null
+            ? finalTurn('Evidence is insufficient')
+            : callTurn('c${t.rounds}', 'unknown', {'query': 'same'}),
+        execute: (_, _, _) async => {'ok': true},
+      );
+      await runner.run(task);
+      expect(task.calls, 3);
+      expect(task.rounds, 4);
+      expect(task.status, 'completed');
+      expect(task.finishNotice, 'loop');
+      runner.dispose();
+    },
+  );
+
+  test('old lifetime-budget failures resume with a fresh run budget', () async {
+    final task = newTask()
+      ..rounds = 12
+      ..calls = 24
+      ..status = 'failed';
+    expect(task.canResume, true);
     final runner = AgentRunner(
       repository: repository,
       allowed: () async => true,
-      turn: (t, _) async => callTurn('c${t.rounds}', 'unknown', {}),
-      execute: (_, _, _) async => {'ok': true},
+      turn: (_, _) async => finalTurn('Recovered'),
     );
     await runner.run(task);
-    expect(task.rounds, 12);
-    expect(task.calls, 12);
-    expect(task.status, 'failed');
-    expect(task.steps.every((s) => s['status'] == 'completed'), true);
+    expect(task.status, 'completed');
+    expect(task.rounds, 13);
     runner.dispose();
   });
+
+  test(
+    'truncated output grows its own reserve and retries without executing it',
+    () async {
+      final task = newTask();
+      var count = 0;
+      final runner = AgentRunner(
+        repository: repository,
+        allowed: () async => true,
+        turn: (_, _) async {
+          if (count++ == 0) {
+            throw const ModelTurnException(
+              'output_limit',
+              finishReason: 'length',
+              inputTokens: 10,
+              outputTokens: 8192,
+            );
+          }
+          return finalTurn('Complete');
+        },
+      );
+      await runner.run(task);
+      expect(task.status, 'completed');
+      expect(task.calls, 0);
+      expect(task.outputTokenLimit, 16384);
+      expect(task.requests.first['finish_reason'], 'length');
+      expect(task.requests.first['status'], 'retrying');
+      expect(task.inputTokens, 20);
+      expect(task.outputTokens, 8197);
+      expect(task.usageComplete, true);
+      runner.dispose();
+    },
+  );
+
+  test(
+    'invalid tool arguments are returned for correction without calling a tool',
+    () async {
+      final task = newTask();
+      var attempts = 0;
+      var executions = 0;
+      final runner = AgentRunner(
+        repository: repository,
+        allowed: () async => true,
+        turn: (t, _) async {
+          if (attempts++ == 0) {
+            return ModelToolTurn(
+              {
+                'role': 'assistant',
+                'content': null,
+                'tool_calls': [
+                  {
+                    'id': 'bad',
+                    'type': 'function',
+                    'function': {'name': 'search_web', 'arguments': '{'},
+                  },
+                ],
+              },
+              '',
+              [
+                const ModelToolCall(
+                  'bad',
+                  'search_web',
+                  {},
+                  argumentError: true,
+                ),
+              ],
+              10,
+              5,
+            );
+          }
+          if (attempts == 2) {
+            expect(t.messages.last['content'], contains('invalid_arguments'));
+            return callTurn('fixed', 'search_web', {'query': 'fixed'});
+          }
+          return finalTurn('Done');
+        },
+        execute: (_, _, _) async {
+          executions++;
+          return {'text': 'Evidence'};
+        },
+      );
+      await runner.run(task);
+      expect(task.status, 'completed');
+      expect(executions, 1);
+      expect(task.steps.first['status'], 'failed');
+      expect(task.messages.where((m) => m['tool_call_id'] == 'bad').length, 1);
+      runner.dispose();
+    },
+  );
+
+  test(
+    'rate limits retry, while malformed model output pauses with diagnostics',
+    () async {
+      final task = newTask();
+      var count = 0;
+      final runner = AgentRunner(
+        repository: repository,
+        allowed: () async => true,
+        turn: (_, _) async {
+          if (count++ == 0) {
+            throw const ApiException('Rate limited', statusCode: 429);
+          }
+          throw const ModelTurnException(
+            'invalid_response',
+            finishReason: 'unexpected',
+          );
+        },
+      );
+      await runner.run(task);
+      expect(task.status, 'paused');
+      expect(task.requests.first['http_status'], 429);
+      expect(task.requests.last['finish_reason'], 'unexpected');
+      expect(task.canResume, true);
+      final restored = (await repository.tasks()).firstWhere(
+        (t) => t.id == task.id,
+      );
+      expect(restored.requests, task.requests);
+      runner.dispose();
+    },
+  );
+
+  test(
+    'Agent budget persists independently and can unblock a paused request',
+    () async {
+      final prefs = AppPreferences.instance;
+      await prefs.setContextWindowTokens(8192);
+      await prefs.setAgentContextWindowTokens(8192);
+      final task = newTask();
+      task.messages.add({'role': 'user', 'content': 'large request ' * 1500});
+      var requested = 0;
+      final runner = AgentRunner(
+        repository: repository,
+        allowed: () async => true,
+        turn: (_, _) async {
+          requested++;
+          return finalTurn('Done');
+        },
+      );
+      await runner.run(task);
+      expect(task.status, 'paused');
+      expect(task.contextBlocked, true);
+      expect(task.rounds, 0);
+      expect(requested, 0);
+      await prefs.setAgentContextWindowTokens(32768);
+      expect(
+        await ChatStore.instance.setting(AgentContext.settingKey),
+        '32768',
+      );
+      expect(await ChatStore.instance.setting(ChatContext.settingKey), '8192');
+      await runner.run(task);
+      expect(task.status, 'completed');
+      expect(requested, 1);
+      expect(prefs.contextWindowTokens, 8192);
+      runner.dispose();
+    },
+  );
+
+  test(
+    'linked completion publishes once and stale conversations cannot resume',
+    () async {
+      final store = ChatStore.instance;
+      final provider = ProviderConfig(
+        id: 1,
+        name: 'Snapshot',
+        protocol: ApiProtocol.openAi,
+        baseUrl: 'https://example.com',
+        model: 'test',
+      );
+      await db.insert('providers', {
+        'id': 1,
+        'name': 'Snapshot',
+        'protocol': ApiProtocol.openAi.value,
+        'base_url': 'https://example.com',
+        'model': 'test',
+      });
+      final topicId = await store.createTopicWithMessage(
+        provider,
+        'test',
+        'Research',
+      );
+      final userId = (await store.messages(topicId)).single.id;
+      final task = AgentTask(
+        providerId: 1,
+        providerName: 'Snapshot',
+        model: 'test',
+        protocol: ApiProtocol.openAi,
+        goal: 'Research',
+        systemPrompt: '',
+        topicId: topicId,
+        userMessageId: userId,
+      );
+      final runner = AgentRunner(
+        repository: repository,
+        allowed: () async => true,
+        turn: (_, _) async => finalTurn('Completed in chat'),
+      );
+      await runner.run(task);
+      expect(task.status, 'completed');
+      expect(task.artifacts, isEmpty);
+      final restored = (await repository.forTopic(topicId))[userId]!;
+      await repository.save(restored);
+      await repository.save(task);
+      final messages = await store.messages(topicId);
+      expect(messages.map((m) => m.role), ['user', 'assistant']);
+      expect(messages.last.content, 'Completed in chat');
+      expect(messages.last.providerName, 'Snapshot');
+      expect(restored.answerMessageId, messages.last.id);
+      runner.dispose();
+      final files = AgentStore();
+      await files.writeArtifact(task, '0', 'notes.md', 'Content');
+      await files.save(task);
+      final file = await files.artifactFile(task, task.artifacts.single);
+      await store.deleteTopic(topicId);
+      expect(await file.exists(), false);
+      expect((await repository.forTopic(topicId)), isEmpty);
+      expect(() => repository.save(task), throwsStateError);
+
+      final staleTopic = await store.createTopicWithMessage(
+        provider,
+        'test',
+        'First',
+      );
+      final firstId = (await store.messages(staleTopic)).single.id;
+      final stale = AgentTask(
+        providerId: 1,
+        model: 'test',
+        protocol: ApiProtocol.openAi,
+        goal: 'First',
+        systemPrompt: '',
+        topicId: staleTopic,
+        userMessageId: firstId,
+      );
+      await repository.save(stale);
+      await store.addMessage(staleTopic, 'user', 'New message');
+      stale.status = 'completed';
+      stale.answer = 'Must not publish';
+      expect(() => repository.save(stale), throwsStateError);
+      expect(stale.answerMessageId, isNull);
+      expect(
+        (await store.messages(staleTopic)).where((m) => m.role == 'assistant'),
+        isEmpty,
+      );
+      await store.deleteTopic(staleTopic);
+    },
+  );
 
   test(
     'project document access rejects other projects and traversal filenames',

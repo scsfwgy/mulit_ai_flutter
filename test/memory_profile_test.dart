@@ -27,7 +27,11 @@ void main() {
       isFalse,
     );
     expect(topicUsesMemory(enabled: true, inGlobalPrompt: true), isTrue);
-    expect(topicUsesMemory(enabled: true, inGlobalPrompt: false), isFalse);
+    expect(topicUsesMemory(enabled: true, inGlobalPrompt: false), isTrue);
+    expect(memoryDefaultForChats(enabled: true, stored: null), isTrue);
+    expect(memoryDefaultForChats(enabled: false, stored: null), isFalse);
+    expect(memoryDefaultForChats(enabled: true, stored: '0'), isFalse);
+    expect(memoryDefaultForChats(enabled: false, stored: '1'), isTrue);
     expect(
       topicUsesMemory(
         enabled: true,

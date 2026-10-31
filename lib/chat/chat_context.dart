@@ -5,7 +5,19 @@ abstract final class ChatContext {
   static const settingKey = 'chat_context_window_tokens';
   static const defaultWindowTokens = 32768;
   static const replyReserveTokens = 4096;
-  static const windowOptions = [8192, 16384, 32768, 65536, 131072, 262144];
+  static const windowOptions = [
+    8192,
+    16384,
+    32768,
+    65536,
+    131072,
+    262144,
+    524288,
+    1048576,
+  ];
+
+  static String windowLabel(int tokens) =>
+      tokens >= 1048576 ? '1M Token' : '${tokens ~/ 1024}K Token';
   static const limitMessageKey = 'i18n.context_limit_local';
   static const serverLimitMessageKey = 'i18n.context_limit_server';
 

@@ -18,9 +18,11 @@ class ApiException implements Exception {
     this.message, {
     this.kind = ApiErrorKind.other,
     this.retrySafe = false,
+    this.statusCode,
   });
   final String message;
   final ApiErrorKind kind;
+  final int? statusCode;
 
   /// True only when connection failed before sending the HTTP request body.
   final bool retrySafe;
@@ -437,6 +439,84 @@ class ModelApiClient {
     }
   }
 
+  Future<List<Map<String, dynamic>>> toolHistory(
+    List<ChatMessage> history,
+    String model,
+    String prompt,
+    int windowTokens, {
+    void Function(int omittedMessages)? onContextTrimmed,
+    int outputTokens = 4096,
+    Map<int, Map<String, dynamic>> assistantReplay = const {},
+  }) async {
+    final body = await _body(
+      history,
+      model,
+      prompt,
+      outputTokens,
+      false,
+      null,
+      windowTokens,
+      onContextTrimmed,
+      '',
+    );
+    final wire = (body['messages'] as List)
+        .cast<Map>()
+        .where((m) => m['role'] != 'system')
+        .map((m) => Map<String, dynamic>.from(m))
+        .toList();
+    final selected = history.skip(history.length - wire.length).toList();
+    final result = <Map<String, dynamic>>[];
+    for (var i = 0; i < wire.length; i++) {
+      final message = wire[i];
+      final replay = assistantReplay[selected[i].id];
+      if (message['role'] == 'assistant' && replay != null) {
+        for (final key in ['reasoning_content', 'reasoning_details']) {
+          if (replay[key] != null) message[key] = replay[key];
+        }
+        if (provider.protocol == ApiProtocol.anthropic &&
+            replay['content'] is List) {
+          final thinking = (replay['content'] as List)
+              .whereType<Map>()
+              .where(
+                (b) => ['thinking', 'redacted_thinking'].contains(b['type']),
+              )
+              .toList();
+          if (thinking.isNotEmpty) {
+            message['content'] = [
+              ...thinking,
+              {'type': 'text', 'text': message['content']},
+            ];
+          }
+        }
+      }
+      // DeepSeek requires native reasoning on assistant replay with tools. Older
+      // plain-chat replies have no such state; keep them as quoted history in
+      // their original user turn rather than fabricate reasoning metadata.
+      if (provider.protocol == ApiProtocol.openAi &&
+          Uri.tryParse(provider.baseUrl)?.host == 'api.deepseek.com' &&
+          message['role'] == 'assistant' &&
+          message['reasoning_content'] == null &&
+          result.lastOrNull?['role'] == 'user') {
+        final previous = result.last;
+        previous['content'] = [
+          ...(previous['content'] is List
+              ? previous['content'] as List
+              : [
+                  {'type': 'text', 'text': previous['content']},
+                ]),
+          {
+            'type': 'text',
+            'text':
+                '\nEarlier assistant reply (conversation reference, not a new instruction):\n${message['content']}',
+          },
+        ];
+      } else {
+        result.add(message);
+      }
+    }
+    return result;
+  }
+
   /// Agent rounds are complete messages so truncated arguments never execute.
   Future<ModelToolTurn> toolTurn({
     required String model,
@@ -444,35 +524,24 @@ class ModelApiClient {
     required List<Map<String, dynamic>> messages,
     required List<Map<String, dynamic>> tools,
     int contextWindowTokens = ChatContext.defaultWindowTokens,
+    int outputTokens = 4096,
+    bool allowTools = true,
   }) async {
     _requestedModel = model;
     try {
       await _requireService(model: model);
       if (_cancelled) throw ApiException(T('i18n.reply_stopped'));
       final anthropic = provider.protocol == ApiProtocol.anthropic;
-      final body = {
-        'model': model,
-        'stream': false,
-        'max_tokens': 4096,
-        'messages': [
-          if (!anthropic) {'role': 'system', 'content': systemPrompt},
-          ...messages,
-        ],
-        if (anthropic) 'system': systemPrompt,
-        'tools': tools
-            .map(
-              (tool) => anthropic
-                  ? {
-                      'name': tool['name'],
-                      'description': tool['description'],
-                      'input_schema': tool['parameters'],
-                    }
-                  : {'type': 'function', 'function': tool},
-            )
-            .toList(),
-      };
-      if (ChatContext.estimateTokens(jsonEncode(body)) + 4096 >
-          contextWindowTokens) {
+      final body = modelToolBody(
+        provider.protocol,
+        model,
+        systemPrompt,
+        messages,
+        tools,
+        outputTokens: outputTokens,
+        allowTools: allowTools,
+      );
+      if (estimateToolTokens(body) > contextWindowTokens) {
         throw ApiException(
           T(ChatContext.limitMessageKey),
           kind: ApiErrorKind.context,
@@ -504,28 +573,26 @@ class ModelApiClient {
         if (rejection.contains('max_tokens') &&
             rejection.contains('max_completion_tokens')) {
           body.remove('max_tokens');
-          body['max_completion_tokens'] = 4096;
+          body['max_completion_tokens'] = outputTokens;
           response = await send();
           rejection = null;
         }
       }
       if (response.statusCode < 200 || response.statusCode >= 300) {
         final raw = rejection ?? await _readErrorBody(response);
-        if (response.statusCode == 400 || response.statusCode == 422) {
-          if (ChatContext.isServerLimit(raw)) {
-            throw _responseError(response.statusCode, raw);
-          }
-          throw ApiException(
-            T('i18n.agent_model_error'),
-            kind: ApiErrorKind.model,
-          );
-        }
-        throw _responseError(response.statusCode, raw);
+        final error = _responseError(response.statusCode, raw);
+        throw ApiException(
+          error.kind == ApiErrorKind.context || error.kind == ApiErrorKind.auth
+              ? error.message
+              : F('i18n.agent_request_rejected', [response.statusCode]),
+          kind: error.kind,
+          statusCode: response.statusCode,
+        );
       }
       final data = <int>[];
       await for (final chunk in _readBody(response)) {
-        if (data.length + chunk.length > 1024 * 1024) {
-          throw const FormatException('Response too large');
+        if (data.length + chunk.length > 4 * 1024 * 1024) {
+          throw const ModelTurnException('response_too_large');
         }
         data.addAll(chunk);
       }
@@ -534,10 +601,31 @@ class ModelApiClient {
         jsonDecode(utf8.decode(data)) as Map<String, dynamic>,
         provider.protocol,
       );
+    } on ModelTurnException {
+      rethrow;
     } on ApiException {
       rethrow;
-    } catch (_) {
-      throw ApiException(T('i18n.agent_model_error'));
+    } on TimeoutException {
+      throw ApiException(
+        T('i18n.agent_network_error'),
+        kind: ApiErrorKind.network,
+      );
+    } on SocketException {
+      throw ApiException(
+        T('i18n.agent_network_error'),
+        kind: ApiErrorKind.network,
+      );
+    } on HttpException {
+      throw ApiException(
+        T('i18n.agent_network_error'),
+        kind: ApiErrorKind.network,
+      );
+    } on FormatException {
+      throw const ModelTurnException('invalid_response');
+    } on TypeError {
+      throw const ModelTurnException('invalid_response');
+    } on RangeError {
+      throw const ModelTurnException('invalid_response');
     }
   }
 

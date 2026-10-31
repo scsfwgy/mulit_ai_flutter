@@ -35,6 +35,12 @@ class AttachmentStore {
   Future<Directory> get agentDirectory async =>
       Directory(p.join((await directory).path, 'agent_artifacts'));
 
+  Future<void> deleteAgentTask(String id) async {
+    if (!RegExp(r'^[a-f0-9-]{36}$').hasMatch(id)) return;
+    final folder = Directory(p.join((await agentDirectory).path, id));
+    if (await folder.exists()) await folder.delete(recursive: true);
+  }
+
   Future<File> file(ChatAttachment attachment) async {
     if (!RegExp(r'^[a-f0-9-]{36}\.(jpg|png|gif|webp|pdf|txt|bin)$')
         .hasMatch(attachment.fileName)) {

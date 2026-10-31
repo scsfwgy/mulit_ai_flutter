@@ -4,23 +4,18 @@ import 'dart:convert';
 import 'package:file_selector/file_selector.dart' as files;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
-
 import 'package:mulit_ai_flutter/agent/agent_runner.dart';
 import 'package:mulit_ai_flutter/agent/agent_store.dart';
-import 'package:mulit_ai_flutter/api/api_client.dart';
 import 'package:mulit_ai_flutter/chat/assistant_markdown.dart';
-import 'package:mulit_ai_flutter/chat/chat_model_selector.dart';
+import 'package:mulit_ai_flutter/chat/chat_context_screen.dart';
+import 'package:mulit_ai_flutter/chat/chat_context.dart';
 import 'package:mulit_ai_flutter/core/app_platform.dart';
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
-import 'package:mulit_ai_flutter/core/data.dart';
-import 'package:mulit_ai_flutter/core/project.dart';
-import 'package:mulit_ai_flutter/core/project_store.dart';
-import 'package:mulit_ai_flutter/core/storefront_policy.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class AgentSettingsScreen extends StatefulWidget {
   const AgentSettingsScreen({super.key});
@@ -80,7 +75,20 @@ class _AgentSettingsScreenState extends State<AgentSettingsScreen> {
               footer: T('i18n.agent_limits'),
               children: [
                 IosRow(
-                  title: T('i18n.agent_tasks'),
+                  key: const Key('agent-context-settings'),
+                  title: T('i18n.agent_context'),
+                  subtitle: ChatContext.windowLabel(
+                    AppPreferences.instance.agentContextWindowTokens,
+                  ),
+                  onTap: () => Navigator.push<void>(
+                    context,
+                    appPageRoute(
+                      builder: (_) => const ChatContextScreen(forAgent: true),
+                    ),
+                  ),
+                ),
+                IosRow(
+                  title: T('i18n.agent_history'),
                   leading: Icon(
                     CupertinoIcons.check_mark_circled,
                     color: IosColors.blue,
@@ -108,187 +116,27 @@ class _AgentSettingsScreenState extends State<AgentSettingsScreen> {
 }
 
 class AgentScreen extends StatefulWidget {
-  const AgentScreen({super.key, this.providerId, this.model, this.projectId});
-  final int? providerId;
-  final String? model;
-  final int? projectId;
+  const AgentScreen({super.key});
   @override
   State<AgentScreen> createState() => _AgentScreenState();
 }
 
 class _AgentScreenState extends State<AgentScreen> {
-  final _goal = TextEditingController();
   final _repository = AgentStore();
-  List<AgentTask> _tasks = [];
-  List<ProviderConfig> _providers = [];
-  List<ChatProject> _projects = [];
-  int? _providerId;
-  int? _projectId;
-  String? _model;
+  List<AgentTask>? _tasks;
   String? _error;
-  bool _loading = true;
-  bool _starting = false;
-
   @override
   void initState() {
     super.initState();
-    _providerId = widget.providerId;
-    _model = widget.model;
-    _projectId = widget.projectId;
     unawaited(_load());
   }
 
   Future<void> _load() async {
     try {
       final tasks = await _repository.tasks();
-      await StorefrontPolicy.instance.refresh();
-      final providers = (await ChatStore.instance.providers())
-          .where(
-            (p) => !StorefrontPolicy.instance.blocks(
-              p.baseUrl,
-              presetId: p.presetId,
-              model: p.model,
-            ),
-          )
-          .toList();
-      final projects = await ChatStore.instance.projects();
-      final selected =
-          providers.where((p) => p.id == _providerId).firstOrNull ??
-          providers.firstOrNull;
-      if (!mounted) return;
-      setState(() {
-        _tasks = tasks;
-        _providers = providers;
-        _projects = projects;
-        if (_projectId != null && !projects.any((p) => p.id == _projectId)) {
-          _projectId = null;
-        }
-        if (selected?.id != _providerId) _model = selected?.model;
-        _providerId = selected?.id;
-        _model ??= selected?.model;
-        _loading = false;
-      });
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _error = T('i18n.agent_failed');
-          _loading = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _chooseModel() async {
-    if (_providers.isEmpty) return;
-    final selection = await Navigator.push<ChatModelSelection>(
-      context,
-      appPageRoute(
-        builder: (_) => ChatModelSelector(
-          providers: _providers,
-          topics: const [],
-          providerId: _providerId,
-          model: _model,
-          loadCachedModels: ChatStore.instance.cachedModels,
-          loadModels: (p) async {
-            final client = ModelApiClient(
-              p,
-              await ChatStore.instance.apiKey(p.id) ?? '',
-            );
-            try {
-              return await client.fetchModels();
-            } finally {
-              client.cancel();
-            }
-          },
-        ),
-      ),
-    );
-    if (selection != null && mounted) {
-      setState(() {
-        _providerId = selection.providerId;
-        _model = selection.model;
-      });
-    }
-  }
-
-  Future<void> _chooseProject() async {
-    final choice = await showAppModalPopup<int>(
-      context: context,
-      builder: (context) => CupertinoActionSheet(
-        title: Text(T('i18n.project_space')),
-        actions: [
-          CupertinoActionSheetAction(
-            onPressed: () => Navigator.pop(context, -1),
-            child: Text(T('i18n.agent_no_project')),
-          ),
-          for (final project in _projects)
-            CupertinoActionSheetAction(
-              onPressed: () => Navigator.pop(context, project.id),
-              child: Text(project.name),
-            ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          onPressed: () => Navigator.pop(context),
-          child: Text(T('i18n.cancel')),
-        ),
-      ),
-    );
-    if (choice != null && mounted) {
-      setState(() => _projectId = choice == -1 ? null : choice);
-    }
-  }
-
-  Future<void> _open(AgentTask task, {bool start = false}) async {
-    await Navigator.push<void>(
-      context,
-      appPageRoute(
-        builder: (_) => AgentTaskScreen(task: task, autoStart: start),
-      ),
-    );
-    await _load();
-  }
-
-  Future<void> _start() async {
-    if (_starting ||
-        !AppPreferences.instance.agentEnabled ||
-        AgentRunner.isBusy ||
-        _goal.text.trim().isEmpty) {
-      return;
-    }
-    final provider = _providers.where((p) => p.id == _providerId).firstOrNull;
-    if (provider == null || _model == null) return;
-    final model = _model!;
-    final projectId = _projectId;
-    final goal = _goal.text.trim();
-    FocusScope.of(context).unfocus();
-    setState(() {
-      _starting = true;
-      _error = null;
-    });
-    try {
-      final prompt = await ChatStore.instance.chatSystemPrompt(
-        provider.id,
-        model,
-        projectId: projectId,
-      );
-      if (!mounted || !AppPreferences.instance.agentEnabled) return;
-      final task = AgentTask(
-        providerId: provider.id,
-        model: model,
-        protocol: provider.protocol,
-        endpoint: provider.baseUrl,
-        projectId: projectId,
-        goal: goal,
-        systemPrompt: prompt,
-      );
-      await _repository.save(task);
-      if (!mounted) return;
-      _goal.clear();
-      if (mounted) await _open(task, start: true);
+      if (mounted) setState(() => _tasks = tasks);
     } catch (_) {
       if (mounted) setState(() => _error = T('i18n.agent_failed'));
-    } finally {
-      if (mounted) setState(() => _starting = false);
     }
   }
 
@@ -321,142 +169,81 @@ class _AgentScreenState extends State<AgentScreen> {
   }
 
   @override
-  void dispose() {
-    _goal.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-    animation: AppPreferences.instance,
-    builder: (context, _) => Scaffold(
-      backgroundColor: IosColors.background,
-      appBar: iosAppBar(
-        title: T('i18n.agent_tasks'),
-        leading: IosNavButton(
-          icon: CupertinoIcons.back,
-          onPressed: () => Navigator.pop(context),
-        ),
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: IosColors.background,
+    appBar: iosAppBar(
+      title: T('i18n.agent_history'),
+      leading: IosNavButton(
+        icon: CupertinoIcons.back,
+        onPressed: () => Navigator.pop(context),
       ),
-      body: SafeArea(
-        child: _loading
-            ? const Center(child: CupertinoActivityIndicator())
-            : ListView(
-                children: [
-                  IosSection(
-                    footer: T('i18n.agent_task_detail'),
-                    children: [
-                      IosRow(
-                        title: T('i18n.agent_model'),
-                        subtitle:
-                            '${_providers.where((p) => p.id == _providerId).firstOrNull?.name ?? T('i18n.agent_no_model')} · ${_model ?? ''}',
-                        onTap: _starting ? null : _chooseModel,
-                      ),
-                      IosRow(
-                        title: T('i18n.project_space'),
-                        subtitle:
-                            _projects
-                                .where((p) => p.id == _projectId)
-                                .firstOrNull
-                                ?.name ??
-                            T('i18n.agent_no_project'),
-                        onTap: _starting ? null : _chooseProject,
-                      ),
+    ),
+    body: SafeArea(
+      child: _tasks == null && _error == null
+          ? const Center(child: CupertinoActivityIndicator())
+          : ListView(
+              children: [
+                IosSection(
+                  footer: T('i18n.agent_chat_detail'),
+                  children: [
+                    if (_tasks?.isEmpty == true)
                       Padding(
-                        padding: const EdgeInsets.all(14),
-                        child: CupertinoTextField(
-                          key: const Key('agent-goal'),
-                          controller: _goal,
-                          readOnly: _starting,
-                          minLines: 3,
-                          maxLines: 6,
-                          maxLength: 4000,
-                          placeholder: T('i18n.agent_goal_hint'),
-                          style: TextStyle(color: IosColors.label),
-                          decoration: BoxDecoration(
-                            color: IosColors.background,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          T('i18n.agent_empty'),
+                          style: TextStyle(color: IosColors.secondary),
                         ),
                       ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-                        child: ValueListenableBuilder(
-                          valueListenable: _goal,
-                          builder: (context, _, _) => IosPrimaryButton(
-                            label: 'i18n.agent_start',
-                            icon: CupertinoIcons.play_fill,
-                            onPressed:
-                                !AppPreferences.instance.agentEnabled ||
-                                    _starting ||
-                                    _providerId == null ||
-                                    _goal.text.trim().isEmpty
-                                ? null
-                                : _start,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (!AppPreferences.instance.agentEnabled)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 30),
-                      child: Text(
-                        T('i18n.agent_disabled'),
-                        style: TextStyle(color: IosColors.secondary),
-                      ),
-                    ),
-                  if (_error != null)
-                    Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Text(
-                        _error!,
-                        style: TextStyle(color: IosColors.destructive),
-                      ),
-                    ),
-                  IosSection(
-                    title: T('i18n.agent_history'),
-                    children: [
-                      if (_tasks.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Text(
-                            T('i18n.agent_empty'),
-                            style: TextStyle(color: IosColors.secondary),
-                          ),
-                        ),
-                      for (final task in _tasks)
-                        IosRow(
-                          title: task.goal,
-                          subtitle: '${agentStatus(task)} · ${task.model}',
-                          onTap: () => _open(task),
-                          trailing: CupertinoButton(
-                            padding: const EdgeInsets.all(8),
-                            minimumSize: Size.zero,
-                            onPressed: () => _delete(task),
-                            child: Icon(
-                              CupertinoIcons.delete,
-                              size: 18,
-                              color: IosColors.secondary,
+                    for (final task in _tasks ?? <AgentTask>[])
+                      IosRow(
+                        title: task.goal,
+                        subtitle: '${agentStatus(task)} · ${task.model}',
+                        onTap: () async {
+                          await Navigator.push<void>(
+                            context,
+                            appPageRoute(
+                              builder: (_) => AgentTaskScreen(task: task),
                             ),
+                          );
+                          await _load();
+                        },
+                        trailing: CupertinoButton(
+                          padding: const EdgeInsets.all(8),
+                          minimumSize: Size.zero,
+                          onPressed: () => _delete(task),
+                          child: Icon(
+                            CupertinoIcons.delete,
+                            size: 18,
+                            color: IosColors.secondary,
                           ),
                         ),
-                    ],
+                      ),
+                  ],
+                ),
+                if (_error != null)
+                  Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Text(
+                      _error!,
+                      style: TextStyle(color: IosColors.destructive),
+                    ),
                   ),
-                  const SizedBox(height: 24),
-                ],
-              ),
-      ),
+              ],
+            ),
     ),
   );
 }
 
 String agentStatus(AgentTask task) => T(switch (task.status) {
-  'completed' => 'i18n.agent_completed',
+  'completed' =>
+    task.finishNotice == null
+        ? 'i18n.agent_completed'
+        : 'i18n.agent_partial_status',
   'failed' => 'i18n.agent_failed_status',
   'running' =>
-    AgentRunner.isBusy ? 'i18n.agent_running' : 'i18n.agent_interrupted',
+    AgentRunner.active?.currentTask?.id == task.id
+        ? 'i18n.agent_running'
+        : 'i18n.agent_interrupted',
   _ => 'i18n.agent_paused',
 });
 
@@ -477,6 +264,21 @@ class _AgentTaskScreenState extends State<AgentTaskScreen>
   final _repository = AgentStore();
   late final AgentRunner _runner = AgentRunner(repository: _repository);
   bool _running = false;
+  AgentRunner? _observed;
+  AgentTask get _task => _observed?.currentTask ?? widget.task;
+  bool get _busy =>
+      _running ||
+      (_observed != null &&
+          AgentRunner.active == _observed &&
+          _task.status == 'running');
+  void _pause() {
+    if (_observed != null && AgentRunner.active == _observed) {
+      _observed!.pause();
+    } else {
+      _runner.pause();
+    }
+  }
+
   bool _showSteps = false;
   String? _error;
 
@@ -485,6 +287,10 @@ class _AgentTaskScreenState extends State<AgentTaskScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _runner.addListener(_changed);
+    if (AgentRunner.active?.currentTask?.id == _task.id) {
+      _observed = AgentRunner.active;
+      _observed!.addListener(_changed);
+    }
     if (widget.autoStart) unawaited(_run());
   }
 
@@ -494,22 +300,19 @@ class _AgentTaskScreenState extends State<AgentTaskScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // shortcut: Pause in background until native scheduling is device-validated.
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.hidden ||
-        state == AppLifecycleState.detached) {
-      _runner.pause();
+    if (state == AppLifecycleState.detached) {
+      _pause();
     }
   }
 
   Future<void> _run() async {
-    if (_running || AgentRunner.isBusy) return;
+    if (_busy || AgentRunner.isBusy) return;
     setState(() {
       _running = true;
       _error = null;
     });
     try {
-      await _runner.run(widget.task);
+      await _runner.run(_task);
     } catch (_) {
       if (mounted) setState(() => _error = T('i18n.agent_save_failed'));
     } finally {
@@ -522,66 +325,7 @@ class _AgentTaskScreenState extends State<AgentTaskScreen>
     bool share = false,
   }) async {
     try {
-      final file = await _repository.artifactFile(widget.task, artifact);
-      if (share) {
-        if (isDesktopApp) {
-          final location = await files.getSaveLocation(
-            suggestedName: artifact['name'] as String,
-          );
-          if (location != null && location.path != file.path) {
-            await file.copy(location.path);
-          }
-        } else {
-          if (!mounted) return;
-          final box = context.findRenderObject() as RenderBox?;
-          final origin = box == null
-              ? null
-              : box.localToGlobal(Offset.zero) & box.size;
-          await SharePlus.instance.share(
-            ShareParams(
-              fileNameOverrides: [artifact['name'] as String],
-              files: [
-                XFile(
-                  file.path,
-                  name: artifact['name'] as String,
-                  mimeType: 'text/plain',
-                ),
-              ],
-              sharePositionOrigin: origin,
-            ),
-          );
-        }
-      } else {
-        final content = await file.readAsString();
-        if (mounted) {
-          await Navigator.push<void>(
-            context,
-            appPageRoute(
-              builder: (_) => Scaffold(
-                backgroundColor: IosColors.background,
-                appBar: iosAppBar(
-                  title: artifact['name'] as String,
-                  leading: IosNavButton(
-                    icon: CupertinoIcons.back,
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ),
-                body: SafeArea(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(18),
-                    child: (artifact['name'] as String).endsWith('.md')
-                        ? AssistantMarkdown(data: content, onTapLink: _link)
-                        : SelectableText(
-                            content,
-                            style: TextStyle(color: IosColors.label),
-                          ),
-                  ),
-                ),
-              ),
-            ),
-          );
-        }
-      }
+      await openAgentArtifact(context, _task, artifact, share: share);
     } catch (_) {
       if (mounted) setState(() => _error = T('i18n.attachment_unavailable'));
     }
@@ -598,6 +342,7 @@ class _AgentTaskScreenState extends State<AgentTaskScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _observed?.removeListener(_changed);
     _runner.removeListener(_changed);
     _runner.dispose();
     super.dispose();
@@ -605,7 +350,7 @@ class _AgentTaskScreenState extends State<AgentTaskScreen>
 
   @override
   Widget build(BuildContext context) {
-    final task = widget.task;
+    final task = _task;
     return AnimatedBuilder(
       animation: AppPreferences.instance,
       builder: (context, _) => Scaffold(
@@ -642,18 +387,14 @@ class _AgentTaskScreenState extends State<AgentTaskScreen>
                       task.calls,
                     ]),
                     chevron: false,
-                    trailing: _running
-                        ? const CupertinoActivityIndicator()
-                        : null,
+                    trailing: _busy ? const CupertinoActivityIndicator() : null,
                   ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
                     child: IosPrimaryButton(
-                      label: _running
-                          ? 'i18n.agent_pause'
-                          : 'i18n.agent_resume',
-                      onPressed: _running
-                          ? _runner.pause
+                      label: _busy ? 'i18n.agent_pause' : 'i18n.agent_resume',
+                      onPressed: _busy
+                          ? _pause
                           : !AppPreferences.instance.agentEnabled ||
                                 !task.canResume
                           ? null
@@ -662,6 +403,40 @@ class _AgentTaskScreenState extends State<AgentTaskScreen>
                   ),
                 ],
               ),
+              if (task.contextTokens > 0)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 30),
+                  child: Text(
+                    F('i18n.agent_context_usage', [
+                      task.contextTokens,
+                      task.contextWindowTokens,
+                    ]),
+                    style: TextStyle(color: IosColors.secondary),
+                  ),
+                ),
+              if (task.contextCompacted)
+                Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Text(
+                    T('i18n.agent_context_compacted'),
+                    style: TextStyle(color: IosColors.secondary),
+                  ),
+                ),
+              if (task.contextBlocked)
+                IosSection(
+                  children: [
+                    IosRow(
+                      title: T('i18n.agent_adjust_context'),
+                      onTap: () => Navigator.push<void>(
+                        context,
+                        appPageRoute(
+                          builder: (_) =>
+                              const ChatContextScreen(forAgent: true),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               if (task.error != null || _error != null)
                 Padding(
                   padding: const EdgeInsets.all(20),
@@ -704,6 +479,28 @@ class _AgentTaskScreenState extends State<AgentTaskScreen>
                         : agentToolLabel(task.steps.last['name'] as String),
                     onTap: () => setState(() => _showSteps = !_showSteps),
                   ),
+                  if (_showSteps && task.requests.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            T('i18n.agent_requests'),
+                            style: TextStyle(color: IosColors.label),
+                          ),
+                          const SizedBox(height: 6),
+                          SelectableText(
+                            const JsonEncoder.withIndent('  ')
+                                .convert(task.requests),
+                            style: TextStyle(
+                              color: IosColors.secondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   if (_showSteps)
                     for (final step in task.steps)
                       Padding(
@@ -715,7 +512,7 @@ class _AgentTaskScreenState extends State<AgentTaskScreen>
                               '${agentToolLabel(step['name'] as String)} · ${T(switch (step['status']) {
                                 'completed' => 'i18n.agent_completed',
                                 'failed' => 'i18n.agent_failed_status',
-                                'running' => _running ? 'i18n.agent_running' : 'i18n.agent_interrupted',
+                                'running' => _busy ? 'i18n.agent_running' : 'i18n.agent_interrupted',
                                 _ => 'i18n.agent_pending',
                               })}',
                               style: TextStyle(color: IosColors.label),
@@ -798,3 +595,80 @@ String agentToolLabel(String name) => T(switch (name) {
   'save_artifact' => 'i18n.agent_tool_save',
   _ => 'i18n.agent_tool_unknown',
 });
+
+Future<void> openAgentArtifact(
+  BuildContext context,
+  AgentTask task,
+  Map<String, dynamic> artifact, {
+  bool share = false,
+}) async {
+  final file = await AgentStore().artifactFile(task, artifact);
+  if (share) {
+    if (isDesktopApp) {
+      final location = await files.getSaveLocation(
+        suggestedName: artifact['name'] as String,
+      );
+      if (location != null && location.path != file.path) {
+        await file.copy(location.path);
+      }
+    } else {
+      if (!context.mounted) return;
+      final box = context.findRenderObject() as RenderBox?;
+      final origin = box == null
+          ? null
+          : box.localToGlobal(Offset.zero) & box.size;
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [
+            XFile(
+              file.path,
+              name: artifact['name'] as String,
+              mimeType: 'text/plain',
+            ),
+          ],
+          fileNameOverrides: [artifact['name'] as String],
+          sharePositionOrigin: origin,
+        ),
+      );
+    }
+    return;
+  }
+  final content = await file.readAsString();
+  if (!context.mounted) return;
+  await Navigator.push<void>(
+    context,
+    appPageRoute(
+      builder: (_) => Scaffold(
+        backgroundColor: IosColors.background,
+        appBar: iosAppBar(
+          title: artifact['name'] as String,
+          leading: IosNavButton(
+            icon: CupertinoIcons.back,
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(18),
+            child: (artifact['name'] as String).endsWith('.md')
+                ? AssistantMarkdown(
+                    data: content,
+                    onTapLink: (url) {
+                      final uri = url == null ? null : safeSearchUrl(url);
+                      if (uri != null) {
+                        unawaited(
+                          launchUrl(uri, mode: LaunchMode.externalApplication),
+                        );
+                      }
+                    },
+                  )
+                : SelectableText(
+                    content,
+                    style: TextStyle(color: IosColors.label),
+                  ),
+          ),
+        ),
+      ),
+    ),
+  );
+}

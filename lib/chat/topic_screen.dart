@@ -1,3 +1,5 @@
+import 'package:mulit_ai_flutter/agent/agent_runner.dart';
+
 import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
@@ -321,7 +323,8 @@ class _TopicScreenState extends State<TopicScreen> {
   }
 
   Future<void> _delete(ChatTopic topic) async {
-    if (topic.id == widget.generatingTopicId) {
+    if (topic.id == widget.generatingTopicId ||
+        AgentRunner.active?.currentTask?.topicId == topic.id) {
       await showCupertinoDialog<void>(
         context: context,
         builder: (context) => CupertinoAlertDialog(

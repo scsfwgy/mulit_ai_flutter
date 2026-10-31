@@ -368,15 +368,25 @@ String memoryCursorSetting(int topicId) => 'memory_cursor_$topicId';
 
 String memoryTopicSetting(int topicId) => 'memory_topic_$topicId';
 
-/// Master off blocks every chat. Otherwise a topic override wins, and chats
-/// without one follow the default-for-chats switch.
+/// Master off blocks every chat. A single chat can still turn memory off.
+/// Chats without their own choice follow the master switch, so turning
+/// global memory on is enough for the chat hint and the prompt.
 bool topicUsesMemory({
   required bool enabled,
   required bool inGlobalPrompt,
   bool? topicOverride,
 }) {
   if (!enabled) return false;
-  return topicOverride ?? inGlobalPrompt;
+  if (topicOverride != null) return topicOverride;
+  return inGlobalPrompt || enabled;
+}
+
+/// An explicit 0 or 1 is kept. A missing value follows the master switch, so
+/// turning memory on applies it to chats that were never given their own choice.
+bool memoryDefaultForChats({required bool enabled, String? stored}) {
+  if (stored == '0') return false;
+  if (stored == '1') return true;
+  return enabled;
 }
 
 String clipMemoryProfile(String raw) {
@@ -1331,8 +1341,10 @@ class ChatStore {
   Future<void> setMemoryEnabled(bool enabled) =>
       saveSetting(memoryEnabledSetting, enabled ? '1' : '0');
 
-  Future<bool> memoryInGlobalPrompt() async =>
-      (await setting(memoryInGlobalPromptSetting)) == '1';
+  Future<bool> memoryInGlobalPrompt() async => memoryDefaultForChats(
+    enabled: await memoryEnabled(),
+    stored: await setting(memoryInGlobalPromptSetting),
+  );
 
   Future<void> setMemoryInGlobalPrompt(bool enabled) =>
       saveSetting(memoryInGlobalPromptSetting, enabled ? '1' : '0');
@@ -1400,10 +1412,10 @@ class ChatStore {
           int.tryParse(await _settingValue(txn, memoryRevisionSetting) ?? '') ??
           0;
       if (current != revision) return;
+      final memoryOn = await _settingValue(txn, memoryEnabledSetting) == '1';
       if (!topicUsesMemory(
-        enabled: await _settingValue(txn, memoryEnabledSetting) == '1',
-        inGlobalPrompt:
-            await _settingValue(txn, memoryInGlobalPromptSetting) == '1',
+        enabled: memoryOn,
+        inGlobalPrompt: memoryOn,
         topicOverride: switch (await _settingValue(
           txn,
           memoryTopicSetting(topicId),
@@ -1500,12 +1512,13 @@ class ChatStore {
       );
       if (rows.isNotEmpty) project = ChatProject.fromMap(rows.first);
     }
+    final enabled = await memoryEnabled();
     final override = topicId == null
         ? topicOverride
         : await memoryTopicOverride(topicId);
     final include = topicUsesMemory(
-      enabled: await memoryEnabled(),
-      inGlobalPrompt: await memoryInGlobalPrompt(),
+      enabled: enabled,
+      inGlobalPrompt: enabled,
       topicOverride: override,
     );
     final base = composeSystemPrompt(
@@ -1759,7 +1772,31 @@ class ChatStore {
     final attachments = (await messages(id))
         .expand((m) => m.attachments)
         .toList();
-    await (await db).delete('topics', where: 'id = ?', whereArgs: [id]);
+    final database = await db;
+    final linked = <String, String>{};
+    for (final row in await database.query(
+      'settings',
+      where: 'key GLOB ?',
+      whereArgs: ['agent_task:*'],
+    )) {
+      try {
+        final task = jsonDecode(row['value'] as String) as Map;
+        if (task['topicId'] == id && task['id'] is String) {
+          linked[row['key'] as String] = task['id'] as String;
+        }
+      } catch (_) {
+        // An unrelated damaged record must not prevent deleting a conversation.
+      }
+    }
+    await database.transaction((txn) async {
+      await txn.delete('topics', where: 'id = ?', whereArgs: [id]);
+      for (final key in linked.keys) {
+        await txn.delete('settings', where: 'key = ?', whereArgs: [key]);
+      }
+    });
+    for (final taskId in linked.values) {
+      await AttachmentStore.instance.deleteAgentTask(taskId);
+    }
     await deleteSetting('watch_search_topic_$id');
     await deleteSetting(memoryCursorSetting(id));
     await deleteSetting(memoryTopicSetting(id));

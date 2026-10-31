@@ -409,10 +409,10 @@ class _MessageSettingsScreenState extends State<MessageSettingsScreen> {
       body: SafeArea(
         child: ListView(
           children: [
-            if (widget.chatUsesMemory != null &&
-                widget.onToggleChatMemory != null)
-              IosSection(
-                children: [
+            IosSection(
+              children: [
+                if (widget.chatUsesMemory != null &&
+                    widget.onToggleChatMemory != null)
                   IosRow(
                     title: T('i18n.memory_chat_toggle'),
                     chevron: false,
@@ -424,11 +424,38 @@ class _MessageSettingsScreenState extends State<MessageSettingsScreen> {
                           : _toggleChatMemory,
                     ),
                   ),
-                ],
-              ),
+                IosRow(
+                  key: const Key('message-memory-settings'),
+                  title: T('i18n.memory'),
+                  subtitle: T('i18n.memory_settings_summary'),
+                  onTap: () async {
+                    await Navigator.push<void>(
+                      context,
+                      appPageRoute(
+                        builder: (_) => const MemorySettingsScreen(),
+                      ),
+                    );
+                    await _loadChatMemory();
+                  },
+                ),
+              ],
+            ),
             IosSection(
               footer: T('i18n.your_messages_show_the_model'),
               children: [
+                IosRow(
+                  key: const Key('message-agent-settings'),
+                  title: T('i18n.agent_title'),
+                  subtitle: T(
+                    AppPreferences.instance.agentEnabled
+                        ? 'i18n.agent_on'
+                        : 'i18n.agent_off',
+                  ),
+                  onTap: () => Navigator.push<void>(
+                    context,
+                    appPageRoute(builder: (_) => const AgentSettingsScreen()),
+                  ),
+                ),
                 IosRow(
                   title: T('i18n.simple_mode'),
                   chevron: false,

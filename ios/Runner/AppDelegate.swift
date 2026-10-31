@@ -5,6 +5,22 @@ import UIKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+  private var agentBackgroundTask: UIBackgroundTaskIdentifier = .invalid
+
+  private func beginAgentBackground() {
+    if agentBackgroundTask != .invalid { return }
+    agentBackgroundTask = UIApplication.shared.beginBackgroundTask(withName: "AI Link Agent") {
+      [weak self] in
+      self?.endAgentBackground()
+    }
+  }
+
+  private func endAgentBackground() {
+    let task = agentBackgroundTask
+    guard task != .invalid else { return }
+    agentBackgroundTask = .invalid
+    UIApplication.shared.endBackgroundTask(task)
+  }
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -53,6 +69,21 @@ import UIKit
         }
       } catch {
         result(FlutterError(code: "share_failed", message: "Share inbox unavailable", details: nil))
+      }
+    }
+    FlutterMethodChannel(
+      name: "between_models/agent_background",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    ).setMethodCallHandler { [weak self] call, result in
+      switch call.method {
+      case "begin":
+        self?.beginAgentBackground()
+        result(nil)
+      case "end":
+        self?.endAgentBackground()
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
       }
     }
     FlutterMethodChannel(
