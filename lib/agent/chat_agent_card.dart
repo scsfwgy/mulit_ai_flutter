@@ -1,8 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:mulit_ai_flutter/agent/agent_store.dart';
 import 'package:mulit_ai_flutter/agent/agent_screen.dart';
-import 'package:mulit_ai_flutter/chat/chat_context_screen.dart';
-import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 
@@ -14,12 +12,16 @@ class ChatAgentCard extends StatelessWidget {
     required this.onDetails,
     this.onResume,
     this.onPause,
+    this.onOpenChat,
+    this.retryWithCurrentModel = false,
   });
   final AgentTask task;
   final bool running;
   final VoidCallback onDetails;
   final VoidCallback? onResume;
   final VoidCallback? onPause;
+  final ValueChanged<AgentChatRequest>? onOpenChat;
+  final bool retryWithCurrentModel;
 
   Future<void> _file(
     BuildContext context,
@@ -68,7 +70,7 @@ class ChatAgentCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '${T('i18n.agent_title')} · ${agentStatus(task)}',
+                  '${T('i18n.agent_title')} · ${running ? agentActivity(task) : agentStatus(task)}',
                   style: TextStyle(
                     color: IosColors.label,
                     fontWeight: FontWeight.w600,
@@ -86,37 +88,6 @@ class ChatAgentCard extends StatelessWidget {
               ),
             ],
           ),
-          Text(
-            F('i18n.agent_progress', [task.rounds, task.calls]),
-            style: TextStyle(color: IosColors.secondary, fontSize: 12),
-          ),
-          if (task.steps.isNotEmpty && running)
-            Text(
-              agentToolLabel(task.steps.last['name'] as String),
-              style: TextStyle(color: IosColors.secondary, fontSize: 13),
-            ),
-          if (task.contextTokens > 0)
-            Text(
-              F('i18n.agent_context_usage', [
-                task.contextTokens,
-                task.contextWindowTokens,
-              ]),
-              style: TextStyle(color: IosColors.secondary, fontSize: 12),
-            ),
-          if (task.contextCompacted)
-            Text(
-              T('i18n.agent_context_compacted'),
-              style: TextStyle(color: IosColors.secondary, fontSize: 12),
-            ),
-          if (task.finishNotice != null)
-            Text(
-              T(
-                task.finishNotice == 'loop'
-                    ? 'i18n.agent_loop_notice'
-                    : 'i18n.agent_budget_notice',
-              ),
-              style: TextStyle(color: IosColors.secondary, fontSize: 12),
-            ),
           if (task.error != null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
@@ -125,18 +96,6 @@ class ChatAgentCard extends StatelessWidget {
                 style: TextStyle(color: IosColors.destructive, fontSize: 13),
               ),
             ),
-          if (task.contextBlocked)
-            CupertinoButton(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              minimumSize: Size.zero,
-              onPressed: () => Navigator.push<void>(
-                context,
-                appPageRoute(
-                  builder: (_) => const ChatContextScreen(forAgent: true),
-                ),
-              ),
-              child: Text(T('i18n.agent_adjust_context')),
-            ),
           if (running && onPause != null)
             CupertinoButton(
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -144,18 +103,13 @@ class ChatAgentCard extends StatelessWidget {
               onPressed: onPause,
               child: Text(T('i18n.agent_pause')),
             ),
-          if (!running && onResume != null && task.canResume)
-            AnimatedBuilder(
-              animation: AppPreferences.instance,
-              builder: (context, _) => CupertinoButton(
-                key: const Key('chat-agent-resume'),
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                minimumSize: Size.zero,
-                onPressed: AppPreferences.instance.agentEnabled
-                    ? onResume
-                    : null,
-                child: Text(T('i18n.agent_resume')),
-              ),
+          if (!running)
+            AgentTaskActions(
+              key: ValueKey(task.id),
+              task: task,
+              onResume: onResume,
+              onOpenChat: onOpenChat,
+              retryWithCurrentModel: retryWithCurrentModel,
             ),
           for (final artifact in task.artifacts)
             Row(

@@ -28,8 +28,8 @@ void main() {
     expect(find.byType(CupertinoSwitch), findsNWidgets(10));
     expect(find.text('消息设置'), findsOneWidget);
     expect(find.text('联网搜索'), findsOneWidget);
-    expect(find.text('消息信息'), findsNothing);
-    expect(find.text('简洁模式'), findsOneWidget);
+    expect(find.text('消息信息'), findsOneWidget);
+    expect(find.text('精简消息信息'), findsOneWidget);
     expect(find.text('回复完成后自动朗读'), findsOneWidget);
     expect(find.text('复制按钮'), findsOneWidget);
     expect(find.text('语音按钮'), findsOneWidget);

@@ -11,6 +11,9 @@ import 'package:mulit_ai_flutter/chat/chat_context_screen.dart';
 import 'package:mulit_ai_flutter/chat/chat_context.dart';
 import 'package:mulit_ai_flutter/core/app_platform.dart';
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
+import 'package:mulit_ai_flutter/core/apple_purchases.dart';
+import 'package:mulit_ai_flutter/provider/provider_screen.dart';
+import 'package:mulit_ai_flutter/settings/purchase_screen.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
@@ -26,6 +29,14 @@ class AgentSettingsScreen extends StatefulWidget {
 class _AgentSettingsScreenState extends State<AgentSettingsScreen> {
   bool _saving = false;
   String? _error;
+
+  Future<void> _openHistory() async {
+    final target = await Navigator.push<AgentChatRequest>(
+      context,
+      appPageRoute(builder: (_) => const AgentScreen()),
+    );
+    if (target != null && mounted) Navigator.pop(context, target);
+  }
 
   Future<void> _toggle(bool value) async {
     setState(() {
@@ -93,10 +104,7 @@ class _AgentSettingsScreenState extends State<AgentSettingsScreen> {
                     CupertinoIcons.check_mark_circled,
                     color: IosColors.blue,
                   ),
-                  onTap: () => Navigator.push<void>(
-                    context,
-                    appPageRoute(builder: (_) => const AgentScreen()),
-                  ),
+                  onTap: _openHistory,
                 ),
               ],
             ),
@@ -199,12 +207,17 @@ class _AgentScreenState extends State<AgentScreen> {
                         title: task.goal,
                         subtitle: '${agentStatus(task)} · ${task.model}',
                         onTap: () async {
-                          await Navigator.push<void>(
+                          final target = await Navigator.push<AgentChatRequest>(
                             context,
                             appPageRoute(
                               builder: (_) => AgentTaskScreen(task: task),
                             ),
                           );
+                          if (!context.mounted) return;
+                          if (target != null) {
+                            Navigator.pop(context, target);
+                            return;
+                          }
                           await _load();
                         },
                         trailing: CupertinoButton(
@@ -246,6 +259,250 @@ String agentStatus(AgentTask task) => T(switch (task.status) {
         : 'i18n.agent_interrupted',
   _ => 'i18n.agent_paused',
 });
+
+String agentActivity(AgentTask task) {
+  if (task.finalReady) return T('i18n.agent_saving_result');
+  if (task.pending.firstOrNull case final pending?) {
+    final index = pending['step'];
+    if (index is int &&
+        index >= 0 &&
+        index < task.steps.length &&
+        task.steps[index]['status'] == 'running') {
+      return agentToolLabel(pending['name'] as String);
+    }
+    return T('i18n.agent_preparing');
+  }
+  if (task.requests.lastOrNull?['status'] == 'retrying') {
+    return T('i18n.agent_retry_wait');
+  }
+  return T(
+    task.requests.lastOrNull?['status'] == 'running'
+        ? task.requests.last['tools_enabled'] == false
+              ? 'i18n.agent_organizing_answer'
+              : 'i18n.agent_waiting_model'
+        : 'i18n.agent_preparing',
+  );
+}
+
+class AgentChatRequest {
+  const AgentChatRequest(this.task, {this.changeModel = false});
+  final AgentTask task;
+  final bool changeModel;
+}
+
+enum AgentRecoveryAction {
+  resume,
+  context,
+  service,
+  model,
+  chat,
+  settings,
+  purchase,
+}
+
+AgentRecoveryAction agentRecoveryAction(AgentTask task) {
+  if (task.contextBlocked) return AgentRecoveryAction.context;
+  final request = task.requests.lastOrNull;
+  final code = task.errorCode ?? (task.error == null ? null : request?['code']);
+  if (code == 'other' && request?['http_status'] is int) {
+    final status = request!['http_status'] as int;
+    if (status == 429 || status >= 500) return AgentRecoveryAction.resume;
+  }
+  return switch (code) {
+    'context' => AgentRecoveryAction.context,
+    'auth' ||
+    'other' ||
+    'invalid_response' ||
+    'unknown' ||
+    'i18n.this_service_has_no_api' => AgentRecoveryAction.service,
+    'model' ||
+    'tools_disabled' ||
+    'i18n.agent_provider_changed' => AgentRecoveryAction.model,
+    'i18n.agent_chat_changed' => AgentRecoveryAction.chat,
+    'i18n.agent_disabled' => AgentRecoveryAction.settings,
+    'i18n.agent_access' => AgentRecoveryAction.purchase,
+    _ => AgentRecoveryAction.resume,
+  };
+}
+
+/// One recovery action at a time, shared by the chat card and task details.
+class AgentTaskActions extends StatefulWidget {
+  const AgentTaskActions({
+    super.key,
+    required this.task,
+    this.onResume,
+    this.onOpenChat,
+    this.retryWithCurrentModel = false,
+  });
+  final AgentTask task;
+  final VoidCallback? onResume;
+  final ValueChanged<AgentChatRequest>? onOpenChat;
+  final bool retryWithCurrentModel;
+
+  @override
+  State<AgentTaskActions> createState() => _AgentTaskActionsState();
+}
+
+class _AgentTaskActionsState extends State<AgentTaskActions> {
+  AgentRecoveryAction? _nextAction;
+  bool _opening = false;
+  String? _error;
+
+  Future<void> _open(AgentRecoveryAction action) async {
+    setState(() {
+      _opening = true;
+      _error = null;
+    });
+    try {
+      switch (action) {
+        case AgentRecoveryAction.resume:
+          widget.onResume?.call();
+        case AgentRecoveryAction.chat || AgentRecoveryAction.model:
+          widget.onOpenChat?.call(
+            AgentChatRequest(
+              widget.task,
+              changeModel: action == AgentRecoveryAction.model,
+            ),
+          );
+        case AgentRecoveryAction.context:
+          final previous = AppPreferences.instance.agentContextWindowTokens;
+          await Navigator.push<void>(
+            context,
+            appPageRoute(
+              builder: (_) => const ChatContextScreen(forAgent: true),
+            ),
+          );
+          if (previous != AppPreferences.instance.agentContextWindowTokens) {
+            _nextAction = AgentRecoveryAction.resume;
+          }
+        case AgentRecoveryAction.service:
+          final provider = (await AgentStore().store.providers())
+              .where((p) => p.id == widget.task.providerId)
+              .firstOrNull;
+          if (!mounted) return;
+          final saved = await Navigator.push<bool>(
+            context,
+            appPageRoute(
+              builder: (_) => provider == null
+                  ? const ProviderScreen()
+                  : ProviderEditor(config: provider),
+            ),
+          );
+          if (saved == true && provider != null) {
+            final updated = (await AgentStore().store.providers())
+                .where((p) => p.id == provider.id)
+                .firstOrNull;
+            _nextAction =
+                updated != null &&
+                    updated.protocol == widget.task.protocol &&
+                    (widget.task.endpoint.isEmpty ||
+                        updated.baseUrl == widget.task.endpoint)
+                ? AgentRecoveryAction.resume
+                : AgentRecoveryAction.model;
+          }
+        case AgentRecoveryAction.settings:
+          final target = await Navigator.push<AgentChatRequest>(
+            context,
+            appPageRoute(builder: (_) => const AgentSettingsScreen()),
+          );
+          if (!mounted) return;
+          if (target != null) {
+            widget.onOpenChat?.call(target);
+            return;
+          }
+          if (AppPreferences.instance.agentEnabled) {
+            _nextAction = widget.task.errorCode == 'i18n.agent_disabled'
+                ? AgentRecoveryAction.resume
+                : null;
+          }
+        case AgentRecoveryAction.purchase:
+          await Navigator.push<void>(
+            context,
+            appPageRoute(builder: (_) => const PurchaseScreen()),
+          );
+          if (ApplePurchases.instance.canUse) {
+            _nextAction = AgentRecoveryAction.resume;
+          }
+      }
+    } catch (_) {
+      if (mounted) _error = T('i18n.agent_save_failed');
+    } finally {
+      if (mounted) setState(() => _opening = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.task.canResume) return const SizedBox.shrink();
+    return AnimatedBuilder(
+      animation: AppPreferences.instance,
+      builder: (context, _) {
+        var action = !AppPreferences.instance.agentEnabled
+            ? AgentRecoveryAction.settings
+            : widget.retryWithCurrentModel
+            ? AgentRecoveryAction.resume
+            : _nextAction ?? agentRecoveryAction(widget.task);
+        if (action == AgentRecoveryAction.resume &&
+            widget.onResume == null &&
+            widget.onOpenChat != null) {
+          action = AgentRecoveryAction.chat;
+        }
+        if (action == AgentRecoveryAction.model &&
+            widget.task.topicId == null) {
+          action = AgentRecoveryAction.service;
+        }
+        final enabled =
+            !_opening &&
+            !AgentRunner.isBusy &&
+            (action != AgentRecoveryAction.resume || widget.onResume != null) &&
+            (!{
+                  AgentRecoveryAction.model,
+                  AgentRecoveryAction.chat,
+                }.contains(action) ||
+                widget.onOpenChat != null);
+        final label = switch (action) {
+          AgentRecoveryAction.resume =>
+            widget.retryWithCurrentModel
+                ? 'i18n.retry_response'
+                : 'i18n.agent_resume',
+          AgentRecoveryAction.context => 'i18n.agent_adjust_context',
+          AgentRecoveryAction.service => 'i18n.check_service_settings',
+          AgentRecoveryAction.model => 'i18n.switch_model',
+          AgentRecoveryAction.chat => 'i18n.agent_return_to_chat',
+          AgentRecoveryAction.settings => 'i18n.agent_enable',
+          AgentRecoveryAction.purchase => 'i18n.agent_check_access',
+        };
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (widget.retryWithCurrentModel ||
+                action == AgentRecoveryAction.model)
+              Text(
+                T(
+                  widget.retryWithCurrentModel
+                      ? 'i18n.agent_model_changed_retry'
+                      : 'i18n.agent_model_restart_detail',
+                ),
+                style: TextStyle(color: IosColors.secondary, fontSize: 13),
+              ),
+            if (_error != null)
+              Text(
+                _error!,
+                style: TextStyle(color: IosColors.destructive, fontSize: 13),
+              ),
+            CupertinoButton(
+              key: const Key('agent-recovery-action'),
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              minimumSize: Size.zero,
+              onPressed: enabled ? () => _open(action) : null,
+              child: Text(T(label)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
 
 class AgentTaskScreen extends StatefulWidget {
   const AgentTaskScreen({
@@ -386,7 +643,7 @@ class _AgentTaskScreenState extends State<AgentTaskScreen>
                     chevron: false,
                   ),
                   IosRow(
-                    title: agentStatus(task),
+                    title: _busy ? agentActivity(task) : agentStatus(task),
                     subtitle: F('i18n.agent_progress', [
                       task.rounds,
                       task.calls,
@@ -394,18 +651,30 @@ class _AgentTaskScreenState extends State<AgentTaskScreen>
                     chevron: false,
                     trailing: _busy ? const CupertinoActivityIndicator() : null,
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
-                    child: IosPrimaryButton(
-                      label: _busy ? 'i18n.agent_pause' : 'i18n.agent_resume',
-                      onPressed: _busy
-                          ? _pause
-                          : !AppPreferences.instance.agentEnabled ||
-                                !task.canResume
-                          ? null
-                          : _run,
+                  if (task.error != null || _error != null)
+                    Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Text(
+                        _error ?? task.error!,
+                        style: TextStyle(color: IosColors.destructive),
+                      ),
                     ),
-                  ),
+                  if (_busy || task.canResume)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                      child: _busy
+                          ? IosPrimaryButton(
+                              label: 'i18n.agent_pause',
+                              onPressed: _pause,
+                            )
+                          : AgentTaskActions(
+                              key: ValueKey(task.id),
+                              task: task,
+                              onResume: _run,
+                              onOpenChat: (target) =>
+                                  Navigator.pop(context, target),
+                            ),
+                    ),
                 ],
               ),
               if (task.contextTokens > 0)
@@ -425,29 +694,6 @@ class _AgentTaskScreenState extends State<AgentTaskScreen>
                   child: Text(
                     T('i18n.agent_context_compacted'),
                     style: TextStyle(color: IosColors.secondary),
-                  ),
-                ),
-              if (task.contextBlocked)
-                IosSection(
-                  children: [
-                    IosRow(
-                      title: T('i18n.agent_adjust_context'),
-                      onTap: () => Navigator.push<void>(
-                        context,
-                        appPageRoute(
-                          builder: (_) =>
-                              const ChatContextScreen(forAgent: true),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              if (task.error != null || _error != null)
-                Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Text(
-                    _error ?? task.error!,
-                    style: TextStyle(color: IosColors.destructive),
                   ),
                 ),
               if (task.answer.isNotEmpty)
@@ -479,9 +725,7 @@ class _AgentTaskScreenState extends State<AgentTaskScreen>
                 children: [
                   IosRow(
                     title: T('i18n.agent_steps'),
-                    subtitle: task.steps.isEmpty
-                        ? null
-                        : agentToolLabel(task.steps.last['name'] as String),
+                    subtitle: _busy ? agentActivity(task) : null,
                     onTap: () => setState(() => _showSteps = !_showSteps),
                   ),
                   if (_showSteps && task.requests.isNotEmpty)

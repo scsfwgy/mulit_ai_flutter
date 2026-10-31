@@ -51,6 +51,7 @@ class AgentTask {
   String status = 'paused';
   String answer = '';
   String? error;
+  String? errorCode;
   int rounds = 0;
   int calls = 0;
   int inputTokens = 0;
@@ -93,6 +94,7 @@ class AgentTask {
     status = json['status'] as String;
     answer = json['answer'] as String;
     error = json['error'] as String?;
+    errorCode = json['errorCode'] as String?;
     rounds = json['rounds'] as int;
     calls = json['calls'] as int;
     inputTokens = json['inputTokens'] as int;
@@ -141,6 +143,7 @@ class AgentTask {
     'status': status,
     'answer': answer,
     'error': error,
+    'errorCode': errorCode,
     'rounds': rounds,
     'calls': calls,
     'inputTokens': inputTokens,

@@ -105,10 +105,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
               IosRow(
                 title: T('i18n.agent_title'),
                 leading: Icon(CupertinoIcons.sparkles, color: IosColors.blue),
-                onTap: () => Navigator.push<void>(
-                  context,
-                  appPageRoute(builder: (_) => const AgentSettingsScreen()),
-                ),
+                onTap: () async {
+                  final target = await Navigator.push<AgentChatRequest>(
+                    context,
+                    appPageRoute(builder: (_) => const AgentSettingsScreen()),
+                  );
+                  if (target != null && context.mounted) {
+                    Navigator.pop(context, target);
+                  }
+                },
               ),
               IosRow(
                 title: T('i18n.voice_services'),
@@ -141,14 +146,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
               IosRow(
                 title: T('i18n.message_settings'),
                 leading: Icon(CupertinoIcons.info, color: IosColors.blue),
-                onTap: () => Navigator.push<void>(
-                  context,
-                  appPageRoute(
-                    builder: (_) => MessageSettingsScreen(
-                      canChangeSearch: widget.canClearData,
+                onTap: () async {
+                  final target = await Navigator.push<AgentChatRequest>(
+                    context,
+                    appPageRoute(
+                      builder: (_) => MessageSettingsScreen(
+                        canChangeSearch: widget.canClearData,
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                  if (target != null && context.mounted) {
+                    Navigator.pop(context, target);
+                  }
+                },
               ),
               IosRow(
                 title: T('i18n.general'),
@@ -441,7 +451,8 @@ class _MessageSettingsScreenState extends State<MessageSettingsScreen> {
               ],
             ),
             IosSection(
-              footer: T('i18n.your_messages_show_the_model'),
+              title: T('i18n.chat_features'),
+              footer: T('i18n.chat_features_scope'),
               children: [
                 IosRow(
                   key: const Key('message-agent-settings'),
@@ -451,19 +462,15 @@ class _MessageSettingsScreenState extends State<MessageSettingsScreen> {
                         ? 'i18n.agent_on'
                         : 'i18n.agent_off',
                   ),
-                  onTap: () => Navigator.push<void>(
-                    context,
-                    appPageRoute(builder: (_) => const AgentSettingsScreen()),
-                  ),
-                ),
-                IosRow(
-                  title: T('i18n.simple_mode'),
-                  chevron: false,
-                  trailing: CupertinoSwitch(
-                    value: AppPreferences.instance.simpleMessageInfo,
-                    activeTrackColor: IosColors.blue,
-                    onChanged: AppPreferences.instance.setSimpleMessageInfo,
-                  ),
+                  onTap: () async {
+                    final target = await Navigator.push<AgentChatRequest>(
+                      context,
+                      appPageRoute(builder: (_) => const AgentSettingsScreen()),
+                    );
+                    if (target != null && context.mounted) {
+                      Navigator.pop(context, target);
+                    }
+                  },
                 ),
                 IosRow(
                   title: T('i18n.web_search'),
@@ -488,19 +495,33 @@ class _MessageSettingsScreenState extends State<MessageSettingsScreen> {
                     onChanged: AppPreferences.instance.setAutoReadReplies,
                   ),
                 ),
-                for (final field in ChatInfoField.values)
-                  IosRow(
-                    title: T(field.label),
-                    chevron: false,
-                    trailing: CupertinoSwitch(
-                      value: AppPreferences.instance.showChatInfo(field),
-                      activeTrackColor: IosColors.blue,
-                      onChanged: AppPreferences.instance.simpleMessageInfo
-                          ? null
-                          : (value) => AppPreferences.instance
-                                .setChatInfoVisible(field, value),
-                    ),
+              ],
+            ),
+            IosSection(
+              title: T('i18n.message_info'),
+              footer: T('i18n.your_messages_show_the_model'),
+              children: [
+                IosRow(
+                  title: T('i18n.simple_mode'),
+                  chevron: false,
+                  trailing: CupertinoSwitch(
+                    value: AppPreferences.instance.simpleMessageInfo,
+                    activeTrackColor: IosColors.blue,
+                    onChanged: AppPreferences.instance.setSimpleMessageInfo,
                   ),
+                ),
+                if (!AppPreferences.instance.simpleMessageInfo)
+                  for (final field in ChatInfoField.values)
+                    IosRow(
+                      title: T(field.label),
+                      chevron: false,
+                      trailing: CupertinoSwitch(
+                        value: AppPreferences.instance.showChatInfo(field),
+                        activeTrackColor: IosColors.blue,
+                        onChanged: (value) => AppPreferences.instance
+                            .setChatInfoVisible(field, value),
+                      ),
+                    ),
               ],
             ),
           ],

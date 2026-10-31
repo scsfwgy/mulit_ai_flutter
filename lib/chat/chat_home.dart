@@ -689,10 +689,31 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   }
 
   Future<void> _openAgentDetails(AgentTask task) async {
-    await _pushRoute<void>(
+    final target = await _pushRoute<AgentChatRequest>(
       appPageRoute(builder: (_) => AgentTaskScreen(task: task)),
     );
-    await _load();
+    if (target != null) {
+      await _openAgentChat(target);
+    } else {
+      await _load();
+    }
+  }
+
+  Future<void> _openAgentChat(AgentChatRequest request) async {
+    if (!mounted || AgentRunner.isBusy) return;
+    final task = request.task;
+    if (task.topicId == null || task.userMessageId == null) return;
+    _topics = await ChatStore.instance.topics();
+    if (!mounted) return;
+    if (!_topics.any((topic) => topic.id == task.topicId)) {
+      _notify(T('i18n.agent_chat_changed'));
+      return;
+    }
+    if (_topic?.id != task.topicId) {
+      await _selectTopic(task.topicId!, messageId: task.userMessageId);
+    }
+    if (!mounted || _topic?.id != task.topicId) return;
+    if (request.changeModel) await _changeModel();
   }
 
   Future<void> _resumeAgent(AgentTask task) async {
@@ -706,16 +727,18 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
   }
 
   Future<void> _openSettings() async {
-    final file = await _pushRoute<StoredChatFile>(
+    final target = await _pushRoute<Object>(
       appPageRoute(builder: (_) => SettingsScreen(canClearData: _canClearData)),
       resetToChat: true,
     );
-    if (file != null) {
+    if (target is StoredChatFile) {
       _showDesktopChat();
-      await _selectTopic(file.topicId, messageId: file.messageId);
-      return;
+      await _selectTopic(target.topicId, messageId: target.messageId);
+    } else if (target is AgentChatRequest) {
+      await _openAgentChat(target);
+    } else {
+      await _load();
     }
-    await _load();
   }
 
   Future<void> _openSearchSettings() async {
@@ -730,7 +753,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       !_sending && !_starting && !_recording && !_transcribing;
 
   Future<void> _openMessageSettings() async {
-    await _pushRoute<void>(
+    final target = await _pushRoute<AgentChatRequest>(
       appPageRoute(
         builder: (_) => MessageSettingsScreen(
           canChangeSearch: _canChangeSearch,
@@ -741,7 +764,11 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         ),
       ),
     );
-    await _load();
+    if (target != null) {
+      await _openAgentChat(target);
+    } else {
+      await _load();
+    }
   }
 
   Future<void> _openModelSettings() async {
@@ -1801,6 +1828,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       if (previous != null &&
           previous.canResume &&
           previous.providerId == provider.id &&
+          previous.protocol == provider.protocol &&
           previous.model == model &&
           previous.endpoint == provider.baseUrl) {
         _input.clear();
@@ -1966,6 +1994,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
         agentTask =
             previous != null &&
                 previous.providerId == provider.id &&
+                previous.protocol == provider.protocol &&
                 previous.model == topic.model &&
                 previous.endpoint == provider.baseUrl
             ? previous
@@ -2680,6 +2709,17 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
                         AgentRunner.active?.currentTask?.id == task.id &&
                         task.status == 'running',
                     onDetails: () => _openAgentDetails(task),
+                    onOpenChat: _openAgentChat,
+                    retryWithCurrentModel:
+                        task.providerId != _currentProviderId ||
+                        task.model != _currentModel ||
+                        _providers.any(
+                          (p) =>
+                              p.id == _currentProviderId &&
+                              (p.protocol != task.protocol ||
+                                  task.endpoint.isNotEmpty &&
+                                      p.baseUrl != task.endpoint),
+                        ),
                     onPause: _stopReply,
                     onResume:
                         !_sending &&

@@ -77,6 +77,7 @@ void main() {
     installEmptyDatabaseStub();
     AppPreferences.instance.agentEnabled = false;
     await tester.pumpWidget(const MaterialApp(home: AgentSettingsScreen()));
+    expect(find.text(T('i18n.agent_settings_detail')), findsOneWidget);
     final toggle = find.byKey(const Key('agent-enable'));
     expect(tester.widget<CupertinoSwitch>(toggle).value, false);
     await tester.tap(toggle);

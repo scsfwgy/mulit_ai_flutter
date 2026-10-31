@@ -45,6 +45,61 @@ Map<String, dynamic> toolResponse(
       };
 
 void main() {
+  for (final unsupported in [false, true]) {
+    test(
+      'only an explicit tool rejection suggests another model ($unsupported)',
+      () async {
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        server.listen((request) async {
+          await request.drain<void>();
+          request.response.statusCode = 400;
+          request.response.write(
+            jsonEncode({
+              'error': {
+                'message': unsupported
+                    ? 'This model does not support tools'
+                    : 'Invalid request parameter',
+              },
+            }),
+          );
+          await request.response.close();
+        });
+        final client = ModelApiClient(
+          ProviderConfig(
+            id: 1,
+            name: 'Fixture',
+            baseUrl: 'http://127.0.0.1:${server.port}/v1',
+            model: 'test',
+            protocol: ApiProtocol.openAi,
+          ),
+          'local-fixture',
+        );
+        try {
+          await expectLater(
+            client.toolTurn(
+              model: 'test',
+              systemPrompt: '',
+              messages: [
+                {'role': 'user', 'content': 'Question'},
+              ],
+              tools: [],
+            ),
+            throwsA(
+              isA<ApiException>().having(
+                (e) => e.kind,
+                'kind',
+                unsupported ? ApiErrorKind.model : ApiErrorKind.other,
+              ),
+            ),
+          );
+        } finally {
+          client.cancel();
+          await server.close(force: true);
+        }
+      },
+    );
+  }
+
   test('empty choices is a diagnosable invalid response', () {
     expect(
       () => ModelToolTurn.parse({'choices': []}, ApiProtocol.openAi),

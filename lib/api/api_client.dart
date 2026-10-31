@@ -581,6 +581,18 @@ class ModelApiClient {
       if (response.statusCode < 200 || response.statusCode >= 300) {
         final raw = rejection ?? await _readErrorBody(response);
         final error = _responseError(response.statusCode, raw);
+        if ((response.statusCode == 400 || response.statusCode == 422) &&
+            error.kind == ApiErrorKind.other &&
+            RegExp(r'(tool|function)').hasMatch(raw.toLowerCase()) &&
+            RegExp(
+              r'(not support|unsupported|does not support|not allowed|not permitted)',
+            ).hasMatch(raw.toLowerCase())) {
+          throw ApiException(
+            T('i18n.agent_tools_not_supported'),
+            kind: ApiErrorKind.model,
+            statusCode: response.statusCode,
+          );
+        }
         throw ApiException(
           error.kind == ApiErrorKind.context || error.kind == ApiErrorKind.auth
               ? error.message

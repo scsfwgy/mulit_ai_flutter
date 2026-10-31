@@ -634,6 +634,7 @@ void main() {
         (t) => t.id == task.id,
       );
       expect(restored.requests, task.requests);
+      expect(restored.errorCode, 'invalid_response');
       runner.dispose();
     },
   );

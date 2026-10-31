@@ -206,6 +206,7 @@ class AgentRunner extends ChangeNotifier {
       }
       task.status = 'running';
       task.error = null;
+      task.errorCode = null;
       task.contextBlocked = false;
       if (!task.finalReady) task.finishNotice = null;
       if (task.messages.isEmpty) {
@@ -542,6 +543,17 @@ class AgentRunner extends ChangeNotifier {
           ? error.message
           : error.runtimeType.toString();
       task.contextBlocked = contextError;
+      task.errorCode = contextError
+          ? 'context'
+          : _paused && !_expired
+          ? null
+          : error is ApiException
+          ? error.kind.name
+          : error is ModelTurnException
+          ? error.code
+          : error is StateError && error.message.startsWith('i18n.')
+          ? error.message
+          : 'unknown';
       if (error is AgentContextException) {
         task.contextTokens = error.requiredTokens;
       }
