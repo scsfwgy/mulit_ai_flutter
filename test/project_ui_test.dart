@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:mulit_ai_flutter/core/app_platform.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mulit_ai_flutter/chat/topic_screen.dart';
@@ -190,37 +191,72 @@ void main() {
     },
   );
 
-  testWidgets('empty conversation filter heading remains clickable', (
-    tester,
-  ) async {
-    installEmptyDatabaseStub();
-    var selections = 0;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: TopicScreen(
-            onClose: () {},
-            onSelect: (_) {},
-            onNew: () {},
-            onSettings: () {},
-            onChanged: () {},
-            onChooseProject: (_) async {
-              selections++;
-              return const ProjectSelection(null, ungrouped: true);
-            },
+  testWidgets(
+    'empty conversation filter heading remains clickable',
+    (tester) async {
+      installEmptyDatabaseStub();
+      await tester.binding.setSurfaceSize(Size(isDesktopApp ? 320 : 360, 780));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      var selections = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: TopicScreen(
+              persistent: isDesktopApp,
+              onClose: () {},
+              onSelect: (_) {},
+              onNew: () {},
+              onSettings: () {},
+              onChanged: () {},
+              onChooseProject: (_) async {
+                selections++;
+                return const ProjectSelection(null, ungrouped: true);
+              },
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text(T('i18n.all_chats')), findsOneWidget);
-    await tester.tap(find.text(T('i18n.all_chats')));
-    await tester.pumpAndSettle();
-    expect(selections, 1);
-    expect(find.text(T('i18n.all_chats')), findsNothing);
-    expect(find.text(T('i18n.ungrouped_chats')), findsOneWidget);
-    expect(find.text(T('i18n.no_chats_yet')), findsOneWidget);
-  });
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(T('i18n.all_chats')), findsOneWidget);
+      await tester.tap(find.text(T('i18n.all_chats')));
+      await tester.pumpAndSettle();
+      expect(selections, 1);
+      expect(find.text(T('i18n.all_chats')), findsNothing);
+      expect(find.text(T('i18n.ungrouped_chats')), findsOneWidget);
+      final empty = find.text(T('i18n.no_chats_yet'));
+      expect(empty, findsOneWidget);
+      final panel = tester.getRect(find.byType(TopicScreen));
+      expect(
+        tester.getCenter(find.text(T('i18n.ungrouped_chats'))).dx,
+        lessThan(panel.center.dx),
+      );
+      expect(tester.getCenter(empty).dx, closeTo(panel.center.dx, 1));
+      expect(
+        find.ancestor(of: empty, matching: find.byType(IosSection)),
+        findsNothing,
+      );
+      await tester.enterText(
+        find.byType(CupertinoSearchTextField),
+        'not found',
+      );
+      await tester.pumpAndSettle(const Duration(milliseconds: 300));
+      final noResults = find.text(T('i18n.no_search_results'));
+      expect(noResults, findsOneWidget);
+      expect(tester.getCenter(noResults).dx, closeTo(panel.center.dx, 1));
+      expect(
+        find.ancestor(of: noResults, matching: find.byType(IosSection)),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    },
+    variant: TargetPlatformVariant({
+      TargetPlatform.android,
+      TargetPlatform.iOS,
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+      TargetPlatform.linux,
+    }),
+  );
 
   testWidgets('More assigns drafts and moves existing project chats', (
     tester,

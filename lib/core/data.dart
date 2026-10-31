@@ -1792,6 +1792,11 @@ class ChatStore {
       await txn.delete('topics', where: 'id = ?', whereArgs: [id]);
       for (final key in linked.keys) {
         await txn.delete('settings', where: 'key = ?', whereArgs: [key]);
+        await txn.delete(
+          'settings',
+          where: 'key GLOB ?',
+          whereArgs: ['agent_note:${linked[key]}:*'],
+        );
       }
     });
     for (final taskId in linked.values) {

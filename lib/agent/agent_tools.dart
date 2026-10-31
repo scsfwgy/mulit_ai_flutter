@@ -93,7 +93,7 @@ final agentToolRegistry = Map<String, AgentToolDefinition>.unmodifiable({
         executor._readProjectDocument(task, args, step),
   ),
   'save_artifact': AgentToolDefinition(
-    description: 'Save an additional UTF-8 Markdown or CSV file in this task. Name must end in .md or .csv.',
+    description: 'Save a real local file. Name must end in .md, .pdf, .docx, .csv or .xlsx. Supply Markdown content for MD/PDF/Word, or valid quoted CSV content for CSV/Excel. No binary, Base64 or raw XML.',
     labelKey: 'i18n.agent_tool_save',
     properties: const {
       'name': {'type': 'string', 'maxLength': 100},

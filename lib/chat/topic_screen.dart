@@ -367,6 +367,7 @@ class _TopicScreenState extends State<TopicScreen> {
   Widget _filterHeader() => Semantics(
     header: true,
     child: CupertinoButton(
+      alignment: Alignment.centerLeft,
       padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
       minimumSize: const Size(0, 44),
       onPressed: _chooseProject,
@@ -388,8 +389,8 @@ class _TopicScreenState extends State<TopicScreen> {
                         '',
               style: TextStyle(
                 color: IosColors.label,
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -405,6 +406,51 @@ class _TopicScreenState extends State<TopicScreen> {
       ),
     ),
   );
+
+  Widget _emptyList() {
+    final searching = _search.text.trim().isNotEmpty;
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 21, 16, 0),
+            child: _filterHeader(),
+          ),
+        ),
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Align(
+            alignment: const Alignment(0, -.25),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    searching
+                        ? CupertinoIcons.search
+                        : CupertinoIcons.chat_bubble_2,
+                    size: 32,
+                    color: IosColors.secondary,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    T(
+                      searching
+                          ? 'i18n.no_search_results'
+                          : 'i18n.no_chats_yet',
+                    ),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: IosColors.secondary, fontSize: 15),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) => ColoredBox(
@@ -463,109 +509,79 @@ class _TopicScreenState extends State<TopicScreen> {
           if (_error != null)
             Text(_error!, style: TextStyle(color: IosColors.destructive)),
           Expanded(
-            child: ListView(
-              children: [
-                if (_search.text.trim().isNotEmpty) ...[
-                  if (_searching)
-                    IosSection(
-                      header: _filterHeader(),
-                      children: const [
-                        Padding(
-                          padding: EdgeInsets.all(20),
-                          child: CupertinoActivityIndicator(),
-                        ),
-                      ],
-                    )
-                  else if (_matches.isEmpty)
-                    IosSection(
-                      header: _filterHeader(),
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.all(20),
-                          child: Text(
-                            T('i18n.no_search_results'),
-                            style: TextStyle(color: IosColors.secondary),
-                          ),
-                        ),
-                      ],
-                    )
-                  else
-                    IosSection(
-                      header: _filterHeader(),
-                      footer: T('i18n.history_matches_detail'),
-                      children: [
-                        for (final match in _matches)
-                          IosRow(
-                            title: match.topic.title,
-                            subtitle: match.excerpt,
-                            leading: _topicIcon(match.topic),
-                            onTap: () {
-                              if (widget.onSearchSelect != null) {
-                                widget.onSearchSelect!(
-                                  match.topic.id,
-                                  match.messageId,
-                                );
-                              } else {
-                                widget.onSelect(match.topic.id);
-                              }
-                            },
-                          ),
-                      ],
-                    ),
-                ] else if (_visibleTopics.isEmpty)
-                  IosSection(
-                    header: _filterHeader(),
+            child:
+                (_search.text.trim().isEmpty
+                    ? _visibleTopics.isEmpty
+                    : !_searching && _matches.isEmpty)
+                ? _emptyList()
+                : ListView(
                     children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 90, 20, 0),
-                        child: Column(
+                      if (_search.text.trim().isNotEmpty) ...[
+                        if (_searching)
+                          IosSection(
+                            header: _filterHeader(),
+                            children: const [
+                              Padding(
+                                padding: EdgeInsets.all(20),
+                                child: CupertinoActivityIndicator(),
+                              ),
+                            ],
+                          )
+                        else
+                          IosSection(
+                            header: _filterHeader(),
+                            footer: T('i18n.history_matches_detail'),
+                            children: [
+                              for (final match in _matches)
+                                IosRow(
+                                  title: match.topic.title,
+                                  subtitle: match.excerpt,
+                                  leading: _topicIcon(match.topic),
+                                  onTap: () {
+                                    if (widget.onSearchSelect != null) {
+                                      widget.onSearchSelect!(
+                                        match.topic.id,
+                                        match.messageId,
+                                      );
+                                    } else {
+                                      widget.onSelect(match.topic.id);
+                                    }
+                                  },
+                                ),
+                            ],
+                          ),
+                      ] else
+                        IosSection(
+                          header: _filterHeader(),
                           children: [
-                            Icon(
-                              CupertinoIcons.chat_bubble_2,
-                              size: 42,
-                              color: IosColors.secondary,
-                            ),
-                            const SizedBox(height: 14),
-                            Text(
-                              T('i18n.no_chats_yet'),
-                              style: TextStyle(color: IosColors.secondary),
-                            ),
+                            for (final topic in _visibleTopics)
+                              IosRow(
+                                title: topic.title,
+                                subtitle:
+                                    '${topic.pinnedAt > 0 ? '${T('i18n.pinned_chat')} · ' : ''}${_projects.where((p) => p.id == topic.projectId).firstOrNull?.name ?? ''}${topic.projectId != null ? ' · ' : ''}${_providers.where((p) => p.id == topic.providerId).firstOrNull?.name ?? T('i18n.service_deleted')} · ${topic.model}',
+                                leading: _topicIcon(topic),
+                                trailing: Builder(
+                                  builder: (anchorContext) => CupertinoButton(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                    ),
+                                    minimumSize: const Size(38, 38),
+                                    onPressed: () =>
+                                        _actions(topic, anchorContext),
+                                    child: Icon(
+                                      CupertinoIcons.ellipsis,
+                                      color: IosColors.secondary,
+                                      size: 21,
+                                    ),
+                                  ),
+                                ),
+                                chevron: false,
+                                onTap: () => widget.onSelect(topic.id),
+                              ),
                           ],
-                        ),
-                      ),
-                    ],
-                  )
-                else
-                  IosSection(
-                    header: _filterHeader(),
-                    children: [
-                      for (final topic in _visibleTopics)
-                        IosRow(
-                          title: topic.title,
-                          subtitle:
-                              '${topic.pinnedAt > 0 ? '${T('i18n.pinned_chat')} · ' : ''}${_projects.where((p) => p.id == topic.projectId).firstOrNull?.name ?? ''}${topic.projectId != null ? ' · ' : ''}${_providers.where((p) => p.id == topic.providerId).firstOrNull?.name ?? T('i18n.service_deleted')} · ${topic.model}',
-                          leading: _topicIcon(topic),
-                          trailing: Builder(
-                            builder: (anchorContext) => CupertinoButton(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                              ),
-                              minimumSize: const Size(38, 38),
-                              onPressed: () => _actions(topic, anchorContext),
-                              child: Icon(
-                                CupertinoIcons.ellipsis,
-                                color: IosColors.secondary,
-                                size: 21,
-                              ),
-                            ),
-                          ),
-                          chevron: false,
-                          onTap: () => widget.onSelect(topic.id),
                         ),
                     ],
                   ),
-              ],
-            ),
           ),
           Divider(height: .5, color: IosColors.separator),
           SizedBox(

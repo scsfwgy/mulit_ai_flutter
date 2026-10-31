@@ -30,6 +30,9 @@ Future<void> main() async {
       yield LicenseEntryWithLineBreaks([
         'Luban',
       ], await rootBundle.loadString('assets/licenses/luban.txt'));
+      yield LicenseEntryWithLineBreaks([
+        'Noto Sans SC',
+      ], await rootBundle.loadString('assets/fonts/OFL-NotoSansSC.txt'));
     });
   }
   assert(() {

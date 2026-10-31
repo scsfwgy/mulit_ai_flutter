@@ -12,6 +12,7 @@ import 'package:mulit_ai_flutter/core/app_platform.dart';
 import 'package:mulit_ai_flutter/core/attachment_store.dart';
 import 'package:mulit_ai_flutter/core/chat_attachment.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
+import 'package:mulit_ai_flutter/core/file_actions.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 
@@ -89,24 +90,7 @@ Future<void> shareStoredChatFile(StoredChatFile file, Rect? origin) async {
 
 Future<void> revealStoredChatFile(StoredChatFile file) async {
   final source = await AttachmentStore.instance.file(file.attachment);
-  if (!await source.exists()) {
-    throw const AttachmentException('i18n.attachment_unavailable');
-  }
-  final code = await _revealInFileManager(source.path);
-  // Explorer reports 1 even when the folder opens.
-  if (code != 0 && !Platform.isWindows) {
-    throw const AttachmentException('i18n.library_path_failed');
-  }
-}
-
-Future<int> _revealInFileManager(String path) async {
-  if (Platform.isMacOS) {
-    return (await Process.run('open', ['-R', path])).exitCode;
-  }
-  if (Platform.isWindows) {
-    return (await Process.run('explorer', ['/select,$path'])).exitCode;
-  }
-  return (await Process.run('xdg-open', [p.dirname(path)])).exitCode;
+  await revealFileInManager(source);
 }
 
 const libraryDesktopMenuKey = Key('library-desktop-menu');

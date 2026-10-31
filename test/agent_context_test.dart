@@ -6,6 +6,42 @@ import 'package:mulit_ai_flutter/api/tool_call.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
 
 void main() {
+  test('supplementary instructions cannot evict the current task goal', () {
+    expect(
+      () => AgentContext.prepare(
+        protocol: ApiProtocol.openAi,
+        model: 'test',
+        prompt: '',
+        messages: [
+          {'role': 'user', 'content': 'Original requirement ' * 5000},
+          {'role': 'assistant', 'content': 'Work so far'},
+          {'role': 'user', 'content': 'Add a table'},
+        ],
+        preserveFrom: 0,
+        tools: [],
+        windowTokens: 8192,
+      ),
+      throwsA(isA<AgentContextException>()),
+    );
+    final prepared = AgentContext.prepare(
+      protocol: ApiProtocol.openAi,
+      model: 'test',
+      prompt: '',
+      messages: [
+        {'role': 'user', 'content': 'Unrelated old chat ' * 5000},
+        {'role': 'assistant', 'content': 'Old answer'},
+        {'role': 'user', 'content': 'Original goal'},
+        {'role': 'assistant', 'content': 'Work so far'},
+        {'role': 'user', 'content': 'Add a table'},
+      ],
+      preserveFrom: 2,
+      tools: [],
+      windowTokens: 8192,
+    );
+    expect(prepared.messages.first['content'], 'Original goal');
+    expect(prepared.messages.last['content'], 'Add a table');
+  });
+
   test('context estimate reserves the actual adaptive output budget', () {
     final first = AgentContext.prepare(
       protocol: ApiProtocol.openAi,

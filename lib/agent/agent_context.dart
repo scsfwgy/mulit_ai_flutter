@@ -23,6 +23,7 @@ abstract final class AgentContext {
     required int windowTokens,
     int outputTokens = 4096,
     bool allowTools = true,
+    int? preserveFrom,
   }) {
     Object? copy(Object? v) => v is Map
         ? v.map<String, dynamic>(
@@ -86,10 +87,13 @@ abstract final class AgentContext {
             !(m['content'] as List).any(
               (p) => p is Map && p['type'] == 'tool_result',
             ));
+    // Added instructions belong to the same task: keep its original goal and tools.
+    var protected = preserveFrom ?? wire.lastIndexWhere(human);
     while (tokens > windowTokens) {
       final next = wire.indexWhere(human, 1);
-      if (next < 0) break;
+      if (next < 0 || next > protected) break;
       wire.removeRange(0, next);
+      protected -= next;
       tokens = estimate();
       compacted = true;
     }

@@ -12,6 +12,7 @@ import 'package:mulit_ai_flutter/agent/agent_tools.dart';
 import 'package:mulit_ai_flutter/agent/agent_context.dart';
 import 'package:mulit_ai_flutter/chat/chat_context.dart';
 import 'package:mulit_ai_flutter/agent/agent_store.dart';
+import 'package:mulit_ai_flutter/agent/agent_csv.dart';
 import 'package:mulit_ai_flutter/api/tool_call.dart';
 import 'package:mulit_ai_flutter/api/api_client.dart';
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
@@ -77,6 +78,276 @@ void main() {
   });
   tearDown(() {
     expect(AgentRunner.isBusy, false);
+  });
+
+  test('binary artifacts persist sources, reject traversal and share safe private paths', () async {
+    final task = newTask();
+    final executor = AgentToolExecutor(repository: repository, check: () {});
+    final word = await executor.execute(
+      task,
+      ModelToolCall('word', 'save_artifact', {
+        'name': '报告.docx',
+        'content': '# 中文报告',
+      }),
+      0,
+    );
+    expect(word['saved'], '报告.docx');
+    final sheet = await executor.execute(
+      task,
+      ModelToolCall('excel', 'save_artifact', {
+        'name': '表格.xlsx',
+        'content': '名称,数量\n示例,2',
+      }),
+      1,
+    );
+    expect(sheet['saved'], '表格.xlsx');
+    await repository.save(task);
+    final restored = (await repository.tasks()).firstWhere(
+      (t) => t.id == task.id,
+    );
+    for (final artifact in restored.artifacts) {
+      final file = await repository.artifactFile(restored, artifact);
+      expect((await file.readAsBytes()).take(2), [0x50, 0x4b]);
+      final source = await repository.artifactSource(restored, artifact);
+      expect(source.content, anyOf(contains('中'), contains('名称')));
+      expect(source.table, artifact['name'] == '表格.xlsx');
+    }
+    await expectLater(
+      repository.writeArtifact(task, '2', r'bad\name.docx', '# Bad'),
+      throwsFormatException,
+    );
+    await expectLater(
+      repository.artifactSource(task, {
+        'file': '0.docx',
+        'name': '报告.docx',
+        'source': '../outside.md',
+      }),
+      throwsFormatException,
+    );
+    executor.cancel();
+  });
+
+  for (final protocol in ApiProtocol.values) {
+    test(
+      '${protocol.name} new instructions cancel pending calls once and preserve completed work',
+      () async {
+        final task = AgentTask(
+          providerId: 1,
+          model: 'test',
+          protocol: protocol,
+          goal: 'Original',
+          systemPrompt: '',
+        );
+        final call = ModelToolCall('pending1', 'save_artifact', {
+          'name': 'old.md',
+          'content': 'old',
+        });
+        task.messages.addAll([
+          {'role': 'user', 'content': task.goal},
+          protocol == ApiProtocol.openAi
+              ? callTurn(call.id, call.name, call.arguments).message
+              : {
+                  'role': 'assistant',
+                  'content': [
+                    {
+                      'type': 'tool_use',
+                      'id': call.id,
+                      'name': call.name,
+                      'input': call.arguments,
+                    },
+                  ],
+                },
+        ]);
+        task.steps.addAll([
+          {
+            'name': 'read_webpage',
+            'status': 'completed',
+            'result': {'text': 'Evidence'},
+          },
+          {'name': call.name, 'status': 'pending', 'arguments': call.arguments},
+        ]);
+        task.pending.add({...call.toJson(), 'step': 1});
+        await repository.writeArtifact(task, '0', 'existing.md', '# Keep');
+        await repository.save(task);
+        await repository.refine(task, 'Only recent sources');
+        expect(task.instructions, ['Only recent sources']);
+        expect(task.pending, isEmpty);
+        expect(task.steps.first['status'], 'completed');
+        expect(task.steps.last['status'], 'skipped');
+        expect(task.messages.last['content'], 'Only recent sources');
+        final results = protocol == ApiProtocol.openAi
+            ? task.messages.where((m) => m['role'] == 'tool').toList()
+            : (task.messages[2]['content'] as List).cast<Map>();
+        expect(results, hasLength(1));
+        expect(task.artifacts, hasLength(1));
+        final restored = (await repository.tasks()).firstWhere(
+          (t) => t.id == task.id,
+        );
+        expect(jsonEncode(restored.toJson()), jsonEncode(task.toJson()));
+        await repository.refine(task, 'Use a table');
+        expect(task.instructions, hasLength(2));
+        expect(task.steps.first['result']['text'], 'Evidence');
+        final before = jsonEncode(task.toJson());
+        task.status = 'completed';
+        await expectLater(
+          repository.refine(task, 'Too late'),
+          throwsFormatException,
+        );
+        task.status = 'paused';
+        expect(jsonEncode(task.toJson()), before);
+      },
+    );
+  }
+
+  test(
+    'stale or deleted task cannot be revived by adding instructions',
+    () async {
+      final task = newTask();
+      await repository.save(task);
+      final stale = AgentTask.fromJson(
+        jsonDecode(jsonEncode(task.toJson())) as Map<String, dynamic>,
+      );
+      task.status = 'completed';
+      task.answer = 'Delivered';
+      await repository.save(task);
+      await expectLater(
+        repository.refine(stale, 'New requirement'),
+        throwsStateError,
+      );
+      expect(stale.instructions, isEmpty);
+      expect(
+        (await repository.tasks()).firstWhere((t) => t.id == task.id).status,
+        'completed',
+      );
+      await repository.delete(task);
+      await expectLater(
+        repository.refine(stale, 'New requirement'),
+        throwsStateError,
+      );
+      expect(await repository.store.setting('agent_task:${task.id}'), isNull);
+    },
+  );
+
+  test('knowledge note names match their text source, including re-saved legacy names', () async {
+    final project = await repository.store.saveProject(name: 'Text knowledge');
+    final task = newTask();
+    final report = await repository.saveProjectNote(
+      task,
+      project,
+      '明成祖朱棣.pdf',
+      '# 明成祖朱棣',
+      sourceKey: '0.pdf',
+    );
+    Future<String> name(int id) async =>
+        (await db.query(
+              'knowledge_documents',
+              columns: ['name'],
+              where: 'id = ?',
+              whereArgs: [id],
+            )).single['name']
+            as String;
+    expect(await name(report.id), '明成祖朱棣.md');
+    expect(await repository.store.knowledgeText(report.id), '# 明成祖朱棣');
+    final sheet = await repository.saveProjectNote(
+      task,
+      project,
+      '统计.xlsx',
+      '项目,数量\n示例,2',
+      sourceKey: '1.xlsx',
+    );
+    expect(await name(sheet.id), '统计.csv');
+    final answer = await repository.saveProjectNote(
+      task,
+      project,
+      '新的笔记',
+      '**内容**',
+    );
+    expect(await name(answer.id), '新的笔记.md');
+    await db.update(
+      'knowledge_documents',
+      {'name': '明成祖朱棣.pdf'},
+      where: 'id = ?',
+      whereArgs: [report.id],
+    );
+    final again = await repository.saveProjectNote(
+      task,
+      project,
+      '不应覆盖原名.docx',
+      '不应覆盖正文',
+      sourceKey: '0.pdf',
+    );
+    expect(again.created, false);
+    expect(await name(report.id), '明成祖朱棣.md');
+    expect(await repository.store.knowledgeText(report.id), '# 明成祖朱棣');
+    expect(agentNoteName('报告.MD'), '报告.md');
+    expect(agentNoteName(''), '');
+  });
+
+  test('project note is atomic, indexed, deduplicated and independent from task cleanup', () async {
+    final task = newTask();
+    final project = await repository.store.saveProject(name: 'Saved results');
+    final result = await repository.saveProjectNote(
+      task,
+      project,
+      'Guide.md',
+      'Cache configuration evidence',
+    );
+    expect(result.created, true);
+    final again = await repository.saveProjectNote(
+      task,
+      project,
+      'Changed title',
+      'Changed contents',
+    );
+    expect(again.created, false);
+    expect(again.id, result.id);
+    expect(
+      await repository.store.knowledgeText(result.id),
+      'Cache configuration evidence',
+    );
+    expect(
+      await repository.store.retrieveKnowledge(project, 'cache'),
+      isNotEmpty,
+    );
+    final other = await repository.store.saveProject(name: 'Other results');
+    expect(
+      (await repository.saveProjectNote(
+        task,
+        other,
+        'Copy',
+        'Independent',
+      )).created,
+      true,
+    );
+    await expectLater(
+      repository.saveProjectNote(task, -42, 'No project', 'Content'),
+      throwsFormatException,
+    );
+    final invalidTask = newTask();
+    await expectLater(
+      repository.saveProjectNote(invalidTask, project, '', 'Content'),
+      throwsFormatException,
+    );
+    expect(
+      await repository.store.setting(
+        'agent_note:${invalidTask.id}:answer:$project',
+      ),
+      isNull,
+    );
+    await repository.store.deleteKnowledge(result.id);
+    final recreated = await repository.saveProjectNote(
+      task,
+      project,
+      'New note',
+      'Replacement',
+    );
+    expect(recreated.created, true);
+    await repository.delete(task);
+    expect(await repository.store.knowledgeText(recreated.id), 'Replacement');
+    expect(
+      await repository.store.setting('agent_note:${task.id}:answer:$project'),
+      isNull,
+    );
   });
 
   test(

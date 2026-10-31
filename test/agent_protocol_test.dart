@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mulit_ai_flutter/api/api_client.dart';
+import 'package:mulit_ai_flutter/agent/agent_capability.dart';
 import 'package:mulit_ai_flutter/api/tool_call.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
 import 'package:mulit_ai_flutter/agent/web_reader.dart';
@@ -45,6 +46,102 @@ Map<String, dynamic> toolResponse(
       };
 
 void main() {
+  for (final protocol in ApiProtocol.values) {
+    for (final useTools in [true, false]) {
+      test(
+        '${protocol.name} compatibility probe checks tool round trip ($useTools)',
+        () async {
+          final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+          final requests = <Map<String, dynamic>>[];
+          server.listen((request) async {
+            final body = jsonDecode(
+              await utf8.decoder.bind(request).join(),
+            ) as Map<String, dynamic>;
+            requests.add(body);
+            final first = requests.length == 1 && useTools;
+            final response = protocol == ApiProtocol.openAi
+                ? {
+                    'choices': [
+                      {
+                        'finish_reason': first ? 'tool_calls' : 'stop',
+                        'message': first
+                            ? {
+                                'role': 'assistant',
+                                'content': null,
+                                'tool_calls': [
+                                  {
+                                    'id': 'probe1',
+                                    'type': 'function',
+                                    'function': {
+                                      'name': 'agent_probe',
+                                      'arguments': '{"value":"ok"}',
+                                    },
+                                  },
+                                ],
+                              }
+                            : {'role': 'assistant', 'content': 'OK'},
+                      },
+                    ],
+                  }
+                : {
+                    'stop_reason': first ? 'tool_use' : 'end_turn',
+                    'content': [
+                      first
+                          ? {
+                              'type': 'tool_use',
+                              'id': 'probe1',
+                              'name': 'agent_probe',
+                              'input': {'value': 'ok'},
+                            }
+                          : {'type': 'text', 'text': 'OK'},
+                    ],
+                  };
+            request.response.write(jsonEncode(response));
+            await request.response.close();
+          });
+          final client = ModelApiClient(
+            ProviderConfig(
+              id: 1,
+              name: 'Fixture',
+              baseUrl: 'http://127.0.0.1:${server.port}/v1',
+              model: 'probe-model',
+              protocol: protocol,
+            ),
+            'fixture-only',
+          );
+          try {
+            final result = await AgentCapabilityCheck(
+              client,
+              'probe-model',
+            ).run();
+            expect(
+              result,
+              useTools
+                  ? AgentCapabilityResult.passed
+                  : AgentCapabilityResult.inconclusive,
+            );
+            expect(requests, hasLength(useTools ? 2 : 1));
+            expect(requests.first['model'], 'probe-model');
+            expect(requests.first['tools'], hasLength(1));
+            expect(jsonEncode(requests), isNot(contains('search_project')));
+            if (useTools) {
+              final messages = requests.last['messages'] as List;
+              expect(jsonEncode(messages), contains('probe1'));
+              expect(jsonEncode(messages), contains('ok'));
+              expect(
+                requests.last['tool_choice'],
+                protocol == ApiProtocol.openAi ? 'none' : {'type': 'none'},
+              );
+            }
+          } finally {
+            client.cancel();
+            await server.close(force: true);
+          }
+        },
+      );
+    }
+  }
+
   for (final unsupported in [false, true]) {
     test(
       'only an explicit tool rejection suggests another model ($unsupported)',

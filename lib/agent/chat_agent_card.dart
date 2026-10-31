@@ -1,5 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:mulit_ai_flutter/agent/agent_store.dart';
+import 'package:mulit_ai_flutter/core/attachment_store.dart';
+import 'package:mulit_ai_flutter/agent/agent_result_actions.dart';
 import 'package:mulit_ai_flutter/agent/agent_screen.dart';
 import 'package:mulit_ai_flutter/agent/agent_presentation.dart';
 import 'package:mulit_ai_flutter/agent/agent_task_actions.dart';
@@ -32,12 +34,18 @@ class ChatAgentCard extends StatelessWidget {
   ) async {
     try {
       await openAgentArtifact(context, task, artifact, share: share);
-    } catch (_) {
+    } catch (error) {
       if (!context.mounted) return;
       await showCupertinoDialog<void>(
         context: context,
         builder: (context) => CupertinoAlertDialog(
-          content: Text(T('i18n.attachment_unavailable')),
+          content: Text(
+            T(
+              error is AttachmentException
+                  ? error.key
+                  : 'i18n.attachment_unavailable',
+            ),
+          ),
           actions: [
             CupertinoDialogAction(
               onPressed: () => Navigator.pop(context),
@@ -90,6 +98,16 @@ class ChatAgentCard extends StatelessWidget {
               ),
             ],
           ),
+          if (task.instructions.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                '${T('i18n.agent_refine')}: ${task.instructions.last}',
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: IosColors.secondary, fontSize: 13),
+              ),
+            ),
           if (task.error != null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
@@ -117,6 +135,8 @@ class ChatAgentCard extends StatelessWidget {
               onOpenChat: onOpenChat,
               retryWithCurrentModel: retryWithCurrentModel,
             ),
+          if (!running && task.status == 'completed' && task.answer.isNotEmpty)
+            AgentResultActions(task: task),
           for (final artifact in task.artifacts)
             Row(
               children: [
@@ -132,10 +152,8 @@ class ChatAgentCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                CupertinoButton(
-                  padding: const EdgeInsets.all(8),
+                AgentFileActionButton(
                   onPressed: () => _file(context, artifact, true),
-                  child: const Icon(CupertinoIcons.share, size: 20),
                 ),
               ],
             ),

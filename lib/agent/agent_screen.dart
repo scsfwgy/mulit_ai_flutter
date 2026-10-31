@@ -1,23 +1,23 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:file_selector/file_selector.dart' as files;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:mulit_ai_flutter/agent/agent_runner.dart';
+import 'package:mulit_ai_flutter/agent/agent_capability_row.dart';
 import 'package:mulit_ai_flutter/agent/agent_store.dart';
+import 'package:mulit_ai_flutter/core/attachment_store.dart';
 import 'package:mulit_ai_flutter/agent/agent_presentation.dart';
 import 'package:mulit_ai_flutter/agent/agent_task_actions.dart';
+import 'package:mulit_ai_flutter/agent/agent_result_actions.dart';
 import 'package:mulit_ai_flutter/agent/agent_tools.dart';
 import 'package:mulit_ai_flutter/chat/assistant_markdown.dart';
 import 'package:mulit_ai_flutter/chat/chat_context_screen.dart';
 import 'package:mulit_ai_flutter/chat/chat_context.dart';
-import 'package:mulit_ai_flutter/core/app_platform.dart';
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/search/search_service.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class AgentSettingsScreen extends StatefulWidget {
@@ -108,6 +108,7 @@ class _AgentSettingsScreenState extends State<AgentSettingsScreen> {
                 ),
               ],
             ),
+            const AgentCapabilityRow(),
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.all(20),
@@ -330,8 +331,16 @@ class _AgentTaskScreenState extends State<AgentTaskScreen>
   }) async {
     try {
       await openAgentArtifact(context, _task, artifact, share: share);
-    } catch (_) {
-      if (mounted) setState(() => _error = T('i18n.attachment_unavailable'));
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _error = T(
+            error is AttachmentException
+                ? error.key
+                : 'i18n.attachment_unavailable',
+          ),
+        );
+      }
     }
   }
 
@@ -380,6 +389,17 @@ class _AgentTaskScreenState extends State<AgentTaskScreen>
                       style: TextStyle(color: IosColors.label, fontSize: 17),
                     ),
                   ),
+                  for (final instruction in task.instructions)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 6,
+                      ),
+                      child: SelectableText(
+                        '${T('i18n.agent_refine')}: $instruction',
+                        style: TextStyle(color: IosColors.label),
+                      ),
+                    ),
                   IosRow(
                     title: T('i18n.agent_model'),
                     subtitle: task.model,
@@ -452,6 +472,13 @@ class _AgentTaskScreenState extends State<AgentTaskScreen>
                   padding: const EdgeInsets.all(18),
                   child: AssistantMarkdown(data: task.answer, onTapLink: _link),
                 ),
+              if (!_busy &&
+                  task.status == 'completed' &&
+                  task.answer.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  child: AgentResultActions(task: task),
+                ),
               if (task.artifacts.isNotEmpty)
                 IosSection(
                   title: T('i18n.agent_artifacts'),
@@ -460,14 +487,8 @@ class _AgentTaskScreenState extends State<AgentTaskScreen>
                       IosRow(
                         title: artifact['name'] as String,
                         onTap: () => _artifact(artifact),
-                        trailing: CupertinoButton(
-                          padding: const EdgeInsets.all(8),
-                          minimumSize: Size.zero,
+                        trailing: AgentFileActionButton(
                           onPressed: () => _artifact(artifact, share: true),
-                          child: Icon(
-                            CupertinoIcons.share,
-                            color: IosColors.blue,
-                          ),
                         ),
                       ),
                   ],
@@ -512,7 +533,7 @@ class _AgentTaskScreenState extends State<AgentTaskScreen>
                               '${agentToolLabel(step['name'] as String)} · ${T(switch (step['status']) {
                                 'completed' => 'i18n.agent_completed',
                                 'failed' => 'i18n.agent_failed_status',
-                                'skipped' => 'i18n.agent_skipped',
+                                'skipped' => step['result'] is Map && step['result']['code'] == 'task_updated' ? 'i18n.agent_step_updated' : 'i18n.agent_skipped',
                                 'running' => _busy ? 'i18n.agent_running' : 'i18n.agent_interrupted',
                                 _ => 'i18n.agent_pending',
                               })}',
@@ -595,37 +616,13 @@ Future<void> openAgentArtifact(
   bool share = false,
 }) async {
   final file = await AgentStore().artifactFile(task, artifact);
+  if (!context.mounted) return;
   if (share) {
-    if (isDesktopApp) {
-      final location = await files.getSaveLocation(
-        suggestedName: artifact['name'] as String,
-      );
-      if (location != null && location.path != file.path) {
-        await file.copy(location.path);
-      }
-    } else {
-      if (!context.mounted) return;
-      final box = context.findRenderObject() as RenderBox?;
-      final origin = box == null
-          ? null
-          : box.localToGlobal(Offset.zero) & box.size;
-      await SharePlus.instance.share(
-        ShareParams(
-          files: [
-            XFile(
-              file.path,
-              name: artifact['name'] as String,
-              mimeType: 'text/plain',
-            ),
-          ],
-          fileNameOverrides: [artifact['name'] as String],
-          sharePositionOrigin: origin,
-        ),
-      );
-    }
+    await openOrShareAgentFile(context, file, artifact['name'] as String);
     return;
   }
-  final content = await file.readAsString();
+  final source = await AgentStore().artifactSource(task, artifact);
+  final content = source.content;
   if (!context.mounted) return;
   await Navigator.push<void>(
     context,
@@ -642,22 +639,36 @@ Future<void> openAgentArtifact(
         body: SafeArea(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(18),
-            child: (artifact['name'] as String).endsWith('.md')
-                ? AssistantMarkdown(
-                    data: content,
-                    onTapLink: (url) {
-                      final uri = url == null ? null : safeSearchUrl(url);
-                      if (uri != null) {
-                        unawaited(
-                          launchUrl(uri, mode: LaunchMode.externalApplication),
-                        );
-                      }
-                    },
-                  )
-                : SelectableText(
-                    content,
-                    style: TextStyle(color: IosColors.label),
-                  ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  T('i18n.agent_content_preview'),
+                  style: TextStyle(color: IosColors.secondary),
+                ),
+                AgentResultActions(task: task, artifact: artifact),
+                const SizedBox(height: 12),
+                !source.table
+                    ? AssistantMarkdown(
+                        data: content,
+                        onTapLink: (url) {
+                          final uri = url == null ? null : safeSearchUrl(url);
+                          if (uri != null) {
+                            unawaited(
+                              launchUrl(
+                                uri,
+                                mode: LaunchMode.externalApplication,
+                              ),
+                            );
+                          }
+                        },
+                      )
+                    : SelectableText(
+                        content,
+                        style: TextStyle(color: IosColors.label),
+                      ),
+              ],
+            ),
           ),
         ),
       ),

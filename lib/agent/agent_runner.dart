@@ -23,7 +23,7 @@ Search again or read sources when evidence is insufficient. Cite actual URLs or 
 Do not claim a page was read when you only received a search excerpt. Do not invent sources or tool successes.
 For project-only requests, avoid disclosing private project content to web search.
 Write in the user's language. End with the requested deliverable. For chat requests, answer directly. Use save_artifact when a file is requested; never claim a file exists before it is saved.
-Use save_artifact for additional Markdown or CSV deliverables. CSV must be valid quoted CSV; escape spreadsheet formula-leading cells.
+Use save_artifact for Markdown (.md), PDF (.pdf), Word (.docx), CSV (.csv) or Excel (.xlsx) deliverables. Supply Markdown for reports and valid quoted CSV for spreadsheets; local encoders create the actual file. Match the requested format. File contents are limited to 120000 UTF-8 bytes.
 Prefer a few useful calls over repetitive searches. When evidence is sufficient, answer directly. If tools repeatedly fail or return no useful new evidence, explain the limitation and finish with the available evidence.''';
 
 void _agentDebug(String event, Map<String, Object?> details) {
@@ -322,6 +322,7 @@ class AgentRunner extends ChangeNotifier {
           model: task.model,
           prompt: requestPrompt,
           messages: [...initial, ...task.messages.skip(1)],
+          preserveFrom: initial.isEmpty ? 0 : initial.length - 1,
           tools: tools,
           windowTokens: window,
           outputTokens: task.outputTokenLimit,

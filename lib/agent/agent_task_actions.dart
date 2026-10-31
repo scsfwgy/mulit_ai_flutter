@@ -115,6 +115,35 @@ class _AgentTaskActionsState extends State<AgentTaskActions> {
     }
   }
 
+  Future<void> _refine() async {
+    final text = await showCupertinoDialog<String>(
+      context: context,
+      builder: (_) => const _AgentInstructionDialog(),
+    );
+    if (text == null ||
+        !mounted ||
+        AgentRunner.isBusy ||
+        !widget.task.canResume) {
+      return;
+    }
+    setState(() {
+      _opening = true;
+      _error = null;
+    });
+    try {
+      await AgentStore().refine(widget.task, text);
+      if (mounted) widget.onResume?.call();
+    } on FormatException catch (e) {
+      if (mounted) _error = e.message;
+    } on StateError catch (e) {
+      if (mounted) _error = T(e.message);
+    } catch (_) {
+      if (mounted) _error = T('i18n.agent_save_failed');
+    } finally {
+      if (mounted) setState(() => _opening = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!widget.task.canResume) return const SizedBox.shrink();
@@ -176,6 +205,16 @@ class _AgentTaskActionsState extends State<AgentTaskActions> {
                 _error!,
                 style: TextStyle(color: IosColors.destructive, fontSize: 13),
               ),
+            if (widget.onResume != null &&
+                !widget.retryWithCurrentModel &&
+                AppPreferences.instance.agentEnabled)
+              CupertinoButton(
+                key: const Key('agent-refine'),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                minimumSize: Size.zero,
+                onPressed: !_opening && !AgentRunner.isBusy ? _refine : null,
+                child: Text(T('i18n.agent_refine')),
+              ),
             CupertinoButton(
               key: const Key('agent-recovery-action'),
               padding: const EdgeInsets.symmetric(vertical: 8),
@@ -188,4 +227,51 @@ class _AgentTaskActionsState extends State<AgentTaskActions> {
       },
     );
   }
+}
+
+class _AgentInstructionDialog extends StatefulWidget {
+  const _AgentInstructionDialog();
+  @override
+  State<_AgentInstructionDialog> createState() =>
+      _AgentInstructionDialogState();
+}
+
+class _AgentInstructionDialogState extends State<_AgentInstructionDialog> {
+  final _input = TextEditingController();
+  @override
+  void dispose() {
+    _input.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => CupertinoAlertDialog(
+    title: Text(T('i18n.agent_refine')),
+    content: Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: CupertinoTextField(
+        key: const Key('agent-refine-input'),
+        controller: _input,
+        autofocus: true,
+        maxLength: 4000,
+        minLines: 3,
+        maxLines: 6,
+        placeholder: T('i18n.agent_refine_hint'),
+      ),
+    ),
+    actions: [
+      CupertinoDialogAction(
+        onPressed: () => Navigator.pop(context),
+        child: Text(T('i18n.cancel')),
+      ),
+      CupertinoDialogAction(
+        onPressed: () {
+          if (_input.text.trim().isNotEmpty) {
+            Navigator.pop(context, _input.text.trim());
+          }
+        },
+        child: Text(T('i18n.agent_refine_resume')),
+      ),
+    ],
+  );
 }

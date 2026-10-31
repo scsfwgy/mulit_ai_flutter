@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:sqflite/sqflite.dart';
+
 import 'package:mulit_ai_flutter/chat/chat_context.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
 import 'package:mulit_ai_flutter/core/project.dart';
@@ -213,46 +215,10 @@ extension ProjectStore on ChatStore {
           )
           .toList();
 
-  Future<int> addKnowledge(int projectId, String name, String content) async {
-    if (content.trim().isEmpty ||
-        content.trimLeft().startsWith('%PDF-') ||
-        content.length > 200000 ||
-        name.trim().isEmpty ||
-        name.length > 255 ||
-        utf8.encode(content).length > 2 * 1024 * 1024 ||
-        content.contains(RegExp(r'[\x00-\x08\x0b\x0c\x0e-\x1f]'))) {
-      throw FormatException(T('i18n.knowledge_invalid'));
-    }
-    final chunks = knowledgeChunks(content);
-    return (await db).transaction((txn) async {
-      final existing = await txn.rawQuery(
-        'SELECT COUNT(*) AS count, COALESCE(SUM(bytes),0) AS bytes FROM knowledge_documents WHERE project_id = ?',
-        [projectId],
+  Future<int> addKnowledge(int projectId, String name, String content) async =>
+      (await db).transaction(
+        (txn) => insertProjectKnowledge(txn, projectId, name, content),
       );
-      if ((existing.first['count'] as int) >= 50 ||
-          (existing.first['bytes'] as int) + utf8.encode(content).length >
-              10 * 1024 * 1024) {
-        throw FormatException(T('i18n.knowledge_capacity'));
-      }
-      final id = await txn.insert('knowledge_documents', {
-        'project_id': projectId,
-        'name': name.trim(),
-        'content': content,
-        'characters': content.runes.length,
-        'bytes': utf8.encode(content).length,
-      });
-      final batch = txn.batch();
-      for (var i = 0; i < chunks.length; i++) {
-        batch.insert('knowledge_chunks', {
-          'document_id': id,
-          'position': i,
-          'content': chunks[i],
-        });
-      }
-      await batch.commit(noResult: true);
-      return id;
-    });
-  }
 
   Future<void> deleteKnowledge(int id) async {
     await (await db).delete(
@@ -308,4 +274,49 @@ extension ProjectStore on ChatStore {
     }
     return result;
   }
+}
+
+/// Shared transaction for imported files and explicitly saved Agent notes.
+Future<int> insertProjectKnowledge(
+  DatabaseExecutor txn,
+  int projectId,
+  String name,
+  String content,
+) async {
+  if (content.trim().isEmpty ||
+      content.trimLeft().startsWith('%PDF-') ||
+      content.length > 200000 ||
+      name.trim().isEmpty ||
+      name.length > 255 ||
+      utf8.encode(content).length > 2 * 1024 * 1024 ||
+      content.contains(RegExp(r'[\x00-\x08\x0b\x0c\x0e-\x1f]'))) {
+    throw FormatException(T('i18n.knowledge_invalid'));
+  }
+  final chunks = knowledgeChunks(content);
+  final existing = await txn.rawQuery(
+    'SELECT COUNT(*) AS count, COALESCE(SUM(bytes),0) AS bytes FROM knowledge_documents WHERE project_id = ?',
+    [projectId],
+  );
+  if ((existing.first['count'] as int) >= 50 ||
+      (existing.first['bytes'] as int) + utf8.encode(content).length >
+          10 * 1024 * 1024) {
+    throw FormatException(T('i18n.knowledge_capacity'));
+  }
+  final id = await txn.insert('knowledge_documents', {
+    'project_id': projectId,
+    'name': name.trim(),
+    'content': content,
+    'characters': content.runes.length,
+    'bytes': utf8.encode(content).length,
+  });
+  final batch = txn.batch();
+  for (var i = 0; i < chunks.length; i++) {
+    batch.insert('knowledge_chunks', {
+      'document_id': id,
+      'position': i,
+      'content': chunks[i],
+    });
+  }
+  await batch.commit(noResult: true);
+  return id;
 }

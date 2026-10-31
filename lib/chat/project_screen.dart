@@ -39,8 +39,13 @@ class ProjectSelection {
 }
 
 class ProjectsScreen extends StatefulWidget {
-  const ProjectsScreen({super.key, this.moving = false});
+  const ProjectsScreen({
+    super.key,
+    this.moving = false,
+    this.allowUngrouped = true,
+  });
   final bool moving;
+  final bool allowUngrouped;
   @override
   State<ProjectsScreen> createState() => _ProjectsScreenState();
 }
@@ -80,28 +85,30 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
     ),
     body: ListView(
       children: [
-        IosSection(
-          children: [
-            if (!widget.moving)
-              IosRow(
-                title: T('i18n.all_chats'),
-                leading: Icon(CupertinoIcons.tray_2, color: IosColors.blue),
-                onTap: () =>
-                    Navigator.pop(context, const ProjectSelection(null)),
-              ),
-            IosRow(
-              title: T('i18n.ungrouped_chats'),
-              leading: Icon(
-                CupertinoIcons.chat_bubble_2,
-                color: IosColors.blue,
-              ),
-              onTap: () => Navigator.pop(
-                context,
-                const ProjectSelection(null, ungrouped: true),
-              ),
-            ),
-          ],
-        ),
+        if (!widget.moving || widget.allowUngrouped)
+          IosSection(
+            children: [
+              if (!widget.moving)
+                IosRow(
+                  title: T('i18n.all_chats'),
+                  leading: Icon(CupertinoIcons.tray_2, color: IosColors.blue),
+                  onTap: () =>
+                      Navigator.pop(context, const ProjectSelection(null)),
+                ),
+              if (widget.allowUngrouped)
+                IosRow(
+                  title: T('i18n.ungrouped_chats'),
+                  leading: Icon(
+                    CupertinoIcons.chat_bubble_2,
+                    color: IosColors.blue,
+                  ),
+                  onTap: () => Navigator.pop(
+                    context,
+                    const ProjectSelection(null, ungrouped: true),
+                  ),
+                ),
+            ],
+          ),
         IosSection(
           title: T('i18n.projects'),
           footer: T('i18n.projects_detail'),
