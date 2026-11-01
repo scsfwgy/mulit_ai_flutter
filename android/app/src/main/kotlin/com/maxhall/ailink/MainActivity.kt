@@ -4,9 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.wear.remote.interactions.RemoteActivityHelper
@@ -159,43 +157,6 @@ class MainActivity : FlutterActivity() {
                                 }
                             }
                         }
-                    }
-                    else -> result.notImplemented()
-                }
-            }
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "between_models/agent_background")
-            .setMethodCallHandler { call, result ->
-                when (call.method) {
-                    "begin" -> {
-                        if (Build.VERSION.SDK_INT >= 33 &&
-                            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
-                            PackageManager.PERMISSION_GRANTED
-                        ) {
-                            requestPermissions(
-                                arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
-                                4107,
-                            )
-                        }
-                        try {
-                            val intent = Intent(this, AgentForegroundService::class.java)
-                                .putExtra(
-                                    AgentForegroundService.EXTRA_TITLE,
-                                    call.argument<String>("title"),
-                                )
-                            if (Build.VERSION.SDK_INT >= 26) {
-                                startForegroundService(intent)
-                            } else {
-                                startService(intent)
-                            }
-                        } catch (_: Exception) {
-                            // The run still proceeds in this process if the system
-                            // rejects the foreground service.
-                        }
-                        result.success(null)
-                    }
-                    "end" -> {
-                        stopService(Intent(this, AgentForegroundService::class.java))
-                        result.success(null)
                     }
                     else -> result.notImplemented()
                 }

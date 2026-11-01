@@ -10,6 +10,7 @@ import 'package:mulit_ai_flutter/agent/agent_runner.dart';
 import 'package:mulit_ai_flutter/agent/agent_task_actions.dart';
 import 'package:mulit_ai_flutter/agent/agent_result_actions.dart';
 import 'package:mulit_ai_flutter/agent/agent_store.dart';
+import 'package:mulit_ai_flutter/api/tool_call.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
 import 'package:mulit_ai_flutter/core/app_preferences.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
@@ -148,6 +149,84 @@ void main() {
       expect(task.status, 'paused');
       expect(() => runner.addListener(() {}), throwsFlutterError);
       AppPreferences.instance.agentEnabled = false;
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets(
+    'Agent executes tools in the background without a native handler',
+    (tester) async {
+      installEmptyDatabaseStub();
+      const channel = MethodChannel('between_models/agent_background');
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(
+        channel,
+        (_) async => throw MissingPluginException(),
+      );
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+      final task = AgentTask(
+        providerId: 1,
+        model: 'test',
+        protocol: ApiProtocol.openAi,
+        goal: 'Background task',
+        systemPrompt: '',
+      );
+      final response = Completer<ModelToolTurn>();
+      var executed = 0;
+      late final AgentRunner runner;
+      runner = AgentRunner(
+        repository: AgentStore(),
+        allowed: () async => true,
+        turn: (_, _) => response.future,
+        execute: (_, _, _) async {
+          executed++;
+          runner.pause();
+          return {};
+        },
+      );
+      addTearDown(runner.dispose);
+      final run = runner.run(task);
+      await tester.pumpWidget(MaterialApp(home: AgentTaskScreen(task: task)));
+      for (var i = 0; i < 10 && task.status != 'running'; i++) {
+        await tester.pump(const Duration(milliseconds: 10));
+      }
+      expect(task.status, 'running');
+      for (final state in [
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.paused,
+      ]) {
+        tester.binding.handleAppLifecycleStateChanged(state);
+        await tester.pump();
+      }
+      response.complete(
+        ModelToolTurn(
+          {'role': 'assistant', 'content': null},
+          '',
+          [
+            ModelToolCall('background', 'read_webpage', {
+              'url': 'https://example.com',
+            }),
+          ],
+          1,
+          1,
+        ),
+      );
+      for (var i = 0; i < 30 && AgentRunner.isBusy; i++) {
+        await tester.pump(const Duration(milliseconds: 10));
+      }
+      expect(AgentRunner.isBusy, false);
+      await run;
+      expect(executed, 1);
+      expect(task.status, 'paused');
+      for (final state in [
+        AppLifecycleState.hidden,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ]) {
+        tester.binding.handleAppLifecycleStateChanged(state);
+        await tester.pump();
+      }
       expect(tester.takeException(), isNull);
     },
   );

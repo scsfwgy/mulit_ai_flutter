@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart';
 
-/// Keeps the current process eligible to continue an Agent run after the
-/// screen locks. Desktop builds have no handler and ignore the request.
+/// Requests finite background time on iOS. Android and desktop have no handler;
+/// the Agent continues only for as long as the system lets the process run.
 class AgentBackground {
   static const _channel = MethodChannel('between_models/agent_background');
 
@@ -9,7 +9,7 @@ class AgentBackground {
     try {
       await _channel.invokeMethod<void>('begin', {'title': title});
     } catch (_) {
-      // A missing desktop handler or a rejected system budget must not stop
+      // A missing platform handler or a rejected system budget must not stop
       // the run. The loop continues for as long as the process stays alive.
     }
   }
