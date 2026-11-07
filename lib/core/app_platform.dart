@@ -36,3 +36,5 @@ bool get supportsQrScan =>
     ].contains(defaultTargetPlatform);
 
 bool get supportsIncomingShare => supportsWatchCompanion;
+
+bool get supportsUmengDiagnostics => supportsWatchCompanion;

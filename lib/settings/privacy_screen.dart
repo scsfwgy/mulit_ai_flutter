@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
 import 'package:mulit_ai_flutter/core/app_platform.dart';
 import 'package:mulit_ai_flutter/core/apple_purchases.dart';
+import 'package:mulit_ai_flutter/core/umeng_diagnostics.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 
@@ -149,6 +150,11 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
                       : 'i18n.android_and_ios_production_builds',
                 ),
               ),
+              if (supportsUmengDiagnostics)
+                _PrivacyRow(
+                  title: T('i18n.umeng_consent_title'),
+                  detail: T('i18n.umeng_privacy_detail'),
+                ),
             ],
           ),
           IosSection(
@@ -163,6 +169,29 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
           ),
           IosSection(
             children: [
+              if (UmengDiagnostics.instance.enabled)
+                IosRow(
+                  title: T('i18n.umeng_consent_title'),
+                  subtitle: T('i18n.diagnostics_switch_detail'),
+                  trailing: Semantics(
+                    label: T('i18n.umeng_consent_title'),
+                    child: CupertinoSwitch(
+                      value: UmengDiagnostics.instance.consent != false,
+                      onChanged: (agree) async {
+                        try {
+                          await UmengDiagnostics.instance.choose(agree);
+                          if (mounted) setState(() {});
+                        } catch (_) {
+                          if (mounted) {
+                            setState(
+                              () => _error = T('i18n.umeng_start_failed'),
+                            );
+                          }
+                        }
+                      },
+                    ),
+                  ),
+                ),
               IosRow(
                 title: T('i18n.full_privacy_policy'),
                 subtitle: 'tools24.uk/app/ai-link/privacy',

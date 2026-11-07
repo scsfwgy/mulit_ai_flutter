@@ -2,6 +2,8 @@ import Flutter
 import FirebaseCore
 import FirebaseAnalytics
 import UIKit
+import UMCommon
+import UMAPM
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -25,11 +27,26 @@ import UIKit
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+        // 友盟APM采集开关配置
+        let config = UMAPMConfig.default()
+        config.crashAndBlockMonitorEnable = true
+        config.launchMonitorEnable = true
+        config.memMonitorEnable = false
+        config.oomMonitorEnable = false
+        config.networkEnable = false
+        config.logCollectEnable = false
+        config.javaScriptBridgeEnable = false
+        UMConfigure.setASAEnabled(false)
+        UMConfigure.setSKANEnabled(false)
+        UMCrashConfigure.setAPMConfig(config)
+
+
     // The downloaded Firebase app is registered for the production bundle only.
     // Debug/Profile bundles retain their own data and do not emit Analytics.
     if Bundle.main.bundleIdentifier == "com.maxhall.ailink" {
       FirebaseApp.configure()
-      Analytics.setAnalyticsCollectionEnabled(true)
+      // Wait for the persisted app preference from Flutter before collecting.
+      Analytics.setAnalyticsCollectionEnabled(false)
     }
     let launched = super.application(application, didFinishLaunchingWithOptions: launchOptions)
     AppleWatchBridge.shared.start()
@@ -38,6 +55,25 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    FlutterMethodChannel(
+      name: "between_models/diagnostics",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    ).setMethodCallHandler { call, result in
+      if call.method == "getEnabled" {
+        result(UserDefaults.standard.object(forKey: "shareUsageDiagnostics") as? Bool)
+        return
+      }
+      guard call.method == "setEnabled", let enabled = call.arguments as? Bool else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      UserDefaults.standard.set(enabled, forKey: "shareUsageDiagnostics")
+      if FirebaseApp.app() != nil {
+        Analytics.setAnalyticsCollectionEnabled(enabled)
+      }
+      UMConfigure.setAnalyticsEnabled(enabled)
+      result(nil)
+    }
     ApplePurchaseBridge.shared.attach(messenger: engineBridge.applicationRegistrar.messenger())
     AppleStorefrontBridge.shared.attach(messenger: engineBridge.applicationRegistrar.messenger())
     SystemVoiceBridge.shared.attach(messenger: engineBridge.applicationRegistrar.messenger())

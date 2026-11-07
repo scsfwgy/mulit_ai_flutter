@@ -1,4 +1,5 @@
 import java.util.Properties
+import java.util.Base64
 
 plugins {
     id("com.android.application")
@@ -8,6 +9,12 @@ plugins {
 }
 
 val signingProfile = System.getenv("AI_LINK_SIGNING_PROFILE") ?: "release"
+val distributionChannel = providers.gradleProperty("dart-defines").orNull
+    ?.split(",")
+    ?.map { String(Base64.getDecoder().decode(it), Charsets.UTF_8) }
+    ?.firstOrNull { it.startsWith("APP_CHANNEL=") }
+    ?.substringAfter("=")
+val umengChannel = if (distributionChannel in listOf("google_play", "googleplay")) "googleplay" else "official"
 require(signingProfile == "release" || signingProfile == "test") {
     "AI_LINK_SIGNING_PROFILE must be release or test"
 }
@@ -44,6 +51,7 @@ if (gradle.startParameter.taskNames.any { it.contains("Debug", ignoreCase = true
 }
 
 android {
+    buildFeatures { buildConfig = true }
     namespace = "com.maxhall.ailink"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
@@ -54,6 +62,7 @@ android {
     }
 
     defaultConfig {
+        buildConfigField("String", "UMENG_CHANNEL", "\"$umengChannel\"")
         applicationId = "com.maxhall.ailink"
         manifestPlaceholders["appLabel"] = "AI Link"
         manifestPlaceholders["firebaseAnalyticsDeactivated"] = signingProfile == "test"

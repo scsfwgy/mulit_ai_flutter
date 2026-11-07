@@ -23,7 +23,7 @@
   "i18n.all_chats_service_settings_api": "所有話題、聊天記錄、服務配置、API Key 和提示詞都會從本應用中刪除。此操作無法撤銷。",
   "i18n.allow_camera_access_in_system": "請在系統設定中允許相機許可權後返回重試",
   "i18n.allow_microphone_access_and_try": "請允許麥克風許可權後重試",
-  "i18n.android_and_ios_production_builds": "Android 和 iOS 正式版使用 Firebase Analytics 記錄應用使用事件、應用例項標識與裝置資訊，不收集廣告識別符號。不會主動上傳聊天內容、API Key、錄音或服務地址。除錯和測試版停用統計；手錶暫未接入。",
+  "i18n.android_and_ios_production_builds": "正式 Android 與 iPhone 版本使用 Firebase Analytics 傳送使用事件、應用實例識別碼與裝置資訊至 Google，不使用廣告識別碼。可透過本頁「使用統計與診斷」關閉。不主動附加聊天、金鑰、錄音或服務網址。開發與測試版本不收集，手錶與桌面未接入。",
   "i18n.any_time": "不限時間",
   "i18n.api_base_url": "API 根地址",
   "i18n.api_key_blank_keeps_current": "API Key（留空保留原金鑰）",
@@ -817,5 +817,9 @@
   "i18n.draft_load_failed": "草稿暫時無法載入，請重新開啟此對話。",
   "i18n.draft_replace_title": "取代新對話草稿？",
   "i18n.draft_replace_detail": "目標專案已有未傳送的草稿。要用目前輸入取代它嗎？",
-  "i18n.draft_replace_action": "取代草稿"
+  "i18n.draft_replace_action": "取代草稿",
+  "i18n.umeng_consent_title": "使用統計與診斷",
+  "i18n.umeng_privacy_detail": "正式 Android 與 iPhone 版本預設啟用友盟 U-App 使用統計及 U-APM 效能、Flutter 與原生當機診斷，可在本頁關閉。資料傳送至友盟，包含裝置與應用程式資訊、安裝識別碼、使用統計、效能指標及系統當機報告。不附加聊天、提示詞、金鑰、附件或模型請求內容。模型網路擷取與日誌回撈關閉；Flutter 報告只保留錯誤類型與程式碼堆疊。開發、測試、桌面與手錶預設不收集。",
+  "i18n.umeng_start_failed": "無法更新統計與診斷設定，請稍後重試。聊天不受影響。",
+  "i18n.diagnostics_switch_detail": "預設開啟，統一控制 Firebase 與友盟。關閉後使用統計和 Flutter 報告立即停止；原生監控的變更在完全退出並重新啟動應用程式後完全生效。"
 }

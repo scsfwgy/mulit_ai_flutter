@@ -12,6 +12,8 @@ import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.CapabilityClient
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
+import com.google.firebase.analytics.FirebaseAnalytics
+import com.umeng.analytics.MobclickAgent
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -44,6 +46,26 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "between_models/diagnostics")
+            .setMethodCallHandler { call, result ->
+                val enabled = call.arguments as? Boolean
+                if (call.method == "getEnabled") {
+                    val prefs = getSharedPreferences("diagnostics", Context.MODE_PRIVATE)
+                    result.success(if (prefs.contains("enabled")) prefs.getBoolean("enabled", true) else null)
+                } else if (call.method != "setEnabled" || enabled == null) {
+                    result.notImplemented()
+                } else {
+                    val saved = getSharedPreferences("diagnostics", Context.MODE_PRIVATE)
+                        .edit().putBoolean("enabled", enabled).commit()
+                    if (!saved) {
+                        result.error("storage_failed", "Could not save diagnostics preference", null)
+                    } else {
+                        FirebaseAnalytics.getInstance(this).setAnalyticsCollectionEnabled(enabled)
+                        if (!enabled) MobclickAgent.disable()
+                        result.success(null)
+                    }
+                }
+            }
         incomingShares.attach(flutterEngine.dartExecutor.binaryMessenger)
         incomingShares.receive(intent)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "between_models/attachments")

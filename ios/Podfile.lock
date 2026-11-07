@@ -1,0 +1,115 @@
+PODS:
+  - audioplayers_darwin (0.0.1):
+    - Flutter
+    - FlutterMacOS
+  - file_selector_ios (0.0.1):
+    - Flutter
+  - Flutter (1.0.0)
+  - flutter_secure_storage_darwin (10.0.0):
+    - Flutter
+    - FlutterMacOS
+  - image_picker_ios (0.0.1):
+    - Flutter
+  - integration_test (0.0.1):
+    - Flutter
+  - mobile_scanner (7.0.0):
+    - Flutter
+    - FlutterMacOS
+  - package_info_plus (0.4.5):
+    - Flutter
+  - record_ios (2.0.0):
+    - Flutter
+  - share_plus (0.0.1):
+    - Flutter
+  - sqflite_darwin (0.0.4):
+    - Flutter
+    - FlutterMacOS
+  - UMAPM (2.1.7):
+    - UMCommon
+  - UMCommon (7.7.0):
+    - UMDevice
+  - UMDevice (3.6.0)
+  - umeng_apm_sdk (0.0.1):
+    - Flutter
+    - UMAPM
+  - umeng_common_sdk (0.0.1):
+    - Flutter
+    - UMCommon
+    - UMDevice
+  - url_launcher_ios (0.0.1):
+    - Flutter
+
+DEPENDENCIES:
+  - audioplayers_darwin (from `.symlinks/plugins/audioplayers_darwin/darwin`)
+  - file_selector_ios (from `.symlinks/plugins/file_selector_ios/ios`)
+  - Flutter (from `Flutter`)
+  - flutter_secure_storage_darwin (from `.symlinks/plugins/flutter_secure_storage_darwin/darwin`)
+  - image_picker_ios (from `.symlinks/plugins/image_picker_ios/ios`)
+  - integration_test (from `.symlinks/plugins/integration_test/ios`)
+  - mobile_scanner (from `.symlinks/plugins/mobile_scanner/darwin`)
+  - package_info_plus (from `.symlinks/plugins/package_info_plus/ios`)
+  - record_ios (from `.symlinks/plugins/record_ios/ios`)
+  - share_plus (from `.symlinks/plugins/share_plus/ios`)
+  - sqflite_darwin (from `.symlinks/plugins/sqflite_darwin/darwin`)
+  - umeng_apm_sdk (from `.symlinks/plugins/umeng_apm_sdk/ios`)
+  - umeng_common_sdk (from `.symlinks/plugins/umeng_common_sdk/ios`)
+  - url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)
+
+SPEC REPOS:
+  trunk:
+    - UMAPM
+    - UMCommon
+    - UMDevice
+
+EXTERNAL SOURCES:
+  audioplayers_darwin:
+    :path: ".symlinks/plugins/audioplayers_darwin/darwin"
+  file_selector_ios:
+    :path: ".symlinks/plugins/file_selector_ios/ios"
+  Flutter:
+    :path: Flutter
+  flutter_secure_storage_darwin:
+    :path: ".symlinks/plugins/flutter_secure_storage_darwin/darwin"
+  image_picker_ios:
+    :path: ".symlinks/plugins/image_picker_ios/ios"
+  integration_test:
+    :path: ".symlinks/plugins/integration_test/ios"
+  mobile_scanner:
+    :path: ".symlinks/plugins/mobile_scanner/darwin"
+  package_info_plus:
+    :path: ".symlinks/plugins/package_info_plus/ios"
+  record_ios:
+    :path: ".symlinks/plugins/record_ios/ios"
+  share_plus:
+    :path: ".symlinks/plugins/share_plus/ios"
+  sqflite_darwin:
+    :path: ".symlinks/plugins/sqflite_darwin/darwin"
+  umeng_apm_sdk:
+    :path: ".symlinks/plugins/umeng_apm_sdk/ios"
+  umeng_common_sdk:
+    :path: ".symlinks/plugins/umeng_common_sdk/ios"
+  url_launcher_ios:
+    :path: ".symlinks/plugins/url_launcher_ios/ios"
+
+SPEC CHECKSUMS:
+  audioplayers_darwin: 835ced6edd4c9fc8ebb0a7cc9e294a91d99917d5
+  file_selector_ios: fb1dd93b450e9c1ac595c0c8cf29cc855ea24d61
+  Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
+  flutter_secure_storage_darwin: 46e401699982ee74142909676535e0f6a7321e58
+  image_picker_ios: 9285ee31b06d6e15629dd5713b890f0c457a0a8b
+  integration_test: 4a889634ef21a45d28d50d622cf412dc6d9f586e
+  mobile_scanner: 9157936403f5a0644ca3779a38ff8404c5434a93
+  package_info_plus: af8e2ca6888548050f16fa2f1938db7b5a5df499
+  record_ios: 390a30c7caaf8b5d0fb1cb1d2fd5064b48b4520c
+  share_plus: eccd7beb7cea61271aeed1800e8ccb2b952c0c7f
+  sqflite_darwin: 20b2a3a3b70e43edae938624ce550a3cbf66a3d0
+  UMAPM: 24c100a2ec8ffd710f4f25575d92b46b9e4e63dd
+  UMCommon: 7740aabc9bdf25ee76d05c06ce09f980f4422cb2
+  UMDevice: 20b7b3c37a36b2c5c7ca8b5a54386ff9ed2b3b19
+  umeng_apm_sdk: 2426ef0edc03062168a6541bfeed9e824a6f40cc
+  umeng_common_sdk: 8bbb370e906c9e4b93fee93ddc698e12ce02d235
+  url_launcher_ios: 7a95fa5b60cc718a708b8f2966718e93db0cef1b
+
+PODFILE CHECKSUM: 2c6422a32f94ff177c8cb641bad4c1e319de159d
+
+COCOAPODS: 1.17.0

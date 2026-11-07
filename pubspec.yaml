@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.1.9+2
+version: 1.2.0+2
 
 environment:
   sdk: ^3.13.3
@@ -28,6 +28,9 @@ environment:
 # the latest version available on pub.dev. To see which dependencies have newer
 # versions available, run `flutter pub outdated`.
 dependencies:
+  umeng_apm_sdk:
+    path: third_party/umeng_apm_sdk
+
   flutter:
     sdk: flutter
 
@@ -63,6 +66,8 @@ dependencies:
   archive: ^4.5.2
   xml: ^7.0.1
   crypto: ^3.0.7
+  umeng_common_sdk:
+    path: third_party/umeng_common_sdk
 dev_dependencies:
   integration_test:
     sdk: flutter
@@ -82,6 +87,8 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
+  config:
+    enable-swift-package-manager: false
   assets:
     - assets/branding/ai_link_icon_source.png
     - assets/provider_icons/

@@ -23,7 +23,7 @@
   "i18n.all_chats_service_settings_api": "All chats, service settings, API keys, and prompts will be deleted from this app. This cannot be undone.",
   "i18n.allow_camera_access_in_system": "Allow camera access in system settings, then try again.",
   "i18n.allow_microphone_access_and_try": "Allow microphone access and try again",
-  "i18n.android_and_ios_production_builds": "Android and iOS production builds use Firebase Analytics for app usage events, app instance identifiers and device information, without advertising IDs. Chats, API keys, recordings and provider URLs are not intentionally uploaded. Analytics is disabled in debug and test builds; watch apps are not integrated yet.",
+  "i18n.android_and_ios_production_builds": "Production Android and iPhone builds use Firebase Analytics to send usage events, app instance identifiers and device information to Google, without advertising IDs. You can disable this using Usage analytics & diagnostics here. Chats, keys, recordings and provider URLs are not intentionally attached. Development and test builds, watches and desktop are excluded.",
   "i18n.any_time": "Any time",
   "i18n.api_base_url": "API base URL",
   "i18n.api_key_blank_keeps_current": "API key (blank keeps current key)",
@@ -817,5 +817,9 @@
   "i18n.draft_load_failed": "Could not load the draft. Open this chat again.",
   "i18n.draft_replace_title": "Replace the new-chat draft?",
   "i18n.draft_replace_detail": "The target project already has an unsent draft. Replace it with your current input?",
-  "i18n.draft_replace_action": "Replace draft"
+  "i18n.draft_replace_action": "Replace draft",
+  "i18n.umeng_consent_title": "Usage analytics & diagnostics",
+  "i18n.umeng_privacy_detail": "Production Android and iPhone builds enable Umeng U-App usage analytics and U-APM performance, Flutter and native crash diagnostics by default. You can turn them off here. Device/app information, installation identifiers, usage statistics, performance metrics and system crash reports go to Umeng. Chats, prompts, keys, attachments and model request content are not attached. Model network capture and log retrieval are disabled. Flutter reports retain only error types and code stack frames. Development, test, desktop and watch builds are excluded by default.",
+  "i18n.umeng_start_failed": "Could not update analytics and diagnostics settings. Try again later. Chat remains available.",
+  "i18n.diagnostics_switch_detail": "Enabled by default; controls Firebase and Umeng together. Turning this off stops usage analytics and Flutter reports now. Changes to native monitoring take full effect after you fully quit and restart the app."
 }

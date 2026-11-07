@@ -17,11 +17,18 @@ import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/settings/startup_screen.dart';
 import 'package:mulit_ai_flutter/ui/ios_style.dart';
 import 'package:mulit_ai_flutter/watch/watch_chat.dart';
+import 'package:umeng_apm_sdk/umeng_apm_sdk.dart';
+import 'package:mulit_ai_flutter/core/umeng_diagnostics.dart';
+import 'package:mulit_ai_flutter/settings/diagnostics_startup.dart';
 
 bool _compressionLicenseRegistered = false;
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  if (UmengDiagnostics.buildEnabled) {
+    ApmWidgetsFlutterBinding.ensureInitialized();
+  } else {
+    WidgetsFlutterBinding.ensureInitialized();
+  }
   // 语言偏好会马上读 SQLite。Windows 与 Linux 必须先换成 ffi 工厂。
   await configureDesktopSqlite();
   if (!_compressionLicenseRegistered) {
@@ -61,8 +68,13 @@ class ModelChatApp extends StatelessWidget {
     animation: Listenable.merge([
       AppPreferences.instance,
       StorefrontPolicy.instance,
+      UmengDiagnostics.instance,
     ]),
     builder: (context, _) => MaterialApp(
+      navigatorObservers: [
+        if (UmengDiagnostics.instance.collecting)
+          ApmNavigatorObserver.singleInstance,
+      ],
       title: T('AI Link'),
       debugShowCheckedModeBanner: false,
       locale: AppPreferences.instance.locale,
@@ -129,9 +141,11 @@ class ModelChatApp extends StatelessWidget {
         ),
       ),
       themeMode: AppPreferences.instance.themeMode,
-      home: StartupScreen(
-        initialize: AppPreferences.instance.load,
-        homeBuilder: (onReady) => ChatHome(onReady: onReady),
+      home: DiagnosticsStartup(
+        child: StartupScreen(
+          initialize: AppPreferences.instance.load,
+          homeBuilder: (onReady) => ChatHome(onReady: onReady),
+        ),
       ),
     ),
   );
