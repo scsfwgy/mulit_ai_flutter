@@ -6,7 +6,7 @@
 
 | 平台 | AppKey | 渠道 | 新增原生 SDK |
 | --- | --- | --- | --- |
-| Android 手机 | `6aef1438863270068cba2f0c` | 官网包 `official`；`APP_CHANNEL=google_play` 的包映射为 `googleplay` | common 10.0.1、asms 1.8.7.2、apm 2.0.1 |
+| Android 手机 | `6aef1438863270068cba2f0c` | 官网包 `official`；`APP_CHANNEL=google_play` 的包映射为 `googleplay` | common 10.0.1、asms 1.8.7.2、apm 2.1.0 |
 | iPhone | `6aef14986545637cd63e583c` | `App Store` | UMCommon 7.7.0、UMDevice 3.6.0、UMAPM 2.1.7 |
 
 Flutter 使用官方 `umeng_common_sdk` 1.3.1、`umeng_apm_sdk` 2.3.7 的本地源码副本，位于 `third_party/`；来源和补丁见该目录 README。公共组件由包管理器合并，只解析一份。原有 Firebase 保留。SDK 不加入桌面、Wear OS 或 Apple Watch。
@@ -37,6 +37,16 @@ iOS 采用 CocoaPods；保留原有 Firebase SwiftPM 依赖。项目关闭 Flutt
 - AI 自动事件能力不支持本工程的 Flutter 业务代码，本次没有增加 `um_ai_*` 事件。
 
 网页隐私说明在 HomeTools 仓库同步了三种语言。Git 提交与推送不代表网站部署或应用商店发布成功，线上发布状态需另行核验。
+
+## Android 16 KB 页面兼容修复
+
+2026-11-07 检查实际 Google Play 发布归档后发现，Android APM 2.0.1 中的 arm64 `libcrashsdk.so`、`libucrash-core.so`、`libucrash.so` 只有 4 KB LOAD 对齐，部分 RELRO 边界也不合格。Wear OS 包没有这些原生库。AGP 9.1.0 生成的 AAB 原本已声明 `PAGE_ALIGNMENT_16K`，问题来自预编译 SDK，调整 NDK/ZIP 打包不能修复这些 ELF。
+
+Android APM 已升级并固定为友盟官方 Maven Central 发布的 2.1.0，其 arm64 库为 16 KB 对齐。当前工程版本号沿用用户设置的 1.2.1。新增 `scripts/check_android_page_sizes.py`，检查 APK/AAB 内全部 64 位 ELF 的 LOAD/RELRO，以及 APK 未压缩原生库的 ZIP 数据偏移；发布脚本在归档、上传之前检查手机与手表 APK/AAB，不通过即停止。
+
+验证记录：原 114 号发布包检查失败并准确定位上述三个库；升级后重建的 Google Play 渠道 AAB 内 20 个 64 位库全部通过，bundletool 确认 `PAGE_ALIGNMENT_16K`，从 AAB 生成的 universal APK 通过检查和 Android Build Tools `zipalign -c -P 16 -v 4`。检查器的 8 项测试与发布脚本的 28 项测试通过，包含不兼容时阻止上传的回归测试。静态检查不替代 16 KB 系统运行验证或 Play Console 处理结果。
+
+参考：<https://developer.android.com/guide/practices/page-sizes>，官方包：<https://repo.maven.apache.org/maven2/com/umeng/umsdk/apm/2.1.0/>。
 
 ## 文件清单
 

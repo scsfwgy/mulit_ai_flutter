@@ -22,3 +22,7 @@ reproducible on a fresh checkout:
 
 The rest of the SDK source is retained without a general style refactor.
 Recheck these patches against upstream when upgrading.
+
+Android APM is pinned to the official 2.1.0 artifact: 2.0.1 includes 4 KB-aligned
+crash libraries that Google Play rejects for 16 KB page-size support. Check final
+APK/AAB artifacts using `scripts/check_android_page_sizes.py` when upgrading.

@@ -501,6 +501,7 @@ phone_apk="$output/AI-Link-phone$apk_suffix-$version.apk"
 wear_apk="$output/AI-Link-wear$apk_suffix-$version.apk"
 cp build/app/outputs/flutter-apk/app-release.apk "$phone_apk"
 cp build/wear/outputs/apk/release/wear-release.apk "$wear_apk"
+python3 scripts/check_android_page_sizes.py "$phone_apk" "$wear_apk"
 phone_cert="$(apk_cert_sha256 "$phone_apk")"
 wear_cert="$(apk_cert_sha256 "$wear_apk")"
 archive_build apk
@@ -515,6 +516,7 @@ if [[ "$profile" != "test" ]]; then
   wear="$output/AI-Link-wear-$version.aab"
   cp build/app/outputs/bundle/release/app-release.aab "$phone"
   cp build/wear/outputs/bundle/release/wear-release.aab "$wear"
+  python3 scripts/check_android_page_sizes.py "$phone" "$wear"
   phone_cert="$(aab_cert_sha256 "$phone")"
   wear_cert="$(aab_cert_sha256 "$wear")"
   archive_build aab

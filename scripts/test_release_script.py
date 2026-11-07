@@ -171,6 +171,10 @@ class ReleaseScriptTest(unittest.TestCase):
         (root / "localConfig/appstore-connect.env").touch()
         runtime = root / "scripts/.venv/bin"
         runtime.mkdir(parents=True)
+        (root / "scripts/check_android_page_sizes.py").write_text(
+            'import os, sys\n'
+            'raise SystemExit(1 if os.environ.get("MOCK_PAGE_SIZE_FAILURE") else 0)\n'
+        )
         commands = root / "commands"
         commands.mkdir()
 
@@ -347,6 +351,18 @@ if not args.check:
             self.assertTrue((info.parent / "windows/AI-Link-Setup-1.0.1+10.exe").is_file())
             self.assertEqual(len((info.parent / "SHA256SUMS").read_text().splitlines()), 2)
             self.assertTrue((info.parent / "AI-Link-windows-1.0.1-abcd1234+10.exe").is_file())
+
+    def test_incompatible_native_library_stops_before_uploading(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, env = self.mock_release_root(directory, ["--push-android"])
+            env['MOCK_PAGE_SIZE_FAILURE'] = '1'
+            result = subprocess.run(["/bin/bash", "release.sh", "--push-android"],
+                                    cwd=root, env=env, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            calls = (root / 'calls').read_text()
+            self.assertNotIn('flutter build appbundle', calls)
+            self.assertNotIn('python -u scripts/play_upload.py', calls)
+            self.assertNotIn('python -u scripts/website_release.py', calls)
 
     def test_build_all_archives_every_platform_without_uploading(self):
         with tempfile.TemporaryDirectory() as directory:
