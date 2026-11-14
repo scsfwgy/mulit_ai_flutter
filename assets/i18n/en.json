@@ -821,5 +821,11 @@
   "i18n.umeng_consent_title": "Usage analytics & diagnostics",
   "i18n.umeng_privacy_detail": "Production Android and iPhone builds enable Umeng U-App usage analytics and U-APM performance, Flutter and native crash diagnostics by default. You can turn them off here. Device/app information, installation identifiers, usage statistics, performance metrics and system crash reports go to Umeng. Chats, prompts, keys, attachments and model request content are not attached. Model network capture and log retrieval are disabled. Flutter reports retain only error types and code stack frames. Development, test, desktop and watch builds are excluded by default.",
   "i18n.umeng_start_failed": "Could not update analytics and diagnostics settings. Try again later. Chat remains available.",
-  "i18n.diagnostics_switch_detail": "Enabled by default; controls Firebase and Umeng together. Turning this off stops usage analytics and Flutter reports now. Changes to native monitoring take full effect after you fully quit and restart the app."
+  "i18n.diagnostics_switch_detail": "Enabled by default; controls Firebase and Umeng together. Turning this off stops usage analytics and Flutter reports now. Changes to native monitoring take full effect after you fully quit and restart the app.",
+  "i18n.deepseek_recording_limit": "DeepSeek accepts recordings up to 120 seconds and 8 MiB. Try a shorter recording.",
+  "i18n.deepseek_voice_stella": "Stella · Female",
+  "i18n.deepseek_voice_tide": "Tide · Male",
+  "i18n.use_the_official_deepseek_voice": "Use the official DeepSeek voice service URL.",
+  "i18n.deepseek_voice_key_hint": "Reuse an existing DeepSeek text service API key without entering it again, or select a separate key under Key source.",
+  "i18n.deepseek_voice_hint": "No transcription or speech model ID is needed. Language is detected automatically. Recordings are limited to 120 seconds and 8 MiB. Voice usage is billed separately."
 }

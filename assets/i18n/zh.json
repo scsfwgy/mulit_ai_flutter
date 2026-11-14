@@ -821,5 +821,11 @@
   "i18n.umeng_consent_title": "使用统计与诊断",
   "i18n.umeng_privacy_detail": "正式 Android 与 iPhone 版本默认启用友盟 U-App 使用统计及 U-APM 性能、Flutter 与原生崩溃诊断，可在本页关闭。数据发送至友盟，包含设备与应用信息、安装标识、使用统计、性能指标及系统崩溃报告。不附加聊天、提示词、密钥、附件或模型请求内容。模型网络采集与日志回捞关闭；Flutter 报告只保留错误类型与代码堆栈。开发、测试、桌面与手表默认不采集。",
   "i18n.umeng_start_failed": "无法更新统计与诊断设置，请稍后重试。聊天不受影响。",
-  "i18n.diagnostics_switch_detail": "默认开启，统一控制 Firebase 与友盟。关闭后使用统计和 Flutter 报告立即停止；原生监控的更改在完全退出并重新启动应用后完全生效。"
+  "i18n.diagnostics_switch_detail": "默认开启，统一控制 Firebase 与友盟。关闭后使用统计和 Flutter 报告立即停止；原生监控的更改在完全退出并重新启动应用后完全生效。",
+  "i18n.deepseek_recording_limit": "DeepSeek 语音识别每段录音最多 120 秒、8 MiB，请缩短录音后重试。",
+  "i18n.deepseek_voice_stella": "海星 · 女声",
+  "i18n.deepseek_voice_tide": "暗潮 · 男声",
+  "i18n.use_the_official_deepseek_voice": "请使用 DeepSeek 官方语音服务地址。",
+  "i18n.deepseek_voice_key_hint": "可直接复用已有 DeepSeek 文字服务的 API Key，无需重复填写；也可在「密钥来源」选择独立密钥。",
+  "i18n.deepseek_voice_hint": "无需填写识别或朗读模型 ID。识别会自动判断语种，每段最多 120 秒、8 MiB；语音服务单独按量计费。"
 }

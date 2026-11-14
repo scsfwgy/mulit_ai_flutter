@@ -338,13 +338,24 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor>
           : 'i18n.openai_compatible_audio',
     VoiceProtocol.mimo => 'i18n.xiaomi_mimo',
     VoiceProtocol.doubao => 'i18n.doubao_speech',
+    VoiceProtocol.deepseek => 'DeepSeek',
   };
 
   void _selectProtocol(VoiceProtocol value) {
     setState(() {
       _protocol = value;
       _textProviderId = null;
+      _key.clear();
       switch (value) {
+        case VoiceProtocol.deepseek:
+          _name.text = 'DeepSeek';
+          _url.text = deepSeekVoiceBaseUrl;
+          // Keep nonempty capability IDs in saved/watch configurations; these
+          // endpoints do not accept a model parameter.
+          _asr.text = 'asr';
+          _tts.text = 'tts';
+          _voice.text = 'stella';
+          _textProviderId = _keyCandidates.firstOrNull?.id;
         case VoiceProtocol.openAi:
           final restricted = StorefrontPolicy.instance.restricted;
           _name.text = T(
@@ -393,20 +404,25 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor>
     if (value != null) _selectProtocol(value);
   }
 
+  List<ProviderConfig> get _keyCandidates => _textProviders
+      .where(
+        (item) =>
+            !StorefrontPolicy.instance.blocks(
+              item.baseUrl,
+              presetId: item.presetId,
+              model: item.model,
+            ) &&
+            (_protocol == VoiceProtocol.deepseek
+                ? canReuseVoiceKey(_protocol, deepSeekVoiceBaseUrl, item)
+                : item.protocol == ApiProtocol.openAi &&
+                      (_protocol != VoiceProtocol.mimo ||
+                          Uri.tryParse(item.baseUrl)?.host ==
+                              'api.xiaomimimo.com')),
+      )
+      .toList();
+
   Future<void> _pickKeySource() async {
-    final candidates = _textProviders
-        .where(
-          (item) =>
-              !StorefrontPolicy.instance.blocks(
-                item.baseUrl,
-                presetId: item.presetId,
-                model: item.model,
-              ) &&
-              item.protocol == ApiProtocol.openAi &&
-              (_protocol != VoiceProtocol.mimo ||
-                  Uri.tryParse(item.baseUrl)?.host == 'api.xiaomimimo.com'),
-        )
-        .toList();
+    final candidates = _keyCandidates;
     final selected = await showAppModalPopup<int>(
       context: context,
       builder: (context) => CupertinoActionSheet(
@@ -436,7 +452,9 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor>
       final provider = candidates
           .where((item) => item.id == selected)
           .firstOrNull;
-      if (provider != null) _url.text = provider.baseUrl;
+      if (provider != null && _protocol != VoiceProtocol.deepseek) {
+        _url.text = provider.baseUrl;
+      }
     });
   }
 
@@ -463,7 +481,8 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor>
           .where((item) => item.id == _textProviderId)
           .firstOrNull;
       if (_textProviderId != null &&
-          (textProvider == null || textProvider.baseUrl != baseUrl)) {
+          (textProvider == null ||
+              !canReuseVoiceKey(_protocol, baseUrl, textProvider))) {
         throw FormatException(T('i18n.when_reusing_a_key'));
       }
       final key = _textProviderId == null
@@ -504,6 +523,7 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor>
           ),
           onRefresh:
               _protocol == VoiceProtocol.doubao ||
+                  _protocol == VoiceProtocol.deepseek ||
                   kind == VoiceCatalogKind.voice
               ? null
               : refresh,
@@ -517,6 +537,7 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor>
     String label,
     TextEditingController controller, {
     bool secret = false,
+    bool readOnly = false,
     VoidCallback? onPick,
   }) => Padding(
     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -530,6 +551,7 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor>
         const SizedBox(height: 5),
         CupertinoTextField(
           controller: controller,
+          readOnly: readOnly,
           obscureText: secret && _obscure,
           enableSuggestions: !secret,
           suffix: secret
@@ -603,6 +625,10 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor>
           Uri.parse(baseUrl).host != 'openspeech.bytedance.com') {
         throw FormatException(T('i18n.use_the_official_doubao_speech'));
       }
+      if (_protocol == VoiceProtocol.deepseek &&
+          baseUrl != deepSeekVoiceBaseUrl) {
+        throw FormatException(T('i18n.use_the_official_deepseek_voice'));
+      }
       final id =
           widget.service?.id ??
           DateTime.now().microsecondsSinceEpoch.toString();
@@ -632,12 +658,12 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor>
               true) {
         throw FormatException(T('i18n.the_selected_text_provider_has'));
       }
+      final textProvider = (await ChatStore.instance.providers())
+          .where((item) => item.id == _textProviderId)
+          .firstOrNull;
       if (_textProviderId != null &&
-          _textProviders
-                  .where((item) => item.id == _textProviderId)
-                  .firstOrNull
-                  ?.baseUrl !=
-              baseUrl) {
+          (textProvider == null ||
+              !canReuseVoiceKey(_protocol, baseUrl, textProvider))) {
         throw FormatException(T('i18n.when_reusing_a_key'));
       }
       await ChatStore.instance.saveVoiceProvider(
@@ -714,6 +740,9 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor>
       child: ListView(
         children: [
           IosSection(
+            footer: _protocol == VoiceProtocol.deepseek
+                ? T('i18n.deepseek_voice_key_hint')
+                : null,
             children: [
               IosRow(
                 title: T('i18n.api_protocol'),
@@ -721,7 +750,11 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor>
                 onTap: _pickProtocol,
               ),
               _field('i18n.service_name', _name),
-              _field('i18n.api_base_url', _url),
+              _field(
+                'i18n.api_base_url',
+                _url,
+                readOnly: _protocol == VoiceProtocol.deepseek,
+              ),
               IosRow(
                 title: T('i18n.key_source'),
                 subtitle: _textProviderId == null
@@ -749,18 +782,24 @@ class _VoiceServiceEditorState extends State<VoiceServiceEditor>
           ),
           IosSection(
             title: T('i18n.voice_models'),
-            footer: T('i18n.model_and_voice_ids_must'),
+            footer: T(
+              _protocol == VoiceProtocol.deepseek
+                  ? 'i18n.deepseek_voice_hint'
+                  : 'i18n.model_and_voice_ids_must',
+            ),
             children: [
-              _field(
-                'i18n.asr_model_resource_id',
-                _asr,
-                onPick: () => _pickCatalog(VoiceCatalogKind.asr, _asr),
-              ),
-              _field(
-                'i18n.tts_model_resource_id',
-                _tts,
-                onPick: () => _pickCatalog(VoiceCatalogKind.tts, _tts),
-              ),
+              if (_protocol != VoiceProtocol.deepseek) ...[
+                _field(
+                  'i18n.asr_model_resource_id',
+                  _asr,
+                  onPick: () => _pickCatalog(VoiceCatalogKind.asr, _asr),
+                ),
+                _field(
+                  'i18n.tts_model_resource_id',
+                  _tts,
+                  onPick: () => _pickCatalog(VoiceCatalogKind.tts, _tts),
+                ),
+              ],
               _field(
                 'i18n.voice_id',
                 _voice,

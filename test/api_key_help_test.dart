@@ -36,6 +36,17 @@ void main() {
 
   test('voice credential links distinguish speech from text services', () {
     expect(
+      voiceApiKeyUrlForEndpoint(VoiceProtocol.deepseek, deepSeekVoiceBaseUrl),
+      textApiKeyUrls['deepseek'],
+    );
+    expect(
+      voiceApiKeyUrlForEndpoint(
+        VoiceProtocol.deepseek,
+        'https://custom.example/v1',
+      ),
+      isNull,
+    );
+    expect(
       voiceApiKeyUrlForEndpoint(
         VoiceProtocol.mimo,
         'https://api.xiaomimimo.com/v1',

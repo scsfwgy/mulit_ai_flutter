@@ -19,6 +19,92 @@ VoiceProviderConfig config(VoiceProtocol protocol) => VoiceProviderConfig(
 );
 
 void main() {
+  test('DeepSeek ASR uploads only a file and returns the transcript', () async {
+    final client = VoiceClient(
+      config(VoiceProtocol.deepseek),
+      'test-key',
+      client: MockClient((request) async {
+        expect(request.url.path, '/tools/asr');
+        expect(request.headers['authorization'], 'Bearer test-key');
+        expect(request.followRedirects, false);
+        final body = utf8.decode(request.bodyBytes, allowMalformed: true);
+        expect(body, contains('name="file"; filename="speech.wav"'));
+        expect(body, isNot(contains('name="model"')));
+        return http.Response('{"text":"hello","duration_ms":600}', 200);
+      }),
+    );
+    addTearDown(client.close);
+    expect(await client.transcribe(pcm16VoiceWav(Uint8List(19200))), 'hello');
+  });
+
+  test('DeepSeek rejects overlong recordings before uploading', () async {
+    final client = VoiceClient(
+      config(VoiceProtocol.deepseek),
+      'key',
+      client: MockClient((_) async => throw StateError('must not upload')),
+    );
+    addTearDown(client.close);
+    await expectLater(
+      client.transcribe(pcm16VoiceWav(Uint8List(32000 * 121))),
+      throwsA(isA<VoiceException>()),
+    );
+  });
+
+  test('DeepSeek TTS sends voice_id and receives WAV bytes', () async {
+    final client = VoiceClient(
+      config(VoiceProtocol.deepseek),
+      'test-key',
+      client: MockClient((request) async {
+        expect(request.url.path, '/tools/tts');
+        expect(request.headers['authorization'], 'Bearer test-key');
+        expect(request.followRedirects, false);
+        expect(jsonDecode(request.body), {
+          'text': 'hello',
+          'voice_id': 'voice',
+          'format': 'pcm',
+          'filter_markdown': true,
+        });
+        return http.Response.bytes(
+          [82, 73, 70, 70],
+          200,
+          headers: {'content-type': 'audio/pcm'},
+        );
+      }),
+    );
+    addTearDown(client.close);
+    final wav = await client.synthesize('hello');
+    expect(wav.sublist(44), [82, 73, 70, 70]);
+    final header = ByteData.sublistView(wav);
+    expect(ascii.decode(wav.sublist(0, 4)), 'RIFF');
+    expect(header.getUint32(4, Endian.little), wav.length - 8);
+    expect(header.getUint32(24, Endian.little), 24000);
+    expect(header.getUint32(28, Endian.little), 48000);
+    expect(header.getUint32(40, Endian.little), 4);
+    expect(client.config.audioFormat, 'wav');
+    expect(
+      VoiceProviderConfig.fromJson(client.config.toJson()).protocol,
+      VoiceProtocol.deepseek,
+    );
+  });
+
+  test('DeepSeek rejects empty or incomplete PCM before playback', () async {
+    for (final bytes in [
+      <int>[],
+      [1],
+    ]) {
+      final client = VoiceClient(
+        config(VoiceProtocol.deepseek),
+        'key',
+        client: MockClient((_) async => http.Response.bytes(bytes, 200)),
+      );
+      addTearDown(client.close);
+      await expectLater(
+        client.synthesize('hello'),
+        throwsA(isA<VoiceException>()),
+      );
+    }
+  });
+
   test(
     'OpenAI transcription uses multipart file and returns verified text',
     () async {

@@ -107,6 +107,25 @@ final class WatchNetworkClient: NSObject, URLSessionTaskDelegate {
     return result
   }
 
+  private func deepSeekSpeechWav(_ pcm: Data) throws -> Data {
+    guard !pcm.isEmpty, pcm.count.isMultiple(of: 2) else {
+      throw WatchRequestError("朗读音频无效", "Invalid speech audio")
+    }
+    var wav = Data()
+    func tag(_ text: String) { wav.append(Data(text.utf8)) }
+    func littleEndian(_ value: Int, _ count: Int) {
+      for shift in 0..<count { wav.append(UInt8(truncatingIfNeeded: value >> (shift * 8))) }
+    }
+    tag("RIFF"); littleEndian(36 + pcm.count, 4)
+    tag("WAVEfmt "); littleEndian(16, 4)
+    littleEndian(1, 2); littleEndian(1, 2)
+    littleEndian(24000, 4); littleEndian(48000, 4)
+    littleEndian(2, 2); littleEndian(16, 2)
+    tag("data"); littleEndian(pcm.count, 4)
+    wav.append(pcm)
+    return wav
+  }
+
   func transcribe(_ wav: Data, config: WatchNetworkConfiguration) async throws -> String {
     try requireAllowed(config.baseUrl ?? "", presetID: config.providerPresetId, model: config.model, config: config)
     if let voice = config.asr { try requireAllowed(voice.baseUrl, model: voice.asrModel, config: config) }
@@ -120,15 +139,20 @@ final class WatchNetworkClient: NSObject, URLSessionTaskDelegate {
     }
     try requireAllowed(voice.baseUrl, model: voice.asrModel, config: config)
     switch voice.protocolName {
-    case "openAi":
+    case "openAi", "deepseek":
       let boundary = "AILink\(UUID().uuidString)"
       guard !voice.asrModel.contains(where: { $0.isNewline }) else {
         throw WatchRequestError("识别模型无效", "Invalid transcription model")
       }
-      var body = Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n\(voice.asrModel)\r\n--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"speech.wav\"\r\nContent-Type: audio/wav\r\n\r\n".utf8)
+      var body = Data()
+      if voice.protocolName == "openAi" {
+        body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n\(voice.asrModel)\r\n".utf8))
+      }
+      body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"speech.wav\"\r\nContent-Type: audio/wav\r\n\r\n".utf8))
       body.append(wav)
       body.append(Data("\r\n--\(boundary)--\r\n".utf8))
-      let (data, _) = try await send(request(base: voice.baseUrl, path: "/audio/transcriptions", key: voice.apiKey,
+      let path = voice.protocolName == "deepseek" ? "/tools/asr" : "/audio/transcriptions"
+      let (data, _) = try await send(request(base: voice.baseUrl, path: path, key: voice.apiKey,
         body: body, contentType: "multipart/form-data; boundary=\(boundary)"))
       return try transcript(json(data)["text"] as? String ?? "")
     case "mimo":
@@ -340,6 +364,12 @@ final class WatchNetworkClient: NSObject, URLSessionTaskDelegate {
     guard !input.isEmpty else { return nil }
     try requireAllowed(voice.baseUrl, model: voice.ttsModel, config: config)
     switch voice.protocolName {
+    case "deepseek":
+      let (data, _) = try await post(voice, path: "/tools/tts", body: [
+        "text": input, "voice_id": voice.voice, "format": "pcm", "filter_markdown": true,
+      ], limit: 16 * 1024 * 1024)
+      guard !data.isEmpty else { throw WatchRequestError("未返回朗读音频", "No speech audio returned") }
+      return (try deepSeekSpeechWav(data), "wav")
     case "openAi":
       let (data, _) = try await post(voice, path: "/audio/speech", body: ["model": voice.ttsModel,
         "input": input, "voice": voice.voice, "response_format": "mp3"], limit: 16 * 1024 * 1024)

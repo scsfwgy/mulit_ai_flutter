@@ -99,7 +99,7 @@
 
 ### 语音（voice/）
 
-- `lib/voice/voice_client.dart`：云端语音识别和合成的 OpenAI 兼容、MiMo、豆包语音协议适配；保留云端协议；iPhone 可选择苹果系统识别与朗读，新安装默认系统语音，自动朗读默认关闭。`voice_selection.dart` 管理选择与默认值；系统音色 ID 保存在 `system_tts_voice_id` 并同步到 Watch，手表可本地覆盖，指定音色不可用时使用默认音色。`system_voice.dart` 和 iOS `SystemVoiceBridge.swift` 提供原生桥接。已有云端选择和明确关闭朗读的设置不得被覆盖。
+- `lib/voice/voice_client.dart`：云端语音识别和合成的 OpenAI 兼容、MiMo、豆包及 DeepSeek 语音协议适配；DeepSeek 支持引用已有官方文字服务 Key 或填写独立 Key，使用独立 ASR/TTS 接口，无需模型 ID，配置和验证边界见 `doc/DEEPSEEK_VOICE.md`；iPhone 可选择苹果系统识别与朗读，新安装默认系统语音，自动朗读默认关闭。`voice_selection.dart` 管理选择与默认值；系统音色 ID 保存在 `system_tts_voice_id` 并同步到 Watch，手表可本地覆盖，指定音色不可用时使用默认音色。`system_voice.dart` 和 iOS `SystemVoiceBridge.swift` 提供原生桥接。已有云端选择和明确关闭朗读的设置不得被覆盖。
 - `lib/voice/voice_settings_screen.dart`：独立语音提供商、文字服务密钥复用、识别/朗读选择和自动朗读设置；发送或确认由录音手势决定。
 - `lib/voice/voice_recording_overlay.dart`：手机按住录音时的全屏浮层、实时振幅波纹和计时。
 - `lib/voice/voice_catalog.dart` 与 `lib/voice/voice_catalog_picker.dart`：语音模型/音色候选、兼容服务 `/models` 查询和选择界面；候选不表示账号权限。

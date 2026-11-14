@@ -57,6 +57,8 @@ String? voiceApiKeyUrlForEndpoint(VoiceProtocol protocol, String endpoint) {
     return null;
   }
   return switch (protocol) {
+    VoiceProtocol.deepseek when uri.host == 'api.deepseek.com' =>
+      textApiKeyUrls['deepseek'],
     VoiceProtocol.mimo when uri.host == 'api.xiaomimimo.com' => mimoApiKeyUrl,
     VoiceProtocol.doubao when uri.host == 'openspeech.bytedance.com' =>
       doubaoVoiceApiKeyUrl,

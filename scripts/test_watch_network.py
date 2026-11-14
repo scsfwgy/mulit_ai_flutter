@@ -115,6 +115,13 @@ class Handler(BaseHTTPRequestHandler):
             if not is_claude and model != 'truncated':
                 content += b'data: [DONE]\n\n'
             headers['Content-Type'] = 'text/event-stream'
+        elif self.path == '/v1/tools/asr':
+            assert b'filename="speech.wav"' in body and b'RIFF' in body
+            assert b'name="model"' not in body
+            content = b'{"text":"hello"}'
+        elif self.path == '/v1/tools/tts':
+            assert payload == {'text': 'hello', 'voice_id': 'voice', 'format': 'pcm', 'filter_markdown': True}
+            content = b'\x00\x01\x02\x03'
         elif self.path.endswith('/audio/transcriptions'):
             assert b'filename="speech.wav"' in body and b'RIFF' in body
             content = b'{"text":"hello"}'

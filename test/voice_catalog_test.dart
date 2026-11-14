@@ -8,6 +8,30 @@ import 'package:mulit_ai_flutter/voice/voice_catalog.dart';
 import 'package:mulit_ai_flutter/voice/voice_catalog_picker.dart';
 
 void main() {
+  test('DeepSeek has two voices and does not query text models', () async {
+    expect(
+      voiceCatalogExamples(
+        VoiceProtocol.deepseek,
+        VoiceCatalogKind.voice,
+      ).map((voice) => voice.id),
+      ['stella', 'tide'],
+    );
+    final client = VoiceCatalogClient(
+      client: MockClient((_) async {
+        throw StateError('DeepSeek voice endpoints do not use /models');
+      }),
+    );
+    addTearDown(client.close);
+    expect(
+      await client.fetchModels(
+        baseUrl: deepSeekVoiceBaseUrl,
+        apiKey: '',
+        protocol: VoiceProtocol.deepseek,
+        kind: VoiceCatalogKind.asr,
+      ),
+      isEmpty,
+    );
+  });
   test(
     'Doubao suggestions only expose resources used by current endpoints',
     () {

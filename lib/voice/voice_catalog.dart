@@ -21,22 +21,45 @@ List<VoiceCatalogOption> voiceCatalogExamples(
   String? ttsModel,
 }) {
   switch (protocol) {
+    case VoiceProtocol.deepseek:
+      return switch (kind) {
+        VoiceCatalogKind.asr || VoiceCatalogKind.tts => const [],
+        VoiceCatalogKind.voice => const [
+          VoiceCatalogOption('stella', 'i18n.deepseek_voice_stella'),
+          VoiceCatalogOption('tide', 'i18n.deepseek_voice_tide'),
+        ],
+      };
     case VoiceProtocol.doubao:
       return switch (kind) {
         VoiceCatalogKind.asr => const [
-          VoiceCatalogOption('volc.bigasr.auc_turbo', 'i18n.fast_transcription'),
+          VoiceCatalogOption(
+            'volc.bigasr.auc_turbo',
+            'i18n.fast_transcription',
+          ),
         ],
         VoiceCatalogKind.tts => const [
           VoiceCatalogOption('seed-tts-2.0', 'i18n.speech_synthesis_v2'),
         ],
         VoiceCatalogKind.voice => const [
           VoiceCatalogOption('zh_female_vv_uranus_bigtts', 'Vivi 2.0'),
-          VoiceCatalogOption('zh_female_tianmeitaozi_mars_bigtts', 'i18n.sweet_peach'),
+          VoiceCatalogOption(
+            'zh_female_tianmeitaozi_mars_bigtts',
+            'i18n.sweet_peach',
+          ),
           VoiceCatalogOption('zh_male_dayi_saturn_bigtts', 'i18n.da_yi'),
           VoiceCatalogOption('zh_female_mizai_saturn_bigtts', 'i18n.mizai'),
-          VoiceCatalogOption('zh_female_jitangnv_saturn_bigtts', 'i18n.warm_narrator'),
-          VoiceCatalogOption('zh_female_meilinvyou_saturn_bigtts', 'i18n.charming_girlfriend'),
-          VoiceCatalogOption('zh_female_santongyongns_saturn_bigtts', 'i18n.fluent_female_voice'),
+          VoiceCatalogOption(
+            'zh_female_jitangnv_saturn_bigtts',
+            'i18n.warm_narrator',
+          ),
+          VoiceCatalogOption(
+            'zh_female_meilinvyou_saturn_bigtts',
+            'i18n.charming_girlfriend',
+          ),
+          VoiceCatalogOption(
+            'zh_female_santongyongns_saturn_bigtts',
+            'i18n.fluent_female_voice',
+          ),
           VoiceCatalogOption('zh_male_ruyayichen_saturn_bigtts', 'i18n.yichen'),
         ],
       };
@@ -124,7 +147,9 @@ class VoiceCatalogClient {
     required VoiceProtocol protocol,
     required VoiceCatalogKind kind,
   }) async {
-    if (protocol == VoiceProtocol.doubao || kind == VoiceCatalogKind.voice) {
+    if (protocol == VoiceProtocol.doubao ||
+        protocol == VoiceProtocol.deepseek ||
+        kind == VoiceCatalogKind.voice) {
       return const [];
     }
     if (apiKey.trim().isEmpty) {
@@ -141,7 +166,9 @@ class VoiceCatalogClient {
           .send(request)
           .timeout(const Duration(seconds: 20));
       if (response.statusCode != 200) {
-        throw FormatException(F('i18n.voice_catalog_http_failed', [response.statusCode]));
+        throw FormatException(
+          F('i18n.voice_catalog_http_failed', [response.statusCode]),
+        );
       }
       final bytes = <int>[];
       await for (final chunk in response.stream.timeout(
@@ -159,7 +186,9 @@ class VoiceCatalogClient {
         throw FormatException(T('i18n.the_service_has_no_model'));
       }
       final data = decoded is Map ? decoded['data'] : null;
-      if (data is! List) throw FormatException(T('i18n.the_service_has_no_model'));
+      if (data is! List) {
+        throw FormatException(T('i18n.the_service_has_no_model'));
+      }
       final ids = <String>{};
       for (final item in data) {
         if (item is! Map || item['id'] is! String) continue;
@@ -175,8 +204,11 @@ class VoiceCatalogClient {
                   lower.contains('whisper') ||
                   lower.endsWith('-asr')
             : lower.contains('tts') || lower.contains('speech');
-        if (id.isNotEmpty && id.length <= 160 && matches &&
-            !(StorefrontPolicy.instance.restricted && StorefrontPolicy.isOpenAIModel(id))) {
+        if (id.isNotEmpty &&
+            id.length <= 160 &&
+            matches &&
+            !(StorefrontPolicy.instance.restricted &&
+                StorefrontPolicy.isOpenAIModel(id))) {
           ids.add(id);
         }
       }

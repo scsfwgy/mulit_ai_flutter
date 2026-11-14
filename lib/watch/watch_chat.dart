@@ -310,7 +310,7 @@ class WatchChatProcessor {
     try {
       return (
         bytes: await client.synthesize(clean),
-        format: tts.protocol == VoiceProtocol.mimo ? 'wav' : 'mp3',
+        format: tts.audioFormat,
       );
     } finally {
       client.close();
@@ -653,7 +653,7 @@ class WatchChatProcessor {
         'transcript': transcript,
         'answer': readableMarkdown(complete),
         'audio': bytes,
-        'audioFormat': tts.protocol == VoiceProtocol.mimo ? 'wav' : 'mp3',
+        'audioFormat': tts.audioFormat,
       });
     } catch (_) {
       // Text is already saved and visible; speech is optional.

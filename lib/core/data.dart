@@ -671,7 +671,35 @@ class CachedModelList {
   }
 }
 
-enum VoiceProtocol { openAi, mimo, doubao }
+enum VoiceProtocol { openAi, mimo, doubao, deepseek }
+
+const deepSeekVoiceBaseUrl = 'https://api.deepseek.com/v1';
+
+bool canReuseVoiceKey(
+  VoiceProtocol protocol,
+  String baseUrl,
+  ProviderConfig provider,
+) {
+  if (protocol == VoiceProtocol.deepseek) {
+    final uri = Uri.tryParse(provider.baseUrl);
+    return baseUrl == deepSeekVoiceBaseUrl &&
+        uri != null &&
+        uri.scheme == 'https' &&
+        uri.host == 'api.deepseek.com' &&
+        uri.port == 443 &&
+        uri.userInfo.isEmpty &&
+        !uri.hasQuery &&
+        !uri.hasFragment &&
+        [
+          '',
+          '/v1',
+          '/anthropic',
+        ].contains(uri.path.replaceFirst(RegExp(r'/$'), ''));
+  }
+  return protocol != VoiceProtocol.doubao &&
+      provider.protocol == ApiProtocol.openAi &&
+      provider.baseUrl == baseUrl;
+}
 
 class VoiceProviderConfig {
   const VoiceProviderConfig({
@@ -693,6 +721,11 @@ class VoiceProviderConfig {
   final String ttsModel;
   final String voice;
   final int? textProviderId;
+
+  String get audioFormat => switch (protocol) {
+    VoiceProtocol.mimo || VoiceProtocol.deepseek => 'wav',
+    _ => 'mp3',
+  };
 
   Map<String, Object?> toJson() => {
     'id': id,
@@ -1108,7 +1141,18 @@ class ChatStore {
   }
 
   Future<String?> voiceApiKey(VoiceProviderConfig config) async {
-    if (config.textProviderId case final id?) return apiKey(id);
+    if (config.textProviderId case final id?) {
+      if (config.protocol == VoiceProtocol.deepseek) {
+        final provider = (await providers())
+            .where((item) => item.id == id)
+            .firstOrNull;
+        if (provider == null ||
+            !canReuseVoiceKey(config.protocol, config.baseUrl, provider)) {
+          return null;
+        }
+      }
+      return apiKey(id);
+    }
     return _withSecureStorage(() => _secrets.read(key: 'voice_${config.id}'));
   }
 

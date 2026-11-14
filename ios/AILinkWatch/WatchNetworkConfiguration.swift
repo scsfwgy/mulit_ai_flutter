@@ -88,7 +88,7 @@ struct WatchNetworkConfiguration: Codable {
   var canTranscribe: Bool {
     guard asrReady, let voice = asr else { return false }
     return !blocks(voice.baseUrl, model: voice.asrModel) && !voice.apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !voice.asrModel.isEmpty
-      && ["openAi", "mimo", "doubao"].contains(voice.protocolName)
+      && ["openAi", "mimo", "doubao", "deepseek"].contains(voice.protocolName)
       && (try? Self.endpoint(voice.baseUrl, "/")) != nil
   }
 

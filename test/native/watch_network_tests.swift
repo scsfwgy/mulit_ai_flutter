@@ -8,7 +8,7 @@ struct WatchNetworkTests {
       if !value() { throw NSError(domain: message, code: 1) }
     }
     func config(model: String = "chat", protocolName: String = "openai_chat", voice: String = "openAi", search: WatchSearchConfiguration? = nil, searchEnabled: Bool? = nil) -> WatchNetworkConfiguration {
-      let speech = WatchVoiceConfiguration(protocolName: voice, baseUrl: base,
+      let speech = WatchVoiceConfiguration(protocolName: voice, baseUrl: voice == "deepseek" ? base + "/v1" : base,
         apiKey: "watch-test-key", asrModel: "asr", ttsModel: "tts", voice: "voice")
       return WatchNetworkConfiguration(version: 1, providerId: 7, providerName: "Test", providerPresetId: nil,
         protocolName: protocolName, baseUrl: base, apiKey: "watch-test-key", model: model,
@@ -103,12 +103,19 @@ struct WatchNetworkTests {
     try expect(systemConfig.systemVoiceIdentifier == "phone-voice-test", "system voice identifier survives config sync")
     try expect(!systemConfig.canTranscribe && systemConfig.asr == nil && systemConfig.tts == nil,
       "system input must not be routed to cloud ASR")
-    for proto in ["openAi", "mimo", "doubao"] {
+    for proto in ["openAi", "mimo", "doubao", "deepseek"] {
       let c = config(voice: proto)
+      try expect(c.canTranscribe, "transcription readiness \(proto)")
       let transcript = try await client.transcribe(Data([82, 73, 70, 70]), config: c)
       try expect(transcript == "hello", "transcription \(proto)")
       let audio = try await client.synthesize("hello", config: c)
-      try expect(audio?.0 == Data("audio".utf8), "synthesis \(proto)")
+      if proto == "deepseek", let (wav, format) = audio {
+        try expect(format == "wav" && wav.count == 48, "DeepSeek WAV playback")
+        try expect(wav.prefix(4) == Data("RIFF".utf8) && wav.suffix(4) == Data([0, 1, 2, 3]), "DeepSeek PCM payload")
+        try expect(Array(wav[24..<28]) == [192, 93, 0, 0] && Array(wav[40..<44]) == [4, 0, 0, 0], "24 kHz and exact PCM length")
+      } else {
+        try expect(audio?.0 == Data("audio".utf8), "synthesis \(proto)")
+      }
     }
     for model in ["truncated", "rejected", "redirect"] {
       do {

@@ -7,8 +7,19 @@ import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicReference
+
+internal fun deepSeekSpeechWav(pcm: ByteArray): ByteArray {
+    if (pcm.isEmpty() || pcm.size % 2 != 0) throw WatchNetworkException("语音服务返回的音频无效")
+    return ByteBuffer.allocate(44 + pcm.size).order(ByteOrder.LITTLE_ENDIAN)
+        .put("RIFF".toByteArray(Charsets.US_ASCII)).putInt(36 + pcm.size)
+        .put("WAVEfmt ".toByteArray(Charsets.US_ASCII)).putInt(16)
+        .putShort(1).putShort(1).putInt(24000).putInt(48000).putShort(2).putShort(16)
+        .put("data".toByteArray(Charsets.US_ASCII)).putInt(pcm.size).put(pcm).array()
+}
 
 /** Makes API calls on a selected watch Wi-Fi/cellular network. */
 class WatchModelClient(private val config: JSONObject, private val network: Network) {
@@ -97,13 +108,14 @@ class WatchModelClient(private val config: JSONObject, private val network: Netw
         val root = voice.getString("baseUrl")
         val key = voice.getString("apiKey")
         return when (voice.getString("protocol")) {
-            "openAi" -> {
+            "openAi", "deepseek" -> {
                 val boundary = "BetweenModels${UUID.randomUUID()}"
-                val connection = connection(endpoint(root, "/audio/transcriptions"), key)
+                val deepseek = voice.getString("protocol") == "deepseek"
+                val connection = connection(endpoint(root, if (deepseek) "/tools/asr" else "/audio/transcriptions"), key)
                 try {
                     connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
                     connection.outputStream.use { out ->
-                        out.write("--$boundary\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n${voice.getString("asrModel")}\r\n".toByteArray())
+                        if (!deepseek) out.write("--$boundary\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n${voice.getString("asrModel")}\r\n".toByteArray())
                         out.write("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"speech.wav\"\r\nContent-Type: audio/wav\r\n\r\n".toByteArray())
                         out.write(wav)
                         out.write("\r\n--$boundary--\r\n".toByteArray())
@@ -249,6 +261,13 @@ class WatchModelClient(private val config: JSONObject, private val network: Netw
         val root = voice.getString("baseUrl")
         val key = voice.getString("apiKey")
         return when (voice.getString("protocol")) {
+            "deepseek" -> {
+                val body = JSONObject().put("text", input).put("voice_id", voice.getString("voice"))
+                    .put("format", "pcm").put("filter_markdown", true)
+                val audio = postJson(endpoint(root, "/tools/tts"), key, body,
+                    maxBytes = 12 * 1024 * 1024)
+                deepSeekSpeechWav(audio) to "wav"
+            }
             "openAi" -> {
                 val body = JSONObject().put("model", voice.getString("ttsModel"))
                     .put("input", input).put("voice", voice.getString("voice"))

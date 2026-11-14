@@ -51,7 +51,7 @@ class WatchConfigStore(private val context: Context) {
         val asr = config?.optJSONObject("asr")
         val asrReady = asr != null && config?.optBoolean("asrReady", true) != false &&
             watchServiceReady(asr.optString("baseUrl"), asr.optString("apiKey"), asr.optString("asrModel")) &&
-            asr.optString("protocol") in setOf("openAi", "mimo", "doubao")
+            asr.optString("protocol") in setOf("openAi", "mimo", "doubao", "deepseek")
         return missingWatchServices(textReady, asrReady)
     }
 

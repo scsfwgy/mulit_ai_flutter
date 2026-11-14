@@ -1696,7 +1696,7 @@ class _ChatHomeState extends State<ChatHome> with WidgetsBindingObserver {
       if (!mounted || generation != _speechGeneration) return;
       final dir = await getTemporaryDirectory();
       path =
-          '${dir.path}/reply_${DateTime.now().microsecondsSinceEpoch}.${service.protocol == VoiceProtocol.mimo ? 'wav' : 'mp3'}';
+          '${dir.path}/reply_${DateTime.now().microsecondsSinceEpoch}.${service.audioFormat}';
       await File(path).writeAsBytes(bytes, flush: true);
       if (!mounted || generation != _speechGeneration) return;
       _playingPath = path;

@@ -10,20 +10,20 @@ import 'package:mulit_ai_flutter/core/storefront_policy.dart';
 import 'package:mulit_ai_flutter/core/data.dart';
 import 'package:mulit_ai_flutter/i18n/strings.dart';
 import 'package:mulit_ai_flutter/voice/voice_request_diagnostics.dart';
+import 'package:mulit_ai_flutter/voice/voice_audio.dart';
 
-class VoiceException implements Exception {
-  const VoiceException(this.message);
-  final String message;
-  @override
-  String toString() => message;
-}
+export 'package:mulit_ai_flutter/voice/voice_audio.dart' show VoiceException;
 
 String validateTranscript(String text) {
   final clean = text
       .replaceAll(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F]'), '')
       .trim();
-  if (clean.isEmpty) throw VoiceException(T('i18n.no_usable_speech_was_detected'));
-  if (clean.runes.length > 5000) throw VoiceException(T('i18n.transcript_too_long_record_shorter'));
+  if (clean.isEmpty) {
+    throw VoiceException(T('i18n.no_usable_speech_was_detected'));
+  }
+  if (clean.runes.length > 5000) {
+    throw VoiceException(T('i18n.transcript_too_long_record_shorter'));
+  }
   return clean;
 }
 
@@ -61,8 +61,14 @@ class VoiceClient {
   }
 
   void _storefrontChanged() {
-    if (StorefrontPolicy.instance.blocks(config.baseUrl, model: config.asrModel) ||
-        StorefrontPolicy.instance.blocks(config.baseUrl, model: config.ttsModel)) {
+    if (StorefrontPolicy.instance.blocks(
+          config.baseUrl,
+          model: config.asrModel,
+        ) ||
+        StorefrontPolicy.instance.blocks(
+          config.baseUrl,
+          model: config.ttsModel,
+        )) {
       close();
     }
   }
@@ -85,7 +91,12 @@ class VoiceClient {
     String operation = 'i18n.voice_operation_service',
   }) async {
     try {
-      await StorefrontPolicy.instance.requireAllowed(config.baseUrl, model: operation == 'i18n.voice_operation_transcription' ? config.asrModel : config.ttsModel);
+      await StorefrontPolicy.instance.requireAllowed(
+        config.baseUrl,
+        model: operation == 'i18n.voice_operation_transcription'
+            ? config.asrModel
+            : config.ttsModel,
+      );
     } on StorefrontRestrictedException catch (error) {
       throw VoiceException(error.message);
     }
@@ -118,7 +129,9 @@ class VoiceClient {
       const Duration(seconds: 65),
     )) {
       if (data.length + chunk.length > limit) {
-        if (!failed) throw VoiceException(T('i18n.voice_service_response_is_too'));
+        if (!failed) {
+          throw VoiceException(T('i18n.voice_service_response_is_too'));
+        }
         data.addAll(chunk.take(limit - data.length));
         break;
       }
@@ -203,7 +216,9 @@ class VoiceClient {
     if (wav.isEmpty || wav.length > 12 * 1024 * 1024) {
       throw VoiceException(T('i18n.recording_empty_or_too_large'));
     }
-    if (key.trim().isEmpty) throw VoiceException(T('i18n.voice_service_api_key'));
+    if (key.trim().isEmpty) {
+      throw VoiceException(T('i18n.voice_service_api_key'));
+    }
     final audio = voiceWavDiagnostics(wav, includeLevels: kDebugMode);
     if (kDebugMode) _audioDiagnostics = audio;
     if (audio['container'] != 'RIFF/WAVE' ||
@@ -216,9 +231,21 @@ class VoiceClient {
     late final Map<String, dynamic> body;
     switch (config.protocol) {
       case VoiceProtocol.openAi:
+      case VoiceProtocol.deepseek:
+        if (config.protocol == VoiceProtocol.deepseek &&
+            (wav.length > 8 * 1024 * 1024 ||
+                (audio['duration_ms'] as int? ?? 0) > 120000)) {
+          throw VoiceException(T('i18n.deepseek_recording_limit'));
+        }
         final request =
-            http.MultipartRequest('POST', _endpoint('/audio/transcriptions'))
-              ..fields['model'] = config.asrModel
+            http.MultipartRequest(
+                'POST',
+                _endpoint(
+                  config.protocol == VoiceProtocol.deepseek
+                      ? '/tools/asr'
+                      : '/audio/transcriptions',
+                ),
+              )
               ..files.add(
                 http.MultipartFile.fromBytes(
                   'file',
@@ -227,7 +254,12 @@ class VoiceClient {
                   contentType: http.MediaType('audio', 'wav'),
                 ),
               );
-        body = _decode(await _send(request, operation: 'i18n.voice_operation_transcription'));
+        if (config.protocol != VoiceProtocol.deepseek) {
+          request.fields['model'] = config.asrModel;
+        }
+        body = _decode(
+          await _send(request, operation: 'i18n.voice_operation_transcription'),
+        );
         return validateTranscript(
           body['text'] is String ? body['text'] as String : '',
         );
@@ -292,8 +324,25 @@ class VoiceClient {
     if (input.runes.length > 1800) {
       throw VoiceException(T('i18n.message_too_long_choose_shorter'));
     }
-    if (key.trim().isEmpty) throw VoiceException(T('i18n.voice_service_api_key'));
+    if (key.trim().isEmpty) {
+      throw VoiceException(T('i18n.voice_service_api_key'));
+    }
     switch (config.protocol) {
+      case VoiceProtocol.deepseek:
+        final response = await _json('/tools/tts', {
+          'text': input,
+          'voice_id': config.voice,
+          'format': 'pcm',
+          'filter_markdown': true,
+        }, maxBytes: 16 * 1024 * 1024);
+        if (response.bodyBytes.isEmpty) {
+          throw VoiceException(T('i18n.voice_service_returned_no_audio'));
+        }
+        if (response.bodyBytes.length.isOdd) {
+          throw VoiceException(T('i18n.voice_service_returned_invalid_audio'));
+        }
+        // Streaming WAV headers may contain unknown lengths that Android rejects.
+        return pcm16VoiceWav(response.bodyBytes, sampleRate: 24000);
       case VoiceProtocol.openAi:
         final response = await _json('/audio/speech', {
           'model': config.ttsModel,
@@ -362,7 +411,9 @@ class VoiceClient {
             bytes.add(_audioFromBase64(encoded));
           }
         }
-        if (bytes.isEmpty) throw VoiceException(T('i18n.voice_service_returned_no_audio'));
+        if (bytes.isEmpty) {
+          throw VoiceException(T('i18n.voice_service_returned_no_audio'));
+        }
         return bytes.toBytes();
     }
   }
