@@ -26,12 +26,16 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import plistlib
 import re
 import shutil
 import subprocess
 import sys
+import urllib.error
+import urllib.parse
+import urllib.request
 import zipfile
 from pathlib import Path
 
@@ -51,6 +55,7 @@ NUMBER_PATTERN = re.compile(r"[1-9]\d*")
 DELIVERY_PATTERN = re.compile(
     r"(?:RequestUUID|Delivery ID)\s*[:=]\s*([0-9a-fA-F][0-9a-fA-F-]{7,})"
 )
+JWT_PATTERN = re.compile(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")
 
 
 def fail(message: str) -> int:
@@ -123,6 +128,51 @@ def run_altool(altool: Path, arguments: list[str], echo: bool = True) -> tuple[i
     return process.wait(), "".join(lines)
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def check_app_access(token: str) -> None:
+    """用正式 API 校验账号与 App，避免把 altool 的遥测错误当作认证结果。"""
+    query = urllib.parse.urlencode({"filter[bundleId]": BUNDLE_ID, "limit": "1"})
+    request = urllib.request.Request(
+        f"https://api.appstoreconnect.apple.com/v1/apps?{query}",
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+    )
+    opener = urllib.request.build_opener(_NoRedirect())
+    try:
+        with opener.open(request, timeout=30) as response:
+            result = json.loads(response.read(1024 * 1024))
+    except urllib.error.HTTPError as error:
+        try:
+            payload = json.loads(error.read(65536))
+            codes = {item.get("code") for item in payload.get("errors", []) if isinstance(item, dict)}
+        except (ValueError, TypeError, AttributeError):
+            codes = set()
+        if "FORBIDDEN.REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED" in codes:
+            raise ValueError(
+                "Apple 账号有尚未接受或已过期的协议；请由账号持有人（Account Holder）"
+                "登录 https://developer.apple.com/account/ 和 https://appstoreconnect.apple.com/ "
+                "检查并接受最新协议，然后重试。这不是 API Key 格式错误。"
+            ) from None
+        if error.code == 401:
+            raise ValueError("App Store Connect 认证失败（HTTP 401）；请核对 Key ID、Issuer ID 与 .p8 是否配对及密钥是否已撤销") from None
+        if error.code == 403:
+            raise ValueError("App Store Connect 权限不足（HTTP 403）；请核对 API 密钥角色及该 App 的访问权限") from None
+        raise ValueError(f"App Store Connect 预检失败（HTTP {error.code}）；请稍后重试或检查网络") from None
+    except (urllib.error.URLError, TimeoutError, OSError):
+        raise ValueError("无法连接 App Store Connect API；请检查网络与 HTTP 代理后重试") from None
+    except (ValueError, UnicodeError):
+        raise ValueError("App Store Connect API 返回格式无效，请稍后重试") from None
+    apps = result.get("data") if isinstance(result, dict) else None
+    if not isinstance(apps, list):
+        raise ValueError("App Store Connect API 未返回有效的 App 列表，请稍后重试")
+    if not any(isinstance(app, dict) and isinstance(app.get("attributes"), dict)
+               and app["attributes"].get("bundleId") == BUNDLE_ID for app in apps):
+        raise ValueError(f"App Store Connect 中未找到可访问的 {BUNDLE_ID}；请确认 App 记录已创建且密钥有访问权限")
+
+
 def check_ipa(ipa: Path, version: str, number: str) -> None:
     """确认待上传的 IPA 就是本次构建：标识、版本号与内嵌手表应用都必须一致。"""
     if not ipa.is_file() or ipa.suffix.lower() != ".ipa" or ipa.stat().st_size == 0:
@@ -185,17 +235,11 @@ def main(argv: list[str] | None = None) -> int:
             if not args.check_online:
                 print("App Store Connect 本地发布配置检查通过（未联网）")
                 return 0
-            # --list-apps 即使认证失败也返回 0，只能靠输出里的错误行判定。
-            code, output = run_altool(
-                altool, ["--list-apps", *credentials, "--filter-bundle-id", BUNDLE_ID]
-            )
-            if code != 0 or any(
-                marker in output
-                for marker in ("ERROR: [", "auth issue", "NOT_AUTHORIZED", "status code 40")
-            ):
-                return fail("App Store Connect 凭据校验失败；请核对 ASC_ISSUER_ID、密钥角色与网络")
-            listed = "已在账号中" if BUNDLE_ID in output else "未出现在列表中"
-            print(f"App Store Connect 凭据校验通过；{BUNDLE_ID} {listed}")
+            tokens = set(JWT_PATTERN.findall(output))
+            if len(tokens) != 1:
+                return fail("无法从 altool 获取唯一的 JWT；请检查 Xcode 版本，认证输出已隐藏")
+            check_app_access(tokens.pop())
+            print(f"App Store Connect 凭据与 App 访问校验通过；{BUNDLE_ID} 已在账号中")
             return 0
 
         ipa = args.ipa.resolve()

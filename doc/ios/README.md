@@ -27,7 +27,9 @@
 | `./release.sh --push-all` | 全端构建并上传：官网（含 Mac DMG 与 Windows 安装包地址）+ Google Play + App Store Connect |
 | `./release.sh --platform all --push-ios` | 显式构建全部平台，但只上传 iOS |
 
-`--push-ios` 会在构建前先做联网预检：凭据文件缺失、私钥与密钥 ID 不配对、Issuer ID 无效或网络不通时直接退出，不会白跑一次 iOS 构建。上传前还会解包 IPA，核对手机 `com.maxhall.ailink` 与手表 `com.maxhall.ailink.watchkitapp` 的 Bundle ID、`CFBundleShortVersionString` 与 `CFBundleVersion` 都与本次构建一致，避免上传上一次的产物。结果写入归档目录的 `release-info.txt`（`appstoreStatus=...`），失败时保留完整日志 `appstore-upload.log`。
+`--push-ios` 会在构建前先做联网预检：用 altool 在本地生成 JWT（不打印认证输出），再查询 App Store Connect 的 `/v1/apps` 正式 API，分别识别认证失败、权限不足、未接受/已过期协议、App 不可访问及网络故障，不再把 altool 遥测日志里的 403 直接视为密钥错误。检查失败会直接退出，不会白跑一次 iOS 构建。上传前还会解包 IPA，核对手机 `com.maxhall.ailink` 与手表 `com.maxhall.ailink.watchkitapp` 的 Bundle ID、`CFBundleShortVersionString` 与 `CFBundleVersion` 都与本次构建一致，避免上传上一次的产物。结果写入归档目录的 `release-info.txt`（`appstoreStatus=...`），失败时保留完整日志 `appstore-upload.log`。
+
+遇到 `FORBIDDEN.REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED` 时，请由账号持有人（Account Holder）登录 [Apple Developer 账户](https://developer.apple.com/account/) 查看协议提示，并在 [App Store Connect](https://appstoreconnect.apple.com/) → Business（业务）→ Agreements（协议）检查待处理条款。API 错误不能单独确定是哪一份协议；以后台显示为准，审阅并完成确认后重跑 `python3 scripts/appstore_upload.py --check-online`。这类错误无需先更换 API Key。操作说明见 [Apple 官方协议帮助](https://developer.apple.com/help/app-store-connect/manage-agreements/sign-and-update-agreements/)。
 
 ### 上传后仍需人工完成
 
@@ -46,7 +48,7 @@
 
 - 同一个 `CFBundleVersion` 只能上传一次；重复上传需先提升 `pubspec.yaml` 的 `version: x.y.z+build` 构建号。
 - 上传失败不自动重试，避免产生重复或半成品构建；重跑整条命令即可。
-- `altool` 走系统网络设置，不读取 `http_proxy`/`https_proxy` 环境变量；`release.sh` 里探测到的代理只作用于 Google Play 与 OSS 链路。
+- `altool` 上传走系统网络设置，不读取 `http_proxy`/`https_proxy` 环境变量；联网预检使用的 Python REST 请求会读取代理环境变量，与 Google Play、OSS 共用 `release.sh` 的代理配置。
 - 本机没有 iOS Distribution 证书和 App Store 描述文件时会跳过 iOS；此时 `--push-ios` 直接报错退出，而不是构建出不可上传的包。
 
 ## 已接入的代码
